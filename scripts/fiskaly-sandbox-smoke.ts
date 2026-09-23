@@ -33,7 +33,11 @@ async function checkout(payload: unknown): Promise<Record<string, unknown>> {
 }
 
 async function main(): Promise<void> {
-  let { data: reg } = await db.from('pos_registers').select('id, code').eq('code', registerCode).maybeSingle();
+  let { data: reg } = await db
+    .from('pos_registers')
+    .select('id, code')
+    .eq('code', registerCode)
+    .maybeSingle();
   if (!reg) {
     const { data, error } = await db
       .from('pos_registers')
@@ -43,7 +47,11 @@ async function main(): Promise<void> {
     if (error) throw error;
     reg = data;
     await db.from('pos_counters').insert(
-      ['ticket', 'session', 'closing', 'event'].map((kind) => ({ register_id: reg!.id, kind, value: 0 })),
+      ['ticket', 'session', 'closing', 'event'].map((kind) => ({
+        register_id: reg!.id,
+        kind,
+        value: 0,
+      })),
     );
   }
   const { data: session, error: sErr } = await db.rpc('pos_open_session', {
@@ -55,14 +63,45 @@ async function main(): Promise<void> {
   console.log(`Session ${sessionId} ouverte sur ${reg.code}`);
 
   const { data: products } = await db.rpc('pos_search_products', { p_query: 'stylo', p_limit: 3 });
-  const catalog = (products ?? []) as Array<{ id: string; name: string; ean: string; price_ttc_cents: number; vat_rate: number }>;
-  const sample = catalog[0] ?? { id: null, name: 'Article test', ean: null, price_ttc_cents: 1000, vat_rate: 20 };
+  const catalog = (products ?? []) as Array<{
+    id: string;
+    name: string;
+    ean: string;
+    price_ttc_cents: number;
+    vat_rate: number;
+  }>;
+  const sample = catalog[0] ?? {
+    id: null,
+    name: 'Article test',
+    ean: null,
+    price_ttc_cents: 1000,
+    vat_rate: 20,
+  };
 
   let lastTxnId: string | null = null;
   for (let i = 1; i <= n; i++) {
     const lines = [
-      { line_no: 1, product_id: sample.id, ean: sample.ean, label: sample.name, qty: i, unit_price_ttc_cents: sample.price_ttc_cents, vat_rate: sample.vat_rate, discount_percent: 0, eco_tax_cents: 0 },
-      { line_no: 2, product_id: null, label: 'Photocopie A4', qty: 3, unit_price_ttc_cents: 25, vat_rate: 20, discount_percent: 0, eco_tax_cents: 0 },
+      {
+        line_no: 1,
+        product_id: sample.id,
+        ean: sample.ean,
+        label: sample.name,
+        qty: i,
+        unit_price_ttc_cents: sample.price_ttc_cents,
+        vat_rate: sample.vat_rate,
+        discount_percent: 0,
+        eco_tax_cents: 0,
+      },
+      {
+        line_no: 2,
+        product_id: null,
+        label: 'Photocopie A4',
+        qty: 3,
+        unit_price_ttc_cents: 25,
+        vat_rate: 20,
+        discount_percent: 0,
+        eco_tax_cents: 0,
+      },
     ];
     const cart = computeCart(lines);
     const payload = {
@@ -74,19 +113,47 @@ async function main(): Promise<void> {
       offline_queued: false,
       invoice_requested: false,
       lines,
-      payments: [{ method: i % 2 ? 'cash' : 'cb', amount_cents: cart.total_ttc_cents, ...(i % 2 ? {} : { tpe_response: { AE: '10' } }) }],
+      payments: [
+        {
+          method: i % 2 ? 'cash' : 'cb',
+          amount_cents: cart.total_ttc_cents,
+          ...(i % 2 ? {} : { tpe_response: { AE: '10' } }),
+        },
+      ],
       change_cents: 0,
-      totals: { total_ht_cents: cart.total_ht_cents, total_vat_cents: cart.total_vat_cents, total_ttc_cents: cart.total_ttc_cents },
+      totals: {
+        total_ht_cents: cart.total_ht_cents,
+        total_vat_cents: cart.total_vat_cents,
+        total_ttc_cents: cart.total_ttc_cents,
+      },
       app_version: 'smoke',
     };
     const out = await checkout(payload);
-    const tx = out.transaction as { id: string; ticket_number: number; signature_status: string; hash: string };
+    const tx = out.transaction as {
+      id: string;
+      ticket_number: number;
+      signature_status: string;
+      hash: string;
+    };
     lastTxnId = tx.id;
-    console.log(`  vente ${i}: ticket #${tx.ticket_number} ${tx.signature_status} hash=${tx.hash.slice(0, 8)}`);
+    console.log(
+      `  vente ${i}: ticket #${tx.ticket_number} ${tx.signature_status} hash=${tx.hash.slice(0, 8)}`,
+    );
   }
 
   if (lastTxnId) {
-    const refundLines = [{ line_no: 1, product_id: null, label: 'Photocopie A4', qty: -1, unit_price_ttc_cents: 25, vat_rate: 20, discount_percent: 0, eco_tax_cents: 0 }];
+    const refundLines = [
+      {
+        line_no: 1,
+        product_id: null,
+        label: 'Photocopie A4',
+        qty: -1,
+        unit_price_ttc_cents: 25,
+        vat_rate: 20,
+        discount_percent: 0,
+        eco_tax_cents: 0,
+      },
+    ];
     const cart = computeCart(refundLines);
     const out = await checkout({
       client_txn_id: randomUUID(),
@@ -101,7 +168,11 @@ async function main(): Promise<void> {
       lines: refundLines,
       payments: [{ method: 'cash', amount_cents: cart.total_ttc_cents }],
       change_cents: 0,
-      totals: { total_ht_cents: cart.total_ht_cents, total_vat_cents: cart.total_vat_cents, total_ttc_cents: cart.total_ttc_cents },
+      totals: {
+        total_ht_cents: cart.total_ht_cents,
+        total_vat_cents: cart.total_vat_cents,
+        total_ttc_cents: cart.total_ttc_cents,
+      },
       app_version: 'smoke',
     });
     const tx = out.transaction as { ticket_number: number; signature_status: string };

@@ -1,0 +1,71 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+    background: #0a0a0f;
+    color: #e2e8f0;
+  }
+
+  body {
+    font-family:
+      'Poppins',
+      system-ui,
+      -apple-system,
+      'Segoe UI',
+      Roboto,
+      sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior: none;
+  }
+
+  /* UI tactile : pas de sélection de texte, sauf champs de saisie et tickets. */
+  .touch-ui {
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  input,
+  textarea,
+  pre,
+  .selectable {
+    user-select: text;
+    -webkit-user-select: text;
+  }
+
+  *:focus-visible {
+    outline: 2px solid #6366f1;
+    outline-offset: 2px;
+  }
+
+  /* Scrollbars discrètes. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #1e1e2e transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background: #1e1e2e;
+    border-radius: 8px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+@layer utilities {
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}

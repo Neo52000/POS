@@ -1,5 +1,5 @@
-# Projet Supabase partagé avec ma-papeterie.fr
-project_id = "mgojmkzovqgpipybelrr"
+# Projet Supabase « Pos » (base fiscale de la caisse). ma-papeterie = mgojmkzovqgpipybelrr (API)
+project_id = "jntngwbdsaexustzmaii"
 
 [functions.pos-checkout]
 verify_jwt = false
@@ -12,4 +12,8 @@ verify_jwt = false
 [functions.pos-customer-search]
 verify_jwt = false
 [functions.pos-customer-quotes]
+verify_jwt = false
+[functions.pos-resolve-prices]
+verify_jwt = false
+[functions.pos-stock-sync]
 verify_jwt = false
