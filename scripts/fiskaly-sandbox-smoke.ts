@@ -46,15 +46,13 @@ async function main(): Promise<void> {
       .single();
     if (error) throw error;
     reg = data;
-    await db
-      .from('pos_counters')
-      .insert(
-        ['ticket', 'session', 'closing', 'event'].map((kind) => ({
-          register_id: reg!.id,
-          kind,
-          value: 0,
-        })),
-      );
+    await db.from('pos_counters').insert(
+      ['ticket', 'session', 'closing', 'event'].map((kind) => ({
+        register_id: reg!.id,
+        kind,
+        value: 0,
+      })),
+    );
   }
   const { data: session, error: sErr } = await db.rpc('pos_open_session', {
     p_register_id: reg.id,
