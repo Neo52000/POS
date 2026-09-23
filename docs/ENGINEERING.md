@@ -27,11 +27,14 @@
 
 ## Migrations
 
-1. **Projet Pos** : `supabase/migrations/` (préfixe `20260923…_pos_*`). Appliquées automatiquement par l'intégration GitHub Supabase à chaque fusion dans `main` (branche de production). En développement : `supabase db push` (CLI liée à Pos) ou connecteur MCP ; si elles sont appliquées manuellement, enregistrer leurs versions dans `supabase_migrations.schema_migrations` pour éviter une double application.
-2. Le cron (`…_pos_cron.sql`) lit `current_setting('app.settings.functions_url')` et `app.settings.service_role_key` : à définir une fois par l'admin (`ALTER DATABASE postgres SET app.settings.functions_url = 'https://<ref>.supabase.co/functions/v1'` etc.). pg_cron/pg_net doivent être activés sur Pos (plan Pro recommandé avant la bascule).
-3. **Projet ma-papeterie** : `supabase-mapapeterie/migrations/` (RPC catalogue anon, RPC service role clients/tarifs/devis/stock, table `pos_stock_movements`). Appliquer manuellement (SQL Editor ou connecteur) et **recopier** dans le dépôt `Neo52000/ma-papeterie` par PR.
-4. Types : `supabase gen types typescript --project-id <ref Pos> --schema public > apps/pos/src/types/supabase.ts`.
-5. Tests SQL : `scripts/sql-tests/pos/*.sql` (projet Pos) et `scripts/sql-tests/mapapeterie/*.sql`, rejouables, écrivent sur une caisse `TEST-01` (les données restent : immutabilité).
+1. **Projet Pos** : `supabase/migrations/`. Appliquées automatiquement par l'intégration GitHub Supabase à chaque fusion dans `main` (branche de production). **Règle de nommage** : quand une migration est appliquée via le connecteur MCP (`apply_migration`), Supabase enregistre une version = horodatage d'application ; le fichier du dépôt doit porter **exactement cette version** (`SELECT version, name FROM supabase_migrations.schema_migrations`) sinon `supabase db push` refuse l'historique. Toutes les migrations sont idempotentes.
+2. Le cron (`…_pos_cron_vault.sql`) lit l'URL des fonctions et la clé service dans **Vault** (`ALTER DATABASE … SET` est interdit sur Supabase). À faire une fois par l'admin dans le SQL Editor de Pos :
+   `SELECT vault.create_secret('<service_role_key du projet Pos>', 'pos_service_role_key');`
+   Tant que ce secret manque, `pos_cron_call` journalise un NOTICE et n'appelle rien.
+3. `…_pos_hash_vectors_check.sql` rejoue les vecteurs de hash de `@pos/core` : la migration **échoue** si l'implémentation SQL diverge du TypeScript (garde-fou). Après `pnpm --filter @pos/core gen:vectors`, régénérer le JSON avec `python3 scripts/gen-hash-vectors-sql.py` et créer une nouvelle migration.
+4. **Projet ma-papeterie** : `supabase-mapapeterie/migrations/` (RPC catalogue anon, RPC service role clients/tarifs/devis/stock, table `pos_stock_movements`). Appliquées via le connecteur (même règle de nommage) ; **recopier** dans le dépôt `Neo52000/ma-papeterie` par PR.
+5. Types : `supabase gen types typescript --project-id jntngwbdsaexustzmaii --schema public > apps/pos/src/types/supabase.ts` (la PWA utilise pour l'instant des types maison dans `src/types/pos.ts`).
+6. Tests SQL : `scripts/sql-tests/pos/*.sql` (projet Pos) et `scripts/sql-tests/mapapeterie/*.sql`, rejouables, écrivent sur une caisse `TEST-01` (les données restent : immutabilité). Via le SQL Editor : coller le script tel quel. Via le connecteur (lecture seule pour `execute_sql`) : les exécuter avec `apply_migration` en remplaçant la table temporaire par `public.pos_test_results`, puis rejouer `…_pos_test_cleanup.sql`. Résultat de la session du 23/09/2026 : 60 étapes vertes (01, 02, 04, 05, 06) + 6 vecteurs de hash.
 
 ## Edge Functions
 
