@@ -8,14 +8,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10
+      - uses: pnpm/action-setup@v4 # version lue dans package.json (packageManager)
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @pos/core build # @pos/core est consommé via dist/ par la PWA et le pont
       - run: pnpm lint
       - run: pnpm format:check
       - run: pnpm typecheck
@@ -26,14 +25,13 @@ jobs:
     needs: ci
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10
+      - uses: pnpm/action-setup@v4 # version lue dans package.json (packageManager)
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @pos/core build
       - run: pnpm --filter @pos/app exec playwright install --with-deps chromium
       - run: pnpm e2e
         env:
