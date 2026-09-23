@@ -19,6 +19,7 @@ DECLARE
   v_product  uuid;
   v_ean      text;
   v_name     text;
+  v_query    text;
   v_stock0   int;
   v_stock    int;
   v_key1     text := 'test:' || gen_random_uuid()::text;
@@ -79,8 +80,10 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM public.pos_search_products(v_ean) s WHERE s.id = v_product) THEN
     RAISE EXCEPTION 'pos_search_products(EAN) ne trouve pas %', v_ean;
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM public.pos_search_products(split_part(v_name, ' ', 1), 50) s WHERE s.id = v_product) THEN
-    RAISE EXCEPTION 'pos_search_products(texte) ne trouve pas "%"', split_part(v_name, ' ', 1);
+  -- recherche texte : 3 premiers mots (le 1er seul, ex. une marque, dépasse la limite de 50 résultats)
+  v_query := array_to_string((string_to_array(v_name, ' '))[1:3], ' ');
+  IF NOT EXISTS (SELECT 1 FROM public.pos_search_products(v_query, 50) s WHERE s.id = v_product) THEN
+    RAISE EXCEPTION 'pos_search_products(texte) ne trouve pas "%"', v_query;
   END IF;
   IF (SELECT count(*) FROM public.pos_product_by_ean(v_ean)) <> 1
      OR (SELECT p.price_ttc_cents FROM public.pos_product_by_ean(v_ean) p) IS NULL
