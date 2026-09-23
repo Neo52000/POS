@@ -1,0 +1,5 @@
+node_modules
+dist
+pnpm-lock.yaml
+apps/pos/src/types/supabase.ts
+supabase/functions

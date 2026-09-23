@@ -1,0 +1,15 @@
+node_modules/
+dist/
+build/
+coverage/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+apps/pos/dev-dist/
+apps/pos/test-results/
+apps/pos/playwright-report/
+services/tpe-bridge/bridge.config.json
+supabase/.temp/
+supabase/.branches/

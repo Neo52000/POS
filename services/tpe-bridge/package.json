@@ -1,0 +1,24 @@
+{
+  "name": "@pos/tpe-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "sim": "tsx simulator/tpe-sim.ts",
+    "build": "tsup src/index.ts simulator/tpe-sim.ts --format esm --target node20 --clean",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.0.0",
+    "@fastify/websocket": "^11.0.0",
+    "@pos/core": "workspace:*",
+    "fastify": "^5.4.0",
+    "pino": "^9.9.0",
+    "pino-pretty": "^13.1.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": { "tsup": "^8.5.0", "tsx": "^4.20.0", "typescript": "^5.9.0", "vitest": "^3.2.0" }
+}

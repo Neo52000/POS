@@ -1,0 +1,17 @@
+[build]
+  base = "."
+  command = "pnpm install --frozen-lockfile && pnpm --filter @pos/core build && pnpm --filter @pos/app build"
+  publish = "apps/pos/dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"

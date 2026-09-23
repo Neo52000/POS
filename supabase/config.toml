@@ -1,0 +1,15 @@
+# Projet Supabase partagé avec ma-papeterie.fr
+project_id = "mgojmkzovqgpipybelrr"
+
+[functions.pos-checkout]
+verify_jwt = false
+[functions.pos-sign-pending]
+verify_jwt = false
+[functions.pos-closing]
+verify_jwt = false
+[functions.pos-closings-sync]
+verify_jwt = false
+[functions.pos-customer-search]
+verify_jwt = false
+[functions.pos-customer-quotes]
+verify_jwt = false
