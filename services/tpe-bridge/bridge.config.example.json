@@ -1,0 +1,22 @@
+{
+  "http": { "host": "127.0.0.1", "port": 8787 },
+  "token": "change-me-bridge-token-32-chars-min",
+  "allowedOrigins": ["http://localhost:5173", "https://pos.ma-papeterie.fr"],
+  "tpe": {
+    "host": "192.168.1.50",
+    "port": 8888,
+    "posNumber": "01",
+    "timeoutMs": 90000,
+    "currency": "978",
+    "protocolId": "012",
+    "simulate": false
+  },
+  "printer": {
+    "type": "network",
+    "host": "192.168.1.60",
+    "port": 9100,
+    "codepage": "CP858",
+    "width": 42
+  },
+  "drawer": { "pin": 0 }
+}

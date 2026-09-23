@@ -1,0 +1,45 @@
+# Unité systemd du pont TPE (Linux, ex. mini-PC comptoir sous Debian/Ubuntu).
+#
+# Installation :
+#   sudo useradd --system --home /opt/tpe-bridge --shell /usr/sbin/nologin tpebridge
+#   sudo mkdir -p /opt/tpe-bridge && sudo cp -r dist package.json bridge.config.json /opt/tpe-bridge/
+#   (voir deploy/README.md pour produire un dossier autonome avec node_modules)
+#   sudo chown -R tpebridge:tpebridge /opt/tpe-bridge && sudo chmod 600 /opt/tpe-bridge/bridge.config.json
+#   sudo cp deploy/tpe-bridge.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now tpe-bridge
+#   journalctl -u tpe-bridge -f
+[Unit]
+Description=Ma Papeterie POS - pont TPE Caisse-AP / imprimante ESC/POS
+Documentation=file:///opt/tpe-bridge/deploy/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tpebridge
+Group=tpebridge
+WorkingDirectory=/opt/tpe-bridge
+Environment=NODE_ENV=production
+Environment=BRIDGE_CONFIG=/opt/tpe-bridge/bridge.config.json
+# Alternative : jeton hors fichier de configuration.
+# EnvironmentFile=-/etc/tpe-bridge.env   (BRIDGE_TOKEN=...)
+ExecStart=/usr/bin/node /opt/tpe-bridge/dist/index.js
+Restart=always
+RestartSec=3
+KillSignal=SIGTERM
+TimeoutStopSec=10
+
+# Durcissement (le pont n'écrit rien sur disque hors journal).
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/opt/tpe-bridge
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=true
+MemoryDenyWriteExecute=false
+
+[Install]
+WantedBy=multi-user.target
