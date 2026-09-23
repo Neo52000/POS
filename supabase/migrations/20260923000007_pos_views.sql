@@ -1,5 +1,5 @@
 -- =============================================================================
--- POS NF525 — 0007 : vues d'exploitation
+-- POS NF525 — 0007 (projet « Pos ») : vues d'exploitation
 -- -----------------------------------------------------------------------------
 -- * pos_transactions_to_invoice : ventes avec « facture pro » demandée, pour
 --   rapprochement par l'ERP (ma-papeterie) — V1 : ticket + rapprochement, pas

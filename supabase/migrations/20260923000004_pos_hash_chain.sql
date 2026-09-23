@@ -504,4 +504,22 @@ END;
 $$;
 COMMENT ON FUNCTION public.pos_verify_events_chain(uuid) IS 'POS NF525 : vérifie la chaîne du journal des événements (JET) d''une caisse (NULL = événements globaux).';
 
-REVOKE EXECUTE ON FUNCTION public.pos_events_before_insert() FROM anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.pos_events_before_insert() FROM PUBLIC, anon, authenticated;
+
+-- Fonctions de hash : pures, exécutables par les rôles applicatifs (vérification côté client autorisée)
+REVOKE EXECUTE ON FUNCTION
+  public.pos_sha256(text), public.pos_canonical_qty(numeric), public.pos_canonical_discount(numeric), public.pos_canonical_rate(numeric),
+  public.pos_canonical_ts(timestamptz), public.pos_canonical_vat_breakdown(jsonb), public.pos_lines_digest_from_json(jsonb),
+  public.pos_payments_digest_from_json(jsonb), public.pos_lines_digest(uuid), public.pos_payments_digest(uuid),
+  public.pos_build_canonical_txn(bigint, text, uuid, timestamptz, text, bigint, bigint, bigint, jsonb, uuid, text, text, text),
+  public.pos_canonical_txn(uuid), public.pos_compute_txn_hash(uuid), public.pos_verify_chain(uuid, bigint, bigint),
+  public.pos_event_hash(bigint, uuid, text, jsonb, timestamptz, text), public.pos_verify_events_chain(uuid)
+FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION
+  public.pos_sha256(text), public.pos_canonical_qty(numeric), public.pos_canonical_discount(numeric), public.pos_canonical_rate(numeric),
+  public.pos_canonical_ts(timestamptz), public.pos_canonical_vat_breakdown(jsonb), public.pos_lines_digest_from_json(jsonb),
+  public.pos_payments_digest_from_json(jsonb), public.pos_lines_digest(uuid), public.pos_payments_digest(uuid),
+  public.pos_build_canonical_txn(bigint, text, uuid, timestamptz, text, bigint, bigint, bigint, jsonb, uuid, text, text, text),
+  public.pos_canonical_txn(uuid), public.pos_compute_txn_hash(uuid), public.pos_verify_chain(uuid, bigint, bigint),
+  public.pos_event_hash(bigint, uuid, text, jsonb, timestamptz, text), public.pos_verify_events_chain(uuid)
+TO authenticated, service_role;

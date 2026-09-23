@@ -66,13 +66,21 @@ async function main(): Promise<void> {
   });
 
   const local = verifyChain(chained, computeTransactionHash);
-  const { data: sqlCheck, error: sqlErr } = await db.rpc('pos_verify_chain', { p_register_id: reg.id });
+  const { data: sqlCheck, error: sqlErr } = await db.rpc('pos_verify_chain', {
+    p_register_id: reg.id,
+  });
   if (sqlErr) throw sqlErr;
   const sqlRow = Array.isArray(sqlCheck) ? sqlCheck[0] : sqlCheck;
 
   console.log(`Caisse ${reg.code} — ${chained.length} tickets`);
-  console.log('Vérification locale (@pos/core) :', local.ok ? 'OK' : `RUPTURE ${JSON.stringify(local)}`);
-  console.log('Vérification SQL (pos_verify_chain) :', sqlRow?.ok ? 'OK' : `RUPTURE ${JSON.stringify(sqlRow)}`);
+  console.log(
+    'Vérification locale (@pos/core) :',
+    local.ok ? 'OK' : `RUPTURE ${JSON.stringify(local)}`,
+  );
+  console.log(
+    'Vérification SQL (pos_verify_chain) :',
+    sqlRow?.ok ? 'OK' : `RUPTURE ${JSON.stringify(sqlRow)}`,
+  );
   process.exit(local.ok && sqlRow?.ok ? 0 : 1);
 }
 

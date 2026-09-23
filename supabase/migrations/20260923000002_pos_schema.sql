@@ -1,6 +1,11 @@
 -- =============================================================================
--- POS NF525 — 0002 : helper is_pos() + schéma des tables pos_*
+-- POS NF525 — 0002 (projet « Pos ») : schéma des tables pos_*
 -- -----------------------------------------------------------------------------
+-- Base dédiée : aucune FK vers les données ma-papeterie. product_id /
+-- customer_account_id / quote_id sont de simples uuid (identifiants
+-- ma-papeterie). Les mouvements de stock sont poussés vers ma-papeterie par une
+-- outbox (pos_stock_sync) traitée par l'Edge Function pos-stock-sync.
+--
 -- Conventions (docs/SPEC.md §1) :
 --   * montants en centimes -> bigint (jamais de flottant) ;
 --   * taux de TVA -> numeric(5,2) (20.00, 5.50, 10.00, 2.10, 0.00) ;
@@ -11,34 +16,6 @@
 -- l'immutabilité est garantie par triggers (0003) et le chaînage SHA-256 (0004).
 -- Idempotent : CREATE TABLE IF NOT EXISTS / CREATE OR REPLACE / ON CONFLICT.
 -- =============================================================================
-
--- -----------------------------------------------------------------------------
--- is_pos() : vrai si l'appelant a le droit d'utiliser la caisse.
---   * session_user <> 'authenticator' : connexion directe (psql, MCP, pg_cron,
---     dashboard) -> considérée comme opérateur de confiance ;
---   * JWT service_role (Edge Functions en mode cron) ;
---   * utilisateur authentifié avec le rôle 'pos' ou admin.
--- -----------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.is_pos()
-RETURNS boolean
-LANGUAGE sql
-STABLE
-SECURITY DEFINER
-SET search_path = public, extensions, pg_temp
-AS $$
-  SELECT session_user <> 'authenticator'
-      OR coalesce(auth.jwt() ->> 'role', '') = 'service_role'
-      OR (
-        auth.uid() IS NOT NULL
-        AND (
-          coalesce(public.has_role(auth.uid(), 'pos'::public.app_role), false)
-          OR coalesce(public.is_admin(), false)
-        )
-      );
-$$;
-
-COMMENT ON FUNCTION public.is_pos() IS
-  'POS NF525 : vrai si l''appelant peut utiliser la caisse (rôle pos, admin, service_role ou connexion directe hors PostgREST).';
 
 -- -----------------------------------------------------------------------------
 -- pos_registers : les caisses (une par poste physique / système Fiskaly)
@@ -63,7 +40,7 @@ CREATE TABLE IF NOT EXISTS public.pos_settings (
   value      jsonb       NOT NULL,
   updated_at timestamptz NOT NULL DEFAULT now()
 );
-COMMENT ON TABLE public.pos_settings IS 'POS NF525 : paramètres (legal, ticket_footer, offline_max_txns, offline_max_hours, software). Écriture admin uniquement.';
+COMMENT ON TABLE public.pos_settings IS 'POS NF525 : paramètres (legal, ticket_footer, offline_max_txns, offline_max_hours, software). Écriture is_pos_admin() uniquement.';
 
 -- -----------------------------------------------------------------------------
 -- pos_counters : numérotation continue par caisse, verrouillée par UPDATE ... RETURNING
@@ -93,6 +70,7 @@ BEGIN
 END;
 $$;
 COMMENT ON FUNCTION public.pos_registers_init_counters() IS 'POS NF525 : trigger AFTER INSERT sur pos_registers, crée les compteurs à 0.';
+REVOKE EXECUTE ON FUNCTION public.pos_registers_init_counters() FROM PUBLIC, anon, authenticated;
 
 DROP TRIGGER IF EXISTS trg_pos_registers_init_counters ON public.pos_registers;
 CREATE TRIGGER trg_pos_registers_init_counters
@@ -140,9 +118,10 @@ CREATE TABLE IF NOT EXISTS public.pos_transactions (
   business_date            date        NOT NULL,                     -- (business_at AT TIME ZONE 'Europe/Paris')::date
   received_at              timestamptz NOT NULL DEFAULT now(),       -- heure serveur
   cashier_id               uuid        NOT NULL,                     -- auth.users.id
-  customer_account_id      uuid,                                     -- customer_accounts.id (sans FK)
+  customer_account_id      uuid,                                     -- customer_accounts.id ma-papeterie (sans FK)
   customer_snapshot        jsonb,                                    -- {display_name, company_name, siret, vat_number, ...}
-  quote_id                 uuid,                                     -- client_quotes.id (sans FK)
+  quote_id                 uuid,                                     -- client_quotes.id ma-papeterie (sans FK)
+  quote_number             text,                                     -- n° de devis (fourni par l'Edge Function, pour le ticket)
   invoice_requested        boolean     NOT NULL DEFAULT false,
   total_ht_cents           bigint      NOT NULL,
   total_vat_cents          bigint      NOT NULL,
@@ -184,7 +163,7 @@ CREATE TABLE IF NOT EXISTS public.pos_transaction_lines (
   id                    uuid          PRIMARY KEY DEFAULT gen_random_uuid(),
   transaction_id        uuid          NOT NULL REFERENCES public.pos_transactions (id),
   line_no               int           NOT NULL,
-  product_id            uuid,                                        -- products.id (sans FK : le produit peut disparaître)
+  product_id            uuid,                                        -- products.id ma-papeterie (sans FK)
   ean                   text,
   sku                   text,
   label                 text          NOT NULL,
@@ -224,23 +203,27 @@ COMMENT ON TABLE public.pos_payments IS 'POS NF525 : paiements (cb, cash, cheque
 CREATE INDEX IF NOT EXISTS pos_payments_transaction_idx ON public.pos_payments (transaction_id);
 
 -- -----------------------------------------------------------------------------
--- pos_stock_movements : journal des mouvements de stock_boutique (immutables)
+-- pos_stock_sync : outbox des mouvements de stock à appliquer côté ma-papeterie
+-- (products.stock_boutique via la fonction bridge pos_apply_stock_movements).
+-- Une ligne par ligne de ticket avec product_id ; idempotency_key =
+-- transaction_id || ':' || line_no. Traitée par l'Edge Function pos-stock-sync.
 -- -----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS public.pos_stock_movements (
-  id             uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
-  transaction_id uuid        REFERENCES public.pos_transactions (id), -- NULL pour un ajustement / inventaire
-  product_id     uuid        NOT NULL,
-  qty_delta      int         NOT NULL,
-  stock_before   int         NOT NULL,
-  stock_after    int         NOT NULL,
-  went_negative  boolean     NOT NULL DEFAULT false,
-  reason         text        NOT NULL,                               -- sale | refund | adjustment | inventory ...
-  created_by     uuid,
-  created_at     timestamptz NOT NULL DEFAULT now()
+CREATE TABLE IF NOT EXISTS public.pos_stock_sync (
+  id                 bigserial   PRIMARY KEY,
+  transaction_id     uuid        NOT NULL REFERENCES public.pos_transactions (id),
+  product_id         uuid        NOT NULL,                             -- products.id (ma-papeterie)
+  qty_delta          int         NOT NULL,                             -- vente : -qty ; remboursement : +|qty|
+  idempotency_key    text        NOT NULL UNIQUE,
+  status             text        NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'done', 'failed')),
+  attempts           int         NOT NULL DEFAULT 0,
+  last_error         text,
+  remote_stock_after int,                                              -- stock_boutique renvoyé par ma-papeterie
+  created_at         timestamptz NOT NULL DEFAULT now(),
+  done_at            timestamptz
 );
-COMMENT ON TABLE public.pos_stock_movements IS 'POS NF525 : mouvements de products.stock_boutique générés par la caisse (stock négatif toléré, tracé).';
-CREATE INDEX IF NOT EXISTS pos_stock_movements_transaction_idx ON public.pos_stock_movements (transaction_id) WHERE transaction_id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS pos_stock_movements_product_idx     ON public.pos_stock_movements (product_id, created_at);
+COMMENT ON TABLE public.pos_stock_sync IS 'POS NF525 : outbox des mouvements de stock_boutique à synchroniser vers ma-papeterie (idempotent par idempotency_key).';
+CREATE INDEX IF NOT EXISTS pos_stock_sync_pending_idx     ON public.pos_stock_sync (id) WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS pos_stock_sync_transaction_idx ON public.pos_stock_sync (transaction_id);
 
 -- -----------------------------------------------------------------------------
 -- pos_closings : clôtures Z (daily), mensuelles et annuelles, chaînées

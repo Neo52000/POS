@@ -1,16 +1,24 @@
 -- =============================================================================
--- POS NF525 — 0005 : RPC (API SQL de la caisse)
+-- POS NF525 — 0005 (projet « Pos ») : RPC (API SQL de la caisse)
 -- -----------------------------------------------------------------------------
+-- Le catalogue, les clients, les tarifs négociés et le stock vivent dans
+-- ma-papeterie : voir supabase-mapapeterie/migrations (fonctions bridge
+-- pos_search_products, pos_product_by_ean, pos_catalog_page,
+-- pos_resolve_cart_prices, pos_customer_lookup, pos_customer_get,
+-- pos_customer_open_quotes, pos_apply_stock_movements, pos_adjust_stock_boutique).
+-- Ici : sessions, ventes (pos_finalize_sale), clôtures, JET, signature Fiskaly,
+-- outbox de stock (pos_stock_sync_*), lecture des tickets.
+--
 -- Toutes les fonctions d'écriture sont SECURITY DEFINER avec
 -- SET search_path = public, extensions, pg_temp et vérifient public.is_pos()
 -- (sinon ERRCODE 42501 / MESSAGE 'FORBIDDEN_ROLE'). Les erreurs métier
 -- utilisent ERRCODE 'P0001' avec MESSAGE = code (docs/SPEC.md §5) et un DETAIL
 -- JSON : SESSION_NOT_OPEN, TOTALS_MISMATCH, PAYMENTS_MISMATCH,
--- REFUND_EXCEEDS_SOLD, REFUND_TARGET_NOT_FOUND, QUOTE_NOT_FOUND, VALIDATION,
--- SESSION_ALREADY_OPEN, REGISTER_NOT_FOUND, TRANSACTION_NOT_FOUND,
--- CHAIN_INCONSISTENT.
+-- REFUND_EXCEEDS_SOLD, REFUND_TARGET_NOT_FOUND, VALIDATION, SESSION_ALREADY_OPEN,
+-- REGISTER_NOT_FOUND, TRANSACTION_NOT_FOUND, CLOSING_NOT_FOUND, CHAIN_INCONSISTENT.
 -- Le calcul du panier (pos_compute_cart) est le portage exact de
--- packages/core/src/cart.ts (SPEC §2).
+-- packages/core/src/cart.ts (SPEC §2). pos_finalize_sale ne touche jamais aux
+-- données ma-papeterie (products) : le stock passe par l'outbox pos_stock_sync.
 -- =============================================================================
 
 -- -----------------------------------------------------------------------------
@@ -46,18 +54,6 @@ END;
 $$;
 COMMENT ON FUNCTION public.pos_require_pos() IS 'POS NF525 : lève FORBIDDEN_ROLE (42501) si is_pos() est faux.';
 
-CREATE OR REPLACE FUNCTION public.pos_is_service_role()
-RETURNS boolean
-LANGUAGE sql
-STABLE
-SECURITY DEFINER
-SET search_path = public, extensions, pg_temp
-AS $$
-  SELECT coalesce(auth.jwt() ->> 'role', '') = 'service_role'
-      OR session_user <> 'authenticator';
-$$;
-COMMENT ON FUNCTION public.pos_is_service_role() IS 'POS NF525 : vrai pour le service role (Edge Functions / crons) ou une connexion directe hors PostgREST.';
-
 CREATE OR REPLACE FUNCTION public.pos_require_service_role()
 RETURNS void
 LANGUAGE plpgsql
@@ -74,48 +70,23 @@ $$;
 COMMENT ON FUNCTION public.pos_require_service_role() IS 'POS NF525 : lève FORBIDDEN_ROLE (42501) si l''appelant n''est pas le service role.';
 
 -- -----------------------------------------------------------------------------
--- pos_user_display_name(uuid) : nom affichable d'un utilisateur (ticket)
--- Sonde public.profiles (colonnes full_name / display_name / first_name+last_name
--- si elles existent), puis auth.users.email, puis l'id.
+-- pos_user_display_name(uuid) : nom du caissier pour le ticket
+-- (auth.users du projet Pos : full_name / name des métadonnées, sinon email, sinon id)
 -- -----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.pos_user_display_name(p_user_id uuid)
 RETURNS text
-LANGUAGE plpgsql
+LANGUAGE sql
 STABLE
 SECURITY DEFINER
 SET search_path = public, extensions, pg_temp
 AS $$
-DECLARE
-  v_name text;
-  v_expr text;
-BEGIN
-  IF p_user_id IS NULL THEN
-    RETURN NULL;
-  END IF;
-
-  IF to_regclass('public.profiles') IS NOT NULL
-     AND EXISTS (SELECT 1 FROM information_schema.columns
-                 WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'id') THEN
-    SELECT string_agg(format('nullif(trim(%I::text), '''')', column_name), ', ' ORDER BY
-             CASE column_name WHEN 'display_name' THEN 1 WHEN 'full_name' THEN 2 WHEN 'first_name' THEN 3 WHEN 'last_name' THEN 4 END)
-    INTO v_expr
-    FROM information_schema.columns
-    WHERE table_schema = 'public' AND table_name = 'profiles'
-      AND column_name IN ('display_name', 'full_name', 'first_name', 'last_name');
-    IF v_expr IS NOT NULL THEN
-      EXECUTE format('SELECT nullif(trim(concat_ws('' '', %s)), '''') FROM public.profiles WHERE id = $1', v_expr)
-        INTO v_name USING p_user_id;
-    END IF;
-  END IF;
-
-  IF v_name IS NULL THEN
-    SELECT u.email INTO v_name FROM auth.users u WHERE u.id = p_user_id;
-  END IF;
-
-  RETURN coalesce(v_name, p_user_id::text);
-END;
+  SELECT coalesce(
+    (SELECT nullif(btrim(coalesce(u.raw_user_meta_data ->> 'full_name', u.raw_user_meta_data ->> 'name', u.email)), '')
+     FROM auth.users u WHERE u.id = p_user_id),
+    p_user_id::text
+  );
 $$;
-COMMENT ON FUNCTION public.pos_user_display_name(uuid) IS 'POS NF525 : nom du caissier pour le ticket (profiles si dispo, sinon email auth.users, sinon id).';
+COMMENT ON FUNCTION public.pos_user_display_name(uuid) IS 'POS NF525 : nom du caissier pour le ticket (métadonnées auth.users full_name/name, sinon email, sinon id).';
 
 -- -----------------------------------------------------------------------------
 -- Journal des événements (interne + RPC publique)
@@ -143,7 +114,7 @@ BEGIN
 END;
 $$;
 COMMENT ON FUNCTION public.pos_insert_event(uuid, uuid, uuid, text, jsonb, timestamptz) IS 'POS NF525 : insertion interne d''un événement JET (sans contrôle de rôle ; réservée aux autres RPC).';
-REVOKE EXECUTE ON FUNCTION public.pos_insert_event(uuid, uuid, uuid, text, jsonb, timestamptz) FROM anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.pos_insert_event(uuid, uuid, uuid, text, jsonb, timestamptz) FROM PUBLIC, anon, authenticated;
 
 CREATE OR REPLACE FUNCTION public.pos_log_event(
   p_event_type  text,
@@ -169,217 +140,6 @@ BEGIN
 END;
 $$;
 COMMENT ON FUNCTION public.pos_log_event(text, jsonb, timestamptz, uuid, uuid) IS 'POS NF525 : journalise un événement (login, logout, sale_abandoned, line_deleted, price_override, drawer_opened, reprint, offline_enter/exit, manual_cb_fallback...). Retourne l''id.';
-
--- -----------------------------------------------------------------------------
--- Catalogue : vue de projection + recherche / EAN / pagination keyset
--- -----------------------------------------------------------------------------
-CREATE OR REPLACE VIEW public.pos_catalog
-WITH (security_invoker = true)
-AS
-SELECT
-  p.id,
-  p.name,
-  p.brand,
-  p.ean,
-  p.image_url,
-  round(coalesce(p.public_price_ttc, p.price_ttc, 0) * 100)::bigint                                   AS price_ttc_cents,
-  -- HT dérivé du TTC affiché avec la formule SPEC §2 (informatif)
-  round(round(coalesce(p.public_price_ttc, p.price_ttc, 0) * 100) * 10000
-        / (10000 + round(round(coalesce(p.tva_rate, 20), 2) * 100)))::bigint                            AS price_ht_cents,
-  round(coalesce(p.tva_rate, 20), 2)                                                                     AS vat_rate,
-  round(coalesce(p.eco_tax, 0) * 100)::bigint                                                            AS eco_tax_cents,
-  coalesce(p.stock_boutique, 0)                                                                          AS stock_boutique,
-  p.pos_price_tiers,
-  p.manufacturer_code,
-  p.search_vector,
-  p.updated_at,
-  (coalesce(p.is_active, false) AND coalesce(p.is_vendable, false)
-     AND p.sales_channel IN ('both', 'pos'))                                                             AS pos_visible
-FROM public.products p;
-COMMENT ON VIEW public.pos_catalog IS 'POS NF525 : projection caisse de products (prix en centimes, TVA arrondie, stock_boutique, visibilité POS). security_invoker.';
-GRANT SELECT ON public.pos_catalog TO authenticated, service_role;
-
-CREATE OR REPLACE FUNCTION public.pos_search_products(p_query text, p_limit int DEFAULT 20)
-RETURNS TABLE (
-  id               uuid,
-  name             text,
-  brand            text,
-  ean              text,
-  image_url        text,
-  price_ttc_cents  bigint,
-  price_ht_cents   bigint,
-  vat_rate         numeric,
-  eco_tax_cents    bigint,
-  stock_boutique   int,
-  pos_price_tiers  jsonb
-)
-LANGUAGE plpgsql
-STABLE
-SECURITY INVOKER
-SET search_path = public, extensions, pg_temp
-AS $$
-DECLARE
-  v_q     text := btrim(coalesce(p_query, ''));
-  v_limit int  := least(greatest(coalesce(p_limit, 20), 1), 200);
-  v_tsq   tsquery;
-BEGIN
-  IF v_q = '' THEN
-    RETURN;
-  END IF;
-
-  -- Code-barres saisi/scanné : correspondance exacte prioritaire
-  IF v_q ~ '^\d{8,14}$' THEN
-    RETURN QUERY
-      SELECT c.id, c.name::text, c.brand::text, c.ean::text, c.image_url::text,
-             c.price_ttc_cents, c.price_ht_cents, c.vat_rate, c.eco_tax_cents, c.stock_boutique::int, c.pos_price_tiers
-      FROM public.pos_catalog c
-      WHERE c.pos_visible AND c.ean = v_q
-      ORDER BY c.name
-      LIMIT v_limit;
-    IF FOUND THEN
-      RETURN;
-    END IF;
-  END IF;
-
-  v_tsq := plainto_tsquery('french', v_q);
-
-  RETURN QUERY
-    SELECT c.id, c.name::text, c.brand::text, c.ean::text, c.image_url::text,
-           c.price_ttc_cents, c.price_ht_cents, c.vat_rate, c.eco_tax_cents, c.stock_boutique::int, c.pos_price_tiers
-    FROM public.pos_catalog c
-    WHERE c.pos_visible
-      AND (
-        (numnode(v_tsq) > 0 AND c.search_vector @@ v_tsq)
-        OR c.name ILIKE '%' || v_q || '%'
-        OR c.ean LIKE v_q || '%'
-        OR c.manufacturer_code ILIKE v_q || '%'
-      )
-    ORDER BY
-      CASE WHEN numnode(v_tsq) > 0 THEN ts_rank(c.search_vector, v_tsq) ELSE 0 END DESC,
-      c.name
-    LIMIT v_limit;
-END;
-$$;
-COMMENT ON FUNCTION public.pos_search_products(text, int) IS 'POS NF525 : recherche catalogue caisse (EAN exact prioritaire, sinon full-text french + ILIKE nom/EAN/code fabricant). Produits actifs, vendables, canal both|pos.';
-
-CREATE OR REPLACE FUNCTION public.pos_product_by_ean(p_ean text)
-RETURNS TABLE (
-  id               uuid,
-  name             text,
-  brand            text,
-  ean              text,
-  image_url        text,
-  price_ttc_cents  bigint,
-  price_ht_cents   bigint,
-  vat_rate         numeric,
-  eco_tax_cents    bigint,
-  stock_boutique   int,
-  pos_price_tiers  jsonb
-)
-LANGUAGE sql
-STABLE
-SECURITY INVOKER
-SET search_path = public, extensions, pg_temp
-AS $$
-  SELECT c.id, c.name::text, c.brand::text, c.ean::text, c.image_url::text,
-         c.price_ttc_cents, c.price_ht_cents, c.vat_rate, c.eco_tax_cents, c.stock_boutique::int, c.pos_price_tiers
-  FROM public.pos_catalog c
-  WHERE c.pos_visible AND c.ean = btrim(p_ean)
-  ORDER BY c.updated_at DESC NULLS LAST
-  LIMIT 1;
-$$;
-COMMENT ON FUNCTION public.pos_product_by_ean(text) IS 'POS NF525 : produit vendable en caisse par EAN exact (1 ligne max).';
-
-CREATE OR REPLACE FUNCTION public.pos_catalog_page(
-  p_after_id uuid DEFAULT NULL,
-  p_limit    int DEFAULT 5000,
-  p_since    timestamptz DEFAULT NULL
-)
-RETURNS TABLE (
-  id               uuid,
-  name             text,
-  brand            text,
-  ean              text,
-  image_url        text,
-  price_ttc_cents  bigint,
-  price_ht_cents   bigint,
-  vat_rate         numeric,
-  eco_tax_cents    bigint,
-  stock_boutique   int,
-  pos_price_tiers  jsonb,
-  updated_at       timestamptz,
-  pos_visible      boolean
-)
-LANGUAGE sql
-STABLE
-SECURITY INVOKER
-SET search_path = public, extensions, pg_temp
-AS $$
-  -- Synchro complète (p_since NULL) : produits visibles uniquement.
-  -- Synchro delta (p_since donné) : tout produit modifié depuis, y compris
-  -- ceux devenus invisibles (pos_visible = false) pour permettre leur retrait local.
-  SELECT c.id, c.name::text, c.brand::text, c.ean::text, c.image_url::text,
-         c.price_ttc_cents, c.price_ht_cents, c.vat_rate, c.eco_tax_cents, c.stock_boutique::int, c.pos_price_tiers,
-         c.updated_at, c.pos_visible
-  FROM public.pos_catalog c
-  WHERE (p_after_id IS NULL OR c.id > p_after_id)
-    AND (
-      (p_since IS NULL AND c.pos_visible)
-      OR (p_since IS NOT NULL AND c.updated_at > p_since)
-    )
-  ORDER BY c.id
-  LIMIT least(greatest(coalesce(p_limit, 5000), 1), 10000);
-$$;
-COMMENT ON FUNCTION public.pos_catalog_page(uuid, int, timestamptz) IS 'POS NF525 : pagination keyset (id) du catalogue caisse pour le cache hors ligne ; p_since = delta (inclut les produits devenus invisibles).';
-
--- -----------------------------------------------------------------------------
--- pos_resolve_cart_prices : tarif négocié B2B par ligne via resolve_price()
--- -----------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.pos_resolve_cart_prices(p_account_id uuid, p_lines jsonb)
-RETURNS TABLE (
-  product_id            uuid,
-  qty                   numeric,
-  unit_price_ht_cents   bigint,
-  unit_price_ttc_cents  bigint,
-  vat_rate              numeric,
-  rule_id               uuid,
-  rule_scope            text,
-  rule_mode             text,
-  rule_value            numeric,
-  public_price_ht_cents bigint
-)
-LANGUAGE plpgsql
-STABLE
-SECURITY DEFINER
-SET search_path = public, extensions, pg_temp
-AS $$
-BEGIN
-  PERFORM public.pos_require_pos();
-  IF p_lines IS NULL OR jsonb_typeof(p_lines) <> 'array' THEN
-    PERFORM public.pos_error('VALIDATION', '{"field":"p_lines","reason":"array expected"}'::jsonb);
-  END IF;
-
-  RETURN QUERY
-    SELECT
-      (e ->> 'product_id')::uuid,
-      coalesce((e ->> 'qty')::numeric, 1),
-      round(rp.unit_price_ht * 100)::bigint,
-      round(rp.unit_price_ht * 100 * (1 + round(rp.vat_rate, 2) / 100))::bigint,
-      round(rp.vat_rate, 2),
-      rp.rule_id,
-      rp.rule_scope::text,
-      rp.rule_mode::text,
-      rp.rule_value,
-      round(rp.public_price_ht * 100)::bigint
-    FROM jsonb_array_elements(p_lines) AS e
-    LEFT JOIN LATERAL public.resolve_price(
-      p_account_id,
-      (e ->> 'product_id')::uuid,
-      greatest(1, ceil(coalesce((e ->> 'qty')::numeric, 1)))::int
-    ) AS rp ON true;
-END;
-$$;
-COMMENT ON FUNCTION public.pos_resolve_cart_prices(uuid, jsonb) IS 'POS NF525 : rejoue resolve_price() pour chaque {product_id, qty} ; prix HT/TTC en centimes (TTC = round(HT×100×(1+taux/100))).';
 
 -- -----------------------------------------------------------------------------
 -- pos_compute_cart(jsonb) : calcul panier SPEC §2 (portage de cart.ts)
@@ -873,7 +633,6 @@ DECLARE
   v_reference      text;
   v_tendered       bigint := 0;
   v_has_cash       boolean := false;
-  v_line           jsonb;
   v_chk            record;
   v_snapshot       jsonb;
   v_ticket_number  bigint;
@@ -881,10 +640,6 @@ DECLARE
   v_lines_digest   text;
   v_pay_digest     text;
   v_hash           text;
-  v_product_id     uuid;
-  v_delta          int;
-  v_before         int;
-  v_after          int;
   v_lines_out      jsonb;
   v_payments_out   jsonb;
 BEGIN
@@ -1074,22 +829,12 @@ BEGIN
   END IF;
 
   -- ------------------------------------------------------- client / devis
-  IF v_customer_id IS NOT NULL THEN
-    SELECT jsonb_strip_nulls(jsonb_build_object(
-             'display_name',  c.display_name,
-             'company_name',  c.company_name,
-             'siret',         c.siret,
-             'vat_number',    c.vat_number,
-             'kind',          c.kind,
-             'customer_type', c.customer_type,
-             'email',         c.email))
-    INTO v_snapshot
-    FROM public.customer_360 c
-    WHERE c.id = v_customer_id;
-    -- client inconnu : on conserve l'identifiant, sans snapshot
-  END IF;
-  IF v_quote_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.client_quotes q WHERE q.id = v_quote_id) THEN
-    PERFORM public.pos_error('QUOTE_NOT_FOUND', jsonb_build_object('quote_id', v_quote_id));
+  -- Le snapshot client (customer_360 ma-papeterie) est fourni par l'Edge
+  -- Function pos-checkout via le bridge pos_customer_get ; quote_id /
+  -- quote_number sont vérifiés par l'Edge Function (QUOTE_NOT_FOUND) et
+  -- stockés tels quels.
+  IF jsonb_typeof(p_payload -> 'customer_snapshot') = 'object' THEN
+    v_snapshot := jsonb_strip_nulls(p_payload -> 'customer_snapshot');
   END IF;
 
   -- -------------------------------------------- numérotation + chaînage
@@ -1122,14 +867,14 @@ BEGIN
   INSERT INTO public.pos_transactions (
     client_txn_id, register_id, session_id, ticket_number, kind,
     refund_of_transaction_id, refund_reason, business_at, business_date, cashier_id,
-    customer_account_id, customer_snapshot, quote_id, invoice_requested,
+    customer_account_id, customer_snapshot, quote_id, quote_number, invoice_requested,
     total_ht_cents, total_vat_cents, total_ttc_cents, vat_breakdown,
     tendered_cents, change_cents, offline_queued, provisional_ref,
     prev_hash, hash, hash_version, signature_status, app_version
   ) VALUES (
     v_client_txn_id, v_register_id, v_session_id, v_ticket_number, v_kind,
     v_refund_of, v_refund_reason, v_business_at, (v_business_at AT TIME ZONE 'Europe/Paris')::date, v_cashier_id,
-    v_customer_id, v_snapshot, v_quote_id, coalesce((p_payload ->> 'invoice_requested')::boolean, false),
+    v_customer_id, v_snapshot, v_quote_id, nullif(p_payload ->> 'quote_number', ''), coalesce((p_payload ->> 'invoice_requested')::boolean, false),
     (v_totals ->> 'total_ht_cents')::bigint, (v_totals ->> 'total_vat_cents')::bigint, (v_totals ->> 'total_ttc_cents')::bigint,
     v_cart -> 'vat_breakdown',
     v_tendered, v_change, coalesce((p_payload ->> 'offline_queued')::boolean, false), nullif(p_payload ->> 'provisional_ref', ''),
@@ -1154,30 +899,19 @@ BEGIN
   SELECT v_txn.id, p ->> 'method', (p ->> 'amount_cents')::bigint, p ->> 'reference', p -> 'tpe_response', (p ->> 'manual_fallback')::boolean
   FROM jsonb_array_elements(v_payments) p;
 
-  -- ------------------------------------------------------------- stock
-  -- stock_boutique uniquement (le trigger existant propage vers product_stock_locations).
-  -- Négatif toléré : tracé (went_negative) + événement stock_negative.
-  FOR v_line IN SELECT * FROM jsonb_array_elements(v_cart -> 'lines') LOOP
-    v_product_id := (v_line ->> 'product_id')::uuid;
-    CONTINUE WHEN v_product_id IS NULL;
-    v_delta := -(((v_line ->> 'qty')::numeric)::int);   -- vente : qty > 0 -> décrément ; remboursement : qty < 0 -> recrédit
-    CONTINUE WHEN v_delta = 0;
-
-    SELECT coalesce(p.stock_boutique, 0) INTO v_before FROM public.products p WHERE p.id = v_product_id FOR UPDATE;
-    CONTINUE WHEN NOT FOUND;
-
-    UPDATE public.products p SET stock_boutique = v_before + v_delta WHERE p.id = v_product_id
-    RETURNING p.stock_boutique INTO v_after;
-
-    INSERT INTO public.pos_stock_movements (transaction_id, product_id, qty_delta, stock_before, stock_after, went_negative, reason, created_by)
-    VALUES (v_txn.id, v_product_id, v_delta, v_before, v_after, v_after < 0, v_kind, v_cashier_id);
-
-    IF v_after < 0 THEN
-      PERFORM public.pos_insert_event(v_register_id, v_session_id, v_cashier_id, 'stock_negative',
-        jsonb_build_object('product_id', v_product_id, 'stock_before', v_before, 'stock_after', v_after,
-                           'transaction_id', v_txn.id, 'ticket_number', v_ticket_number));
-    END IF;
-  END LOOP;
+  -- ------------------------------------------------------- stock (outbox)
+  -- Le stock_boutique vit dans ma-papeterie : une ligne d'outbox par ligne de
+  -- ticket avec product_id, appliquée par l'Edge Function pos-stock-sync
+  -- (bridge pos_apply_stock_movements, idempotent). Vente : -qty ;
+  -- remboursement : +|qty|. Les quantités fractionnaires sont arrondies (::int).
+  INSERT INTO public.pos_stock_sync (transaction_id, product_id, qty_delta, idempotency_key)
+  SELECT v_txn.id,
+         (l ->> 'product_id')::uuid,
+         -(((l ->> 'qty')::numeric)::int),
+         v_txn.id::text || ':' || (l ->> 'line_no')
+  FROM jsonb_array_elements(v_cart -> 'lines') l
+  WHERE nullif(l ->> 'product_id', '') IS NOT NULL
+    AND ((l ->> 'qty')::numeric)::int <> 0;
 
   -- ------------------------------------------------------------- JET
   PERFORM public.pos_insert_event(v_register_id, v_session_id, v_cashier_id, v_kind,
@@ -1201,153 +935,60 @@ BEGIN
 END;
 $$;
 COMMENT ON FUNCTION public.pos_finalize_sale(jsonb) IS
-  'POS NF525 : finalise une vente/remboursement (CheckoutPayload SPEC §4) : idempotence client_txn_id, session ouverte, recalcul serveur (TOTALS_MISMATCH), contrôle paiements (PAYMENTS_MISMATCH), contrôle remboursement, numéro continu, hash chaîné, lignes, paiements, stock_boutique, JET. Retourne {transaction, lines, payments, idempotent_replay}.';
+  'POS NF525 : finalise une vente/remboursement (CheckoutPayload SPEC §4 + customer_snapshot/quote_number/cashier_id fournis par l''Edge) : idempotence client_txn_id, session ouverte, recalcul serveur (TOTALS_MISMATCH), contrôle paiements (PAYMENTS_MISMATCH), contrôle remboursement, numéro continu, hash chaîné, lignes, paiements, outbox stock, JET. Retourne {transaction, lines, payments, idempotent_replay}.';
 
 -- -----------------------------------------------------------------------------
--- pos_adjust_stock_boutique : ajustement manuel / inventaire
+-- Outbox stock (service role : Edge Function pos-stock-sync)
 -- -----------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.pos_adjust_stock_boutique(p_product_id uuid, p_delta int, p_reason text)
-RETURNS int
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public, extensions, pg_temp
-AS $$
-DECLARE
-  v_before int;
-  v_after  int;
-  v_user   uuid := auth.uid();
-BEGIN
-  PERFORM public.pos_require_pos();
-  IF p_delta IS NULL OR p_delta = 0 THEN
-    PERFORM public.pos_error('VALIDATION', '{"field":"p_delta","reason":"non-zero integer required"}'::jsonb);
-  END IF;
-  IF nullif(btrim(coalesce(p_reason, '')), '') IS NULL THEN
-    PERFORM public.pos_error('VALIDATION', '{"field":"p_reason","reason":"required"}'::jsonb);
-  END IF;
-
-  SELECT coalesce(p.stock_boutique, 0) INTO v_before FROM public.products p WHERE p.id = p_product_id FOR UPDATE;
-  IF NOT FOUND THEN
-    PERFORM public.pos_error('PRODUCT_NOT_FOUND', jsonb_build_object('product_id', p_product_id));
-  END IF;
-
-  UPDATE public.products p SET stock_boutique = v_before + p_delta WHERE p.id = p_product_id
-  RETURNING p.stock_boutique INTO v_after;
-
-  INSERT INTO public.pos_stock_movements (transaction_id, product_id, qty_delta, stock_before, stock_after, went_negative, reason, created_by)
-  VALUES (NULL, p_product_id, p_delta, v_before, v_after, v_after < 0, btrim(p_reason), v_user);
-
-  PERFORM public.pos_insert_event(NULL, NULL, v_user, 'stock_adjustment',
-    jsonb_build_object('product_id', p_product_id, 'delta', p_delta, 'stock_before', v_before, 'stock_after', v_after, 'reason', btrim(p_reason)));
-
-  RETURN v_after;
-END;
-$$;
-COMMENT ON FUNCTION public.pos_adjust_stock_boutique(uuid, int, text) IS 'POS NF525 : ajuste products.stock_boutique (inventaire, correction) avec mouvement tracé et événement stock_adjustment. Retourne le stock après.';
-
--- -----------------------------------------------------------------------------
--- Clients pro (customer_360 / client_quotes en RLS deny-all -> SECURITY DEFINER)
--- -----------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.pos_customer_lookup(p_query text, p_limit int DEFAULT 10)
-RETURNS TABLE (
-  id                  uuid,
-  display_name        text,
-  company_name        text,
-  siret               text,
-  vat_number          text,
-  kind                text,
-  customer_type       text,
-  payment_terms_days  int,
-  pricing_rules_count int,
-  open_quotes_count   int,
-  revenue_ttc_12m     numeric,
-  email               text,
-  phone               text
-)
+CREATE OR REPLACE FUNCTION public.pos_stock_sync_pending(p_limit int DEFAULT 100)
+RETURNS SETOF public.pos_stock_sync
 LANGUAGE plpgsql
 STABLE
 SECURITY DEFINER
 SET search_path = public, extensions, pg_temp
 AS $$
-DECLARE
-  v_q text := btrim(coalesce(p_query, ''));
 BEGIN
-  PERFORM public.pos_require_pos();
-  IF v_q = '' THEN
-    RETURN;
-  END IF;
-
+  PERFORM public.pos_require_service_role();
   RETURN QUERY
-    SELECT c.id,
-           c.display_name::text,
-           c.company_name::text,
-           c.siret::text,
-           c.vat_number::text,
-           c.kind::text,
-           c.customer_type::text,
-           c.payment_terms_days::int,
-           coalesce(c.pricing_rules_count, 0)::int,
-           coalesce(c.open_quotes_count, 0)::int,
-           coalesce(c.revenue_ttc_12m, 0)::numeric,
-           c.email::text,
-           c.phone::text
-    FROM public.customer_360 c
-    WHERE c.display_name ILIKE '%' || v_q || '%'
-       OR c.company_name ILIKE '%' || v_q || '%'
-       OR c.email        ILIKE '%' || v_q || '%'
-       OR c.siret        ILIKE v_q || '%'
-       OR c.phone        ILIKE '%' || v_q || '%'
-    ORDER BY (c.kind = 'b2b') DESC, c.company_name NULLS LAST, c.display_name
-    LIMIT least(greatest(coalesce(p_limit, 10), 1), 50);
+    SELECT s.*
+    FROM public.pos_stock_sync s
+    WHERE s.status = 'pending'
+    ORDER BY s.id
+    LIMIT least(greatest(coalesce(p_limit, 100), 1), 1000);
 END;
 $$;
-COMMENT ON FUNCTION public.pos_customer_lookup(text, int) IS 'POS NF525 : recherche client (customer_360) par nom, société, email, SIRET, téléphone ; B2B en premier.';
+COMMENT ON FUNCTION public.pos_stock_sync_pending(int) IS 'POS NF525 (service role) : mouvements de stock en attente de synchronisation vers ma-papeterie, par id croissant.';
 
-CREATE OR REPLACE FUNCTION public.pos_customer_open_quotes(p_account_id uuid)
-RETURNS jsonb
+CREATE OR REPLACE FUNCTION public.pos_stock_sync_mark(
+  p_id                 bigint,
+  p_status             text,
+  p_error              text,
+  p_remote_stock_after int
+)
+RETURNS void
 LANGUAGE plpgsql
-STABLE
 SECURITY DEFINER
 SET search_path = public, extensions, pg_temp
 AS $$
-DECLARE
-  v_result jsonb;
 BEGIN
-  PERFORM public.pos_require_pos();
+  PERFORM public.pos_require_service_role();
+  IF p_status IS NULL OR p_status NOT IN ('pending', 'done', 'failed') THEN
+    PERFORM public.pos_error('VALIDATION', '{"field":"p_status","reason":"pending|done|failed"}'::jsonb);
+  END IF;
 
-  SELECT coalesce(jsonb_agg(jsonb_build_object(
-           'quote_id',     q.id,
-           'quote_number', q.quote_number,
-           'status',       q.status,
-           'valid_until',  q.valid_until,
-           'subtotal_ht',  q.subtotal_ht,
-           'vat_amount',   q.vat_amount,
-           'total_ttc',    q.total_ttc,
-           'created_at',   q.created_at,
-           'items',        coalesce((
-             SELECT jsonb_agg(jsonb_build_object(
-                      'product_id',       i.product_id,
-                      'label',            i.product_name_snapshot,
-                      'quantity',         i.quantity,
-                      'unit_price_ht',    i.unit_price_ht,
-                      'unit_price_ttc',   i.unit_price_ttc,
-                      'discount_percent', coalesce(i.discount_percent, 0),
-                      'vat_rate',         round(coalesce(i.vat_rate_snapshot, p.tva_rate, 20), 2),
-                      'sort_order',       i.sort_order
-                    ) ORDER BY i.sort_order, i.id)
-             FROM public.client_quote_items i
-             LEFT JOIN public.products p ON p.id = i.product_id
-             WHERE i.quote_id = q.id
-           ), '[]'::jsonb)
-         ) ORDER BY q.created_at DESC), '[]'::jsonb)
-  INTO v_result
-  FROM public.client_quotes q
-  WHERE q.customer_id = p_account_id
-    AND q.status IN ('sent', 'draft');
-
-  RETURN v_result;
+  UPDATE public.pos_stock_sync s
+  SET status             = p_status,
+      attempts           = s.attempts + 1,
+      last_error         = CASE WHEN p_status = 'done' THEN NULL ELSE coalesce(p_error, s.last_error) END,
+      remote_stock_after = coalesce(p_remote_stock_after, s.remote_stock_after),
+      done_at            = CASE WHEN p_status = 'done' THEN now() ELSE s.done_at END
+  WHERE s.id = p_id;
+  IF NOT FOUND THEN
+    PERFORM public.pos_error('STOCK_SYNC_NOT_FOUND', jsonb_build_object('id', p_id));
+  END IF;
 END;
 $$;
-COMMENT ON FUNCTION public.pos_customer_open_quotes(uuid) IS 'POS NF525 : devis ouverts (draft, sent) d''un compte client avec leurs lignes (vat_rate = snapshot ou tva produit ou 20).';
+COMMENT ON FUNCTION public.pos_stock_sync_mark(bigint, text, text, int) IS 'POS NF525 (service role) : résultat d''une tentative de synchronisation d''un mouvement de stock (attempts++, done_at si done, remote_stock_after).';
 
 -- -----------------------------------------------------------------------------
 -- Signature Fiskaly (service role uniquement)
@@ -1459,7 +1100,6 @@ DECLARE
   v_txn       public.pos_transactions;
   v_register  public.pos_registers;
   v_refund_of jsonb;
-  v_quote_no  text;
 BEGIN
   PERFORM public.pos_require_pos();
 
@@ -1473,9 +1113,6 @@ BEGIN
     SELECT jsonb_build_object('transaction_id', t.id, 'ticket_number', t.ticket_number, 'business_at', t.business_at)
     INTO v_refund_of
     FROM public.pos_transactions t WHERE t.id = v_txn.refund_of_transaction_id;
-  END IF;
-  IF v_txn.quote_id IS NOT NULL THEN
-    SELECT q.quote_number INTO v_quote_no FROM public.client_quotes q WHERE q.id = v_txn.quote_id;
   END IF;
 
   RETURN jsonb_build_object(
@@ -1493,7 +1130,7 @@ BEGIN
       'software',      (SELECT s.value FROM public.pos_settings s WHERE s.key = 'software')),
     'cashier_name', public.pos_user_display_name(v_txn.cashier_id),
     'refund_of',    v_refund_of,
-    'quote_number', v_quote_no
+    'quote_number', v_txn.quote_number
   );
 END;
 $$;
@@ -1521,18 +1158,28 @@ $$;
 COMMENT ON FUNCTION public.pos_today_transactions(uuid, date) IS 'POS NF525 : tickets d''une caisse pour une date métier (Europe/Paris), du plus récent au plus ancien.';
 
 -- -----------------------------------------------------------------------------
--- Droits d'exécution : anon n'exécute rien ; authenticated exécute les RPC
--- (le contrôle fin est fait par is_pos() / service role dans chaque fonction).
+-- Droits d'exécution : PUBLIC et anon n'exécutent rien ; authenticated et
+-- service_role exécutent les RPC (le contrôle fin — is_pos() / service role —
+-- est fait dans chaque fonction).
 -- -----------------------------------------------------------------------------
 REVOKE EXECUTE ON FUNCTION
-  public.pos_error(text, jsonb), public.pos_require_pos(), public.pos_is_service_role(), public.pos_require_service_role(),
+  public.pos_error(text, jsonb), public.pos_require_pos(), public.pos_require_service_role(),
   public.pos_user_display_name(uuid), public.pos_log_event(text, jsonb, timestamptz, uuid, uuid),
-  public.pos_search_products(text, int), public.pos_product_by_ean(text), public.pos_catalog_page(uuid, int, timestamptz),
-  public.pos_resolve_cart_prices(uuid, jsonb), public.pos_compute_cart(jsonb),
+  public.pos_compute_cart(jsonb),
   public.pos_open_session(uuid, bigint, uuid), public.pos_compute_closing(uuid, text, timestamptz, timestamptz, uuid, uuid),
   public.pos_close_session(uuid, bigint, text, uuid), public.pos_finalize_sale(jsonb),
-  public.pos_adjust_stock_boutique(uuid, int, text), public.pos_customer_lookup(text, int), public.pos_customer_open_quotes(uuid),
+  public.pos_stock_sync_pending(int), public.pos_stock_sync_mark(bigint, text, text, int),
   public.pos_mark_signature(uuid, text, text, text, jsonb, text), public.pos_pending_signatures(int),
-  public.pos_mark_closing_synced(uuid, text, jsonb), public.pos_transaction_full(uuid), public.pos_today_transactions(uuid, date),
-  public.pos_verify_chain(uuid, bigint, bigint), public.pos_verify_events_chain(uuid)
-FROM anon;
+  public.pos_mark_closing_synced(uuid, text, jsonb), public.pos_transaction_full(uuid), public.pos_today_transactions(uuid, date)
+FROM PUBLIC, anon;
+
+GRANT EXECUTE ON FUNCTION
+  public.pos_error(text, jsonb), public.pos_require_pos(), public.pos_require_service_role(),
+  public.pos_user_display_name(uuid), public.pos_log_event(text, jsonb, timestamptz, uuid, uuid),
+  public.pos_compute_cart(jsonb),
+  public.pos_open_session(uuid, bigint, uuid), public.pos_compute_closing(uuid, text, timestamptz, timestamptz, uuid, uuid),
+  public.pos_close_session(uuid, bigint, text, uuid), public.pos_finalize_sale(jsonb),
+  public.pos_stock_sync_pending(int), public.pos_stock_sync_mark(bigint, text, text, int),
+  public.pos_mark_signature(uuid, text, text, text, jsonb, text), public.pos_pending_signatures(int),
+  public.pos_mark_closing_synced(uuid, text, jsonb), public.pos_transaction_full(uuid), public.pos_today_transactions(uuid, date)
+TO authenticated, service_role;

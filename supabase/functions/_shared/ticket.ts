@@ -124,7 +124,13 @@ export function buildTicketPayload(full: Json, opts: { duplicate?: boolean } = {
       ...(p.reference ? { reference: String(p.reference) } : {}),
     })),
     change_cents: change,
-    footer: { lines: Array.isArray(settings.ticket_footer) ? settings.ticket_footer.map(String) : [] },
+    footer: {
+      lines: Array.isArray(settings.ticket_footer)
+        ? settings.ticket_footer.map(String)
+        : Array.isArray(settings.ticket_footer?.lines)
+          ? settings.ticket_footer.lines.map(String)
+          : [],
+    },
     compliance: {
       hash_short: String(t.hash ?? '').slice(0, 8),
       signature_status: String(t.signature_status ?? 'pending_signature'),

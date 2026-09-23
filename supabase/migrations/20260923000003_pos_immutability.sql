@@ -6,8 +6,11 @@
 -- qu'aucune ligne « comptable » ne peut être modifiée ni supprimée, même par
 -- le propriétaire de la base (hors DROP TRIGGER explicite, tracé dans les
 -- migrations).
---   * pos_transaction_lines, pos_payments, pos_stock_movements, pos_events :
---     UPDATE et DELETE interdits.
+--   * pos_transaction_lines, pos_payments, pos_events : UPDATE et DELETE
+--     interdits.
+--   * pos_stock_sync (outbox) : DELETE interdit ; UPDATE limité aux colonnes de
+--     suivi (status, attempts, last_error, remote_stock_after, done_at) et
+--     réservé au service role (Edge Function pos-stock-sync).
 --   * pos_transactions : DELETE interdit ; UPDATE limité aux colonnes de
 --     signature / Fiskaly / invoice_requested, et une fois signé, seule
 --     invoice_requested peut encore changer.
@@ -32,7 +35,7 @@ BEGIN
           HINT    = 'Les enregistrements comptables NF525 ne peuvent être ni modifiés ni supprimés.';
 END;
 $$;
-COMMENT ON FUNCTION public.pos_forbid_change() IS 'POS NF525 : trigger BEFORE UPDATE/DELETE qui interdit toute modification (lignes, paiements, mouvements de stock, événements).';
+COMMENT ON FUNCTION public.pos_forbid_change() IS 'POS NF525 : trigger BEFORE UPDATE/DELETE qui interdit toute modification (lignes, paiements, événements, et DELETE des autres tables).';
 
 DROP TRIGGER IF EXISTS trg_pos_transaction_lines_immutable ON public.pos_transaction_lines;
 CREATE TRIGGER trg_pos_transaction_lines_immutable
@@ -42,11 +45,6 @@ CREATE TRIGGER trg_pos_transaction_lines_immutable
 DROP TRIGGER IF EXISTS trg_pos_payments_immutable ON public.pos_payments;
 CREATE TRIGGER trg_pos_payments_immutable
   BEFORE UPDATE OR DELETE ON public.pos_payments
-  FOR EACH ROW EXECUTE FUNCTION public.pos_forbid_change();
-
-DROP TRIGGER IF EXISTS trg_pos_stock_movements_immutable ON public.pos_stock_movements;
-CREATE TRIGGER trg_pos_stock_movements_immutable
-  BEFORE UPDATE OR DELETE ON public.pos_stock_movements
   FOR EACH ROW EXECUTE FUNCTION public.pos_forbid_change();
 
 DROP TRIGGER IF EXISTS trg_pos_events_immutable ON public.pos_events;
@@ -68,6 +66,11 @@ CREATE TRIGGER trg_pos_closings_no_delete
 DROP TRIGGER IF EXISTS trg_pos_sessions_no_delete ON public.pos_sessions;
 CREATE TRIGGER trg_pos_sessions_no_delete
   BEFORE DELETE ON public.pos_sessions
+  FOR EACH ROW EXECUTE FUNCTION public.pos_forbid_change();
+
+DROP TRIGGER IF EXISTS trg_pos_stock_sync_no_delete ON public.pos_stock_sync;
+CREATE TRIGGER trg_pos_stock_sync_no_delete
+  BEFORE DELETE ON public.pos_stock_sync
   FOR EACH ROW EXECUTE FUNCTION public.pos_forbid_change();
 
 -- -----------------------------------------------------------------------------
@@ -178,6 +181,38 @@ CREATE TRIGGER trg_pos_sessions_guard_update
   BEFORE UPDATE ON public.pos_sessions
   FOR EACH ROW EXECUTE FUNCTION public.pos_sessions_guard_update();
 
+-- -----------------------------------------------------------------------------
+-- pos_stock_sync_guard_update() : suivi de synchronisation par le service role
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.pos_stock_sync_guard_update()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, extensions, pg_temp
+AS $$
+DECLARE
+  c_whitelist CONSTANT text[] := ARRAY['status', 'attempts', 'last_error', 'remote_stock_after', 'done_at'];
+BEGIN
+  IF (to_jsonb(OLD) - c_whitelist) <> (to_jsonb(NEW) - c_whitelist) THEN
+    RAISE EXCEPTION 'NF525: pos_stock_sync movement is immutable (only sync tracking columns may change)'
+      USING ERRCODE = 'P0001',
+            DETAIL  = format('{"table":"pos_stock_sync","id":%s}', OLD.id);
+  END IF;
+  IF NOT public.pos_is_service_role() THEN
+    RAISE EXCEPTION 'NF525: pos_stock_sync tracking columns are reserved to the service role'
+      USING ERRCODE = '42501',
+            DETAIL  = format('{"table":"pos_stock_sync","id":%s}', OLD.id);
+  END IF;
+  RETURN NEW;
+END;
+$$;
+COMMENT ON FUNCTION public.pos_stock_sync_guard_update() IS 'POS NF525 : trigger BEFORE UPDATE sur pos_stock_sync ; seules les colonnes de suivi changent, et uniquement par le service role.';
+
+DROP TRIGGER IF EXISTS trg_pos_stock_sync_guard_update ON public.pos_stock_sync;
+CREATE TRIGGER trg_pos_stock_sync_guard_update
+  BEFORE UPDATE ON public.pos_stock_sync
+  FOR EACH ROW EXECUTE FUNCTION public.pos_stock_sync_guard_update();
+
 -- =============================================================================
 -- Droits : aucune écriture directe pour anon / authenticated.
 -- SELECT conservé pour authenticated (filtré par RLS, migration 0006) ;
@@ -186,24 +221,24 @@ CREATE TRIGGER trg_pos_sessions_guard_update
 REVOKE ALL ON TABLE
   public.pos_registers, public.pos_settings, public.pos_counters, public.pos_sessions,
   public.pos_transactions, public.pos_transaction_lines, public.pos_payments,
-  public.pos_stock_movements, public.pos_closings, public.pos_events
+  public.pos_stock_sync, public.pos_closings, public.pos_events
 FROM anon;
 
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON TABLE
   public.pos_registers, public.pos_settings, public.pos_counters, public.pos_sessions,
   public.pos_transactions, public.pos_transaction_lines, public.pos_payments,
-  public.pos_stock_movements, public.pos_closings, public.pos_events
+  public.pos_stock_sync, public.pos_closings, public.pos_events
 FROM authenticated;
 
 GRANT SELECT ON TABLE
   public.pos_registers, public.pos_settings, public.pos_counters, public.pos_sessions,
   public.pos_transactions, public.pos_transaction_lines, public.pos_payments,
-  public.pos_stock_movements, public.pos_closings, public.pos_events
+  public.pos_stock_sync, public.pos_closings, public.pos_events
 TO authenticated;
 
 -- Les fonctions trigger ne sont pas appelables directement
-REVOKE EXECUTE ON FUNCTION public.pos_forbid_change() FROM anon, authenticated;
-REVOKE EXECUTE ON FUNCTION public.pos_transactions_guard_update() FROM anon, authenticated;
-REVOKE EXECUTE ON FUNCTION public.pos_closings_guard_update() FROM anon, authenticated;
-REVOKE EXECUTE ON FUNCTION public.pos_sessions_guard_update() FROM anon, authenticated;
-REVOKE EXECUTE ON FUNCTION public.pos_registers_init_counters() FROM anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.pos_forbid_change() FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.pos_transactions_guard_update() FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.pos_closings_guard_update() FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.pos_sessions_guard_update() FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.pos_stock_sync_guard_update() FROM PUBLIC, anon, authenticated;
