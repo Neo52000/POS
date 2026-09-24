@@ -1,34 +1,10 @@
 import { expect, test } from '@playwright/test';
-import type { Page } from '@playwright/test';
+import { ensureSessionOpen, login, resetStorage } from './helpers';
 
 /** Parcours de bout en bout en mode mock (`VITE_E2E_MOCK=1`). */
 
-async function login(page: Page): Promise<void> {
-  await page.goto('/login');
-  await page.getByTestId('login-email').fill('vendeur@ma-papeterie.fr');
-  await page.getByTestId('login-password').fill('secret');
-  await page.getByTestId('login-submit').click();
-}
-
-async function ensureSessionOpen(page: Page): Promise<void> {
-  // Sans session ouverte, la page de vente redirige vers /closing (ouverture) : on attend l'un ou l'autre.
-  const openForm = page.getByTestId('open-session');
-  const salePage = page.getByTestId('sale-page');
-  await expect(openForm.or(salePage)).toBeVisible();
-  if (await openForm.isVisible()) {
-    await page.getByTestId('opening-float-input').fill('50');
-    await expect(page.getByTestId('opening-float')).toHaveText(/50,00/);
-    await page.getByTestId('open-session-button').click();
-  }
-  await expect(salePage).toBeVisible();
-}
-
 test.beforeEach(async ({ page }) => {
-  await page.goto('/');
-  await page.evaluate(() => {
-    localStorage.clear();
-    sessionStorage.clear();
-  });
+  await resetStorage(page);
 });
 
 test('vente : login → ouverture session → recherche → remise 10 % → CB → ticket', async ({

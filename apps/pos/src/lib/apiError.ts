@@ -7,7 +7,13 @@ export type ApiErrorCode =
   | 'INTERNAL'
   | 'NETWORK'
   | 'TIMEOUT'
-  | 'QUEUED_AFTER_CB';
+  | 'QUEUED_AFTER_CB'
+  | 'REGISTER_NOT_FOUND'
+  | 'BUSINESS_AT_OUT_OF_RANGE'
+  | 'CHAIN_INCONSISTENT'
+  | 'PRODUCT_NOT_FOUND'
+  | 'OFFLINE_LIMIT_REACHED'
+  | 'OFFLINE_FORBIDDEN';
 
 export class ApiError extends Error {
   constructor(
@@ -30,6 +36,26 @@ export function isNetworkError(e: unknown): boolean {
   return isApiError(e) && (e.code === 'NETWORK' || e.code === 'TIMEOUT');
 }
 
+/** Messages d'échec `fetch` (Chrome, Firefox, Safari, Node) remontés tels quels par supabase-js. */
+const FETCH_FAILURE_RE =
+  /failed to fetch|networkerror|load failed|fetch failed|network request failed/i;
+
+/**
+ * Vrai pour toute erreur « réseau » : `ApiError` NETWORK/TIMEOUT (Edge), `TypeError` de `fetch`,
+ * ou erreur supabase-js dont le message est celui d'un `fetch` en échec.
+ */
+export function isNetworkFailure(e: unknown): boolean {
+  if (isNetworkError(e)) return true;
+  if (e instanceof TypeError) return true;
+  const message =
+    e instanceof Error
+      ? e.message
+      : e && typeof e === 'object' && 'message' in e
+        ? String((e as { message?: unknown }).message ?? '')
+        : '';
+  return FETCH_FAILURE_RE.test(message);
+}
+
 export const ERROR_MESSAGES: Record<ApiErrorCode, string> = {
   UNAUTHORIZED: 'Session expirée : reconnectez-vous.',
   FORBIDDEN_ROLE: "Ce compte n'a pas le rôle caisse (pos).",
@@ -48,7 +74,15 @@ export const ERROR_MESSAGES: Record<ApiErrorCode, string> = {
   NETWORK: 'Serveur injoignable (réseau).',
   TIMEOUT: 'Le serveur ne répond pas (délai dépassé).',
   QUEUED_AFTER_CB:
-    'Paiement CB accepté mais vente non enregistrée (réseau) : vente mise en attente, à rejouer.',
+    'Paiement CB accepté mais opération non enregistrée (réseau) : mise en file, rejouée automatiquement.',
+  REGISTER_NOT_FOUND: 'Caisse introuvable ou inactive.',
+  BUSINESS_AT_OUT_OF_RANGE:
+    'Horodatage de la vente hors tolérance : vérifiez l’heure du poste (ou vente hors ligne trop ancienne).',
+  CHAIN_INCONSISTENT: 'Chaînage des tickets incohérent : contactez l’administrateur.',
+  PRODUCT_NOT_FOUND: 'Produit introuvable.',
+  OFFLINE_LIMIT_REACHED:
+    'Limite hors ligne atteinte : rétablissez la connexion et synchronisez avant de nouvelles ventes.',
+  OFFLINE_FORBIDDEN: 'Opération impossible hors ligne.',
 };
 
 /** Message en clair pour l'UI (SPEC §5). */

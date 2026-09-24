@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter } from 'react-router-dom';
 import { computeCart } from '@pos/core';
 
 vi.mock('@/lib/events', () => ({ logEvent: vi.fn(async () => undefined) }));
@@ -25,9 +26,13 @@ vi.mock('@/lib/bridge', () => ({
     health: vi.fn(),
   },
 }));
-vi.mock('@/lib/db', () => ({
-  saveReceipt: vi.fn(async () => undefined),
-  enqueueCheckout: vi.fn(async () => undefined),
+vi.mock('@/lib/offlineQueue', () => ({
+  DEFAULT_OFFLINE_LIMITS: { offline_max_txns: 50, offline_max_hours: 24 },
+  queueStats: vi.fn(async () => ({ pending: 0, failed: 0, done: 0, oldestBusinessAt: null })),
+  getOfflineLimits: vi.fn(async () => ({ offline_max_txns: 50, offline_max_hours: 24 })),
+  evaluateOfflineLimits: () => ({ blocked: false, reason: null, message: null, limits: {} }),
+  queueOfflineSale: vi.fn(),
+  enqueueSale: vi.fn(),
 }));
 
 import { PaymentSheet } from './PaymentSheet';
@@ -48,7 +53,9 @@ function renderSheet() {
   const qc = new QueryClient();
   return render(
     <QueryClientProvider client={qc}>
-      <PaymentSheet open onOpenChange={() => undefined} totals={totals} />
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <PaymentSheet open onOpenChange={() => undefined} totals={totals} />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 }

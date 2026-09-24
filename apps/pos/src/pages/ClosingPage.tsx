@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { Loader2, LockKeyhole, Printer, Unlock } from 'lucide-react';
+import { Loader2, LockKeyhole, Printer, Unlock, WifiOff } from 'lucide-react';
 import { parseEuroToCents } from '@pos/core';
 import type { TicketPayload } from '@pos/core';
 import { Button } from '@/components/ui/button';
@@ -11,11 +11,13 @@ import { CashCountGrid, cashCountTotal } from '@/components/session/CashCountGri
 import type { CashCounts } from '@/components/session/CashCountGrid';
 import { ReceiptPreview } from '@/components/ticket/ReceiptPreview';
 import { usePrinter } from '@/hooks/usePrinter';
-import { useSession } from '@/hooks/useSession';
+import { updateCachedSession, useSession } from '@/hooks/useSession';
+import { useOfflineQueue } from '@/hooks/useOfflineQueue';
 import { useTodayTickets } from '@/hooks/useTodayTickets';
 import { describeApiError } from '@/lib/edge';
 import { env } from '@/lib/env';
 import { formatDateTime, formatEurCents, formatVatRate } from '@/lib/format';
+import { replayQueue } from '@/lib/offlineQueue';
 import { rpc } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import { useCartStore } from '@/stores/cartStore';
@@ -127,6 +129,18 @@ export function buildClosingTicket(
   };
 }
 
+function OfflineNotice({ action }: { action: string }) {
+  return (
+    <p
+      className="flex items-center gap-2 rounded-xl bg-danger/10 px-3 py-2 text-sm text-danger"
+      data-testid="closing-offline"
+    >
+      <WifiOff className="h-4 w-4 shrink-0" /> Hors ligne : {action.charAt(0).toLowerCase()}
+      {action.slice(1)} est impossible sans connexion au serveur.
+    </p>
+  );
+}
+
 function OpenSession({ register }: { register: PosRegister }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -134,6 +148,7 @@ function OpenSession({ register }: { register: PosRegister }) {
   const toast = useUiStore((s) => s.toast);
   const [input, setInput] = useState('');
   const [pending, setPending] = useState(false);
+  const offline = useUiStore((s) => s.connectivity === 'offline');
   const cents = input === '' ? 0 : parseEuroToCents(input);
 
   const open = async (): Promise<void> => {
@@ -145,8 +160,12 @@ function OpenSession({ register }: { register: PosRegister }) {
         p_opening_float_cents: cents,
       });
       setSession(session);
+      updateCachedSession(session);
       await qc.invalidateQueries({ queryKey: ['session'] });
       toast({ title: `Session n°${session.session_number} ouverte`, variant: 'success' });
+      // Ventes hors ligne en attente d'une session ouverte (SESSION_NOT_OPEN) : rejeu immédiat.
+      useUiStore.getState().setReplayBlock(null);
+      void replayQueue();
       navigate('/', { replace: true });
     } catch (e) {
       toast({ title: 'Ouverture impossible', description: describeApiError(e), variant: 'danger' });
@@ -186,9 +205,10 @@ function OpenSession({ register }: { register: PosRegister }) {
         onDigit={(d) => setInput((p) => (d === ',' && p.includes(',') ? p : p + d))}
         onBackspace={() => setInput((p) => p.slice(0, -1))}
       />
+      {offline && <OfflineNotice action="L’ouverture de session" />}
       <Button
         size="pay"
-        disabled={cents === null || pending}
+        disabled={cents === null || pending || offline}
         onClick={() => void open()}
         data-testid="open-session-button"
       >
@@ -217,6 +237,9 @@ function CloseSession({
   const [pending, setPending] = useState(false);
   const [result, setResult] = useState<CloseSessionResult | null>(null);
   const counted = useMemo(() => cashCountTotal(counts), [counts]);
+  const offline = useUiStore((s) => s.connectivity === 'offline');
+  const { stats } = useOfflineQueue();
+  const queueBlocks = stats.pending > 0 || stats.failed > 0;
 
   const todaySales = (tickets.data ?? []).filter((t) => t.session_id === session.id);
   const todayTotal = todaySales.reduce((s, t) => s + Number(t.total_ttc_cents), 0);
@@ -231,6 +254,7 @@ function CloseSession({
       });
       setResult(r);
       setSession(null);
+      updateCachedSession(null);
       await qc.invalidateQueries({ queryKey: ['session'] });
       toast({ title: 'Session clôturée', variant: 'success' });
     } catch (e) {
@@ -357,6 +381,19 @@ function CloseSession({
           clôturer.
         </p>
       )}
+      {offline && <OfflineNotice action="La clôture (Z)" />}
+      {queueBlocks && (
+        <p
+          className="rounded-xl bg-warning/10 px-3 py-2 text-sm text-warning"
+          data-testid="closing-queue-blocked"
+        >
+          {stats.pending} vente(s) hors ligne en attente
+          {stats.failed ? ` et ${stats.failed} en échec` : ''} : synchronisez-les avant de clôturer.{' '}
+          <Link to="/offline" className="underline">
+            Voir la file hors ligne
+          </Link>
+        </p>
+      )}
       <CashCountGrid counts={counts} onChange={setCounts} />
       <label className="flex flex-col gap-1.5 text-sm text-muted">
         Notes (optionnel)
@@ -372,7 +409,7 @@ function CloseSession({
       <Button
         variant="danger"
         size="pay"
-        disabled={pending || cartLines > 0}
+        disabled={pending || cartLines > 0 || offline || queueBlocks}
         onClick={() => void close()}
         data-testid="close-session-button"
       >

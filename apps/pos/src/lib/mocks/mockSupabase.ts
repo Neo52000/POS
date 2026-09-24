@@ -1,7 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { PosClosing, PosSession, TransactionFull } from '@/types/pos';
 import { MOCK_REGISTER, MOCK_SETTINGS, MOCK_USER } from './mockData';
+import { isMockOffline } from './mockNetwork';
 import { mockSave, mockState } from './mockStore';
+
+/** Échec réseau tel que renvoyé par supabase-js (pas d'exception, `error.message` du `fetch`). */
+const NETWORK_ERROR = { message: 'TypeError: Failed to fetch (mock hors ligne)', code: '' };
 
 type Result<T> =
   { data: T; error: null } | { data: null; error: { message: string; code?: string } };
@@ -50,6 +54,11 @@ const auth = {
     for (const l of listeners) l('SIGNED_IN', s);
     return { data: { session: s, user: s?.user ?? null }, error: null };
   },
+  async refreshSession() {
+    if (isMockOffline()) return { data: { session: null, user: null }, error: NETWORK_ERROR };
+    const s = currentSession();
+    return { data: { session: s, user: s?.user ?? null }, error: null };
+  },
   async signOut() {
     mockState().user = null;
     mockSave();
@@ -73,10 +82,20 @@ function paymentsBreakdown(txns: TransactionFull[]): Record<string, number> {
 }
 
 async function rpc(name: string, params: Record<string, unknown> = {}): Promise<Result<unknown>> {
+  if (isMockOffline()) return { data: null, error: NETWORK_ERROR };
   const st = mockState();
   switch (name) {
     case 'is_pos':
       return ok(true);
+    case 'is_pos_admin':
+      return ok(true);
+    case 'pos_client_settings':
+      return ok({
+        offline_max_txns: 50,
+        offline_max_hours: 24,
+        clock_tolerance: { online_minutes: 10, offline_hours: 72, future_minutes: 5 },
+        server_now: new Date().toISOString(),
+      });
     case 'pos_open_session': {
       if (st.session?.status === 'open') return fail('SESSION_ALREADY_OPEN');
       st.sessionCounter += 1;
@@ -153,6 +172,7 @@ async function rpc(name: string, params: Record<string, unknown> = {}): Promise<
         type: String(params['p_event_type']),
         payload: params['p_payload'],
         at: new Date().toISOString(),
+        client_at: params['p_client_at'] ? String(params['p_client_at']) : null,
       });
       mockSave();
       return ok(st.events.length);
@@ -188,6 +208,10 @@ function from(table: string) {
       rows = mockState().session ? [mockState().session as unknown as Record<string, unknown>] : [];
     else if (table === 'pos_settings')
       rows = Object.entries(MOCK_SETTINGS).map(([key, value]) => ({ key, value }));
+    else if (table === 'pos_archives')
+      rows = [...mockState().archives]
+        .sort((a, b) => b.period_start.localeCompare(a.period_start))
+        .map((a) => ({ ...a }) as unknown as Record<string, unknown>);
     else return fail(`table mock inconnue : ${table}`);
     for (const [k, v] of filters) rows = rows.filter((r) => r[k] === v);
     if (limitN != null) rows = rows.slice(0, limitN);
@@ -214,11 +238,34 @@ function from(table: string) {
       single = true;
       return builder;
     },
-    then: <R>(resolve: (v: Result<unknown>) => R) => Promise.resolve(run()).then(resolve),
+    then: <R>(resolve: (v: Result<unknown>) => R) =>
+      Promise.resolve<Result<unknown>>(
+        isMockOffline() ? { data: null, error: NETWORK_ERROR } : run(),
+      ).then(resolve),
   };
   return builder;
 }
 
+/** Stockage : URL signée factice pour les archives (lot 5). */
+const storage = {
+  from(bucket: string) {
+    return {
+      async createSignedUrl(path: string, expiresIn: number) {
+        if (isMockOffline()) return { data: null, error: NETWORK_ERROR };
+        const archive = mockState().archives.find((a) => a.storage_path === path);
+        if (bucket !== 'pos-archives' || !archive) {
+          return { data: null, error: { message: 'Object not found' } };
+        }
+        const body = JSON.stringify({ mock: true, path, expiresIn, hash: archive.hash });
+        return {
+          data: { signedUrl: `data:application/json;charset=utf-8,${encodeURIComponent(body)}` },
+          error: null,
+        };
+      },
+    };
+  },
+};
+
 export function createMockSupabase(): SupabaseClient {
-  return { auth, rpc, from } as unknown as SupabaseClient;
+  return { auth, rpc, from, storage } as unknown as SupabaseClient;
 }

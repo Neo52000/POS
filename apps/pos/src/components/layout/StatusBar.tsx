@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
-import { CreditCard, Printer, Wifi, WifiOff } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { CreditCard, Printer, RefreshCw, Wifi, WifiOff } from 'lucide-react';
+import { useOfflineQueue } from '@/hooks/useOfflineQueue';
 import { env } from '@/lib/env';
 import { formatElapsed } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -23,7 +25,9 @@ function Dot({ state }: { state: 'ok' | 'ko' | 'unknown' }) {
 export function StatusBar() {
   const session = useSessionStore((s) => s.session);
   const register = useSessionStore((s) => s.register);
-  const online = useUiStore((s) => s.online);
+  const connectivity = useUiStore((s) => s.connectivity);
+  const offlineSince = useUiStore((s) => s.offlineSince);
+  const { stats } = useOfflineQueue();
   const bridgeStatus = useUiStore((s) => s.bridgeStatus);
   const tpe = useUiStore((s) => s.tpeReachable);
   const printer = useUiStore((s) => s.printerReachable);
@@ -54,14 +58,37 @@ export function StatusBar() {
       ) : (
         <span className="text-warning">Aucune session ouverte</span>
       )}
-      <span className="flex items-center gap-1.5">
-        {online ? (
-          <Wifi className="h-3.5 w-3.5 text-success" />
-        ) : (
-          <WifiOff className="h-3.5 w-3.5 text-danger" />
+      <Link
+        to="/offline"
+        className={cn(
+          'flex items-center gap-1.5 rounded-md px-1.5 py-0.5',
+          connectivity === 'offline' && 'bg-danger/15 font-medium text-danger',
+          connectivity === 'replaying' && 'bg-accent/15 text-accent',
         )}
-        {online ? 'En ligne' : 'Hors ligne'}
-      </span>
+        data-testid="connectivity-status"
+        data-state={connectivity}
+        title={
+          offlineSince ? `Hors ligne depuis ${formatElapsed(offlineSince, now)}` : 'État du réseau'
+        }
+      >
+        {connectivity === 'online' && <Wifi className="h-3.5 w-3.5 text-success" />}
+        {connectivity === 'offline' && <WifiOff className="h-3.5 w-3.5" />}
+        {connectivity === 'replaying' && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
+        {connectivity === 'online' && 'En ligne'}
+        {connectivity === 'offline' &&
+          `Hors ligne — ${stats.pending} vente${stats.pending > 1 ? 's' : ''} en attente`}
+        {connectivity === 'replaying' && 'Synchronisation…'}
+      </Link>
+      {(stats.pending > 0 || stats.failed > 0) && (
+        <Link
+          to="/offline"
+          className="flex items-center gap-1.5 text-warning"
+          data-testid="offline-queue-count"
+        >
+          {stats.pending > 0 && <span>{stats.pending} en file</span>}
+          {stats.failed > 0 && <span className="text-danger">{stats.failed} en échec</span>}
+        </Link>
+      )}
       <span className="flex items-center gap-1.5" title="Pont TPE">
         <Dot state={bridgeStatus} /> Pont{' '}
         {bridgeStatus === 'ok' ? 'OK' : bridgeStatus === 'ko' ? 'KO' : '…'}
