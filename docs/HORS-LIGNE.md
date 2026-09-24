@@ -91,6 +91,28 @@ déjà calculé n'est jamais modifié) et journalise `offline_reattached`
 **Un élément en attente ou en échec bloque la clôture (Z)** : l'écran de clôture refuse tant que
 la file n'est pas vide.
 
+### Paiement CB déjà capté : enregistrement différé (`deferred_capture`)
+
+Si le TPE a déjà débité (vente) ou crédité (remboursement) la carte et que l'envoi échoue pour
+cause réseau, l'opération part en file avec `deferred_capture: true`. Le serveur accepte alors la
+fenêtre hors ligne (72 h) et le rattachement à la session ouverte, **y compris pour un
+remboursement**, à condition qu'un paiement `cb` réellement capté (non `manual_fallback`) figure
+dans le payload (sinon `VALIDATION`). L'indicateur est tracé dans l'événement JET de la
+transaction. Un remboursement sans CB captée reste interdit hors ligne.
+
+### Abandon tracé d'un élément en échec (admin)
+
+Un élément `failed` qui ne peut pas être enregistré (analyse faite, vente ressaisie en ligne si
+elle doit être comptabilisée) peut être **abandonné** depuis **/offline** par un administrateur :
+
+1. bouton « Abandonner » sur la ligne en échec, motif obligatoire (10 caractères minimum) ;
+2. l'événement JET `offline_sale_abandoned` (payload complet de la vente, référence provisoire,
+   dernier code d'erreur, motif) est enregistré **côté serveur d'abord** — en ligne obligatoire ;
+3. seulement ensuite l'élément passe `abandoned` : conservé localement (section « Abandonnées »),
+   il ne bloque plus le Z.
+
+Rien n'est supprimé : la preuve reste dans le journal chaîné, inclus dans les archives mensuelles.
+
 ## 4. Bornes horaires côté serveur (anti-antidatage)
 
 `pos_finalize_sale` contrôle `business_at` après l'idempotence :
@@ -111,8 +133,9 @@ rejouée **dans les 72 h** ; au-delà elle ne peut plus être enregistrée autom
    (limite 50 ventes / 24 h).
 4. Au retour du réseau, la synchronisation est automatique. Ouvrir **/offline** : la file doit
    être vide ; sinon « Réessayer ».
-5. Avant le Z : file vide obligatoire. Si un élément reste en échec, ne pas le supprimer :
-   exporter la file (JSON) et prévenir le responsable.
+5. Avant le Z : file vide obligatoire. Si un élément reste en échec : exporter la file (JSON) et
+   prévenir le responsable, qui analyse puis, si besoin, ressaisit la vente en ligne et
+   **abandonne** l'élément avec un motif (§3, abandon tracé).
 
 ## 6. Dépannage
 
@@ -121,7 +144,7 @@ rejouée **dans les 72 h** ; au-delà elle ne peut plus être enregistrée autom
 | Reste « Hors ligne » alors qu'Internet fonctionne | sonde `auth/v1/health` bloquée (pare-feu, DNS) : ouvrir l'URL Supabase dans le navigateur ; recharger la PWA                                                                                                          |
 | « Synchronisation » bloquée, message session      | aucune session ouverte : ouvrir la session, le rejeu reprend                                                                                                                                                          |
 | Élément `failed` `BUSINESS_AT_OUT_OF_RANGE`       | horloge du poste fausse ou vente de plus de 72 h : corriger l'heure du poste ; au-delà de 72 h, l'administrateur relève temporairement `clock_tolerance.offline_hours` (SQL, tracé), relance, puis rétablit la valeur |
-| Élément `failed` `TOTALS_MISMATCH` / `VALIDATION` | écart de calcul client/serveur : exporter la file, ouvrir un incident (ne pas ressaisir la vente à la main sans l'avoir analysée)                                                                                     |
+| Élément `failed` `TOTALS_MISMATCH` / `VALIDATION` | écart de calcul client/serveur : exporter la file, ouvrir un incident ; après analyse, ressaisir en ligne si nécessaire puis abandonner l'élément (admin, motif, trace JET)                                           |
 | Nouvelle vente refusée « maximum 50 »             | limite atteinte : rétablir la connexion (partage 4G) et synchroniser                                                                                                                                                  |
 | Ticket provisoire à rapprocher                    | `select ticket_number, provisional_ref from pos_transactions where provisional_ref = 'OFF-…'`                                                                                                                         |
 

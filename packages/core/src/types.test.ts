@@ -135,6 +135,11 @@ describe('validateCheckoutPayload', () => {
       'offline_queued',
     ],
     [
+      'deferred_capture not boolean',
+      () => mutate((p) => (p['deferred_capture'] = 'yes')),
+      'deferred_capture',
+    ],
+    [
       'missing invoice_requested',
       () => mutate((p) => delete p['invoice_requested']),
       'invoice_requested',

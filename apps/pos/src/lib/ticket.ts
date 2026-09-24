@@ -4,6 +4,9 @@ import { env } from '@/lib/env';
 import type { CustomerSnapshot, PosSettingsMap, TransactionFull } from '@/types/pos';
 import { formatDateTime, formatPercent, formatQty, formatVatRate } from '@/lib/format';
 
+/** Ticket provisoire : l'empreinte (hash chaîné) n'existe qu'après l'enregistrement serveur. */
+export const PROVISIONAL_HASH_LINE = "Empreinte attribuée à l'enregistrement";
+
 function footerLines(raw: PosSettingsMap['ticket_footer']): string[] {
   if (Array.isArray(raw)) return raw.map(String);
   if (raw && typeof raw === 'object' && Array.isArray(raw.lines)) return raw.lines.map(String);
@@ -324,6 +327,7 @@ export function renderTicketText(ticket: TicketPayload, width = WIDTH): string[]
   if (ticket.compliance.provisional) {
     out.push(center('Vente hors ligne - signature en attente', width));
     out.push(center('N° définitif attribué à la synchronisation', width));
+    out.push(center(PROVISIONAL_HASH_LINE, width));
     return out;
   }
   out.push(

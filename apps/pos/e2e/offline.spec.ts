@@ -141,3 +141,53 @@ test('hors ligne : échec réseau pendant l’envoi → bascule et ticket provis
   await expect(page.getByTestId('offline-queue-count')).toHaveCount(0);
   await expect(page.getByTestId('connectivity-status')).toContainText('En ligne');
 });
+
+test('vente en échec au rejeu : Z bloqué, abandon admin tracé, Z débloqué', async ({ page }) => {
+  await login(page);
+  await ensureSessionOpen(page);
+  await navLink(page, /Hors ligne/).click();
+  await expect(page.getByTestId('catalog-count')).toHaveText('6');
+
+  // Vente hors ligne.
+  await goOffline(page);
+  await navLink(page, 'Vente').click();
+  const provisional = await sellCahierCash(page);
+  expect(provisional).toMatch(/^OFF-TEST-01-\d{8}-\d{3}$/);
+
+  // Retour réseau avec échec métier forcé au rejeu.
+  await navLink(page, /Hors ligne/).click();
+  await page.evaluate(() => {
+    localStorage.removeItem('pos.mock.offline');
+    localStorage.setItem('pos.mock.failNextCheckout', 'TOTALS_MISMATCH');
+  });
+  await page.getByTestId('replay-now').click();
+  const item = page.getByTestId('queue-item').filter({ hasText: provisional });
+  await expect(item).toContainText('Échec');
+  await expect(item).toContainText('TOTALS_MISMATCH');
+
+  // Z bloquée par l'élément en échec.
+  await navLink(page, 'Caisse').click();
+  await expect(page.getByTestId('closing-queue-blocked')).toBeVisible();
+
+  // Abandon (admin) : motif obligatoire.
+  await navLink(page, /Hors ligne/).click();
+  await item.getByTestId('abandon-item').click();
+  await expect(page.getByTestId('abandon-confirm')).toBeDisabled();
+  await page.getByTestId('abandon-reason').fill('vente ressaisie en ligne après contrôle');
+  await page.getByTestId('abandon-confirm').click();
+  await expect(page.getByTestId('queue-item')).toHaveCount(0);
+  await expect(
+    page.getByTestId('queue-item-abandoned').filter({ hasText: provisional }),
+  ).toContainText('vente ressaisie en ligne');
+
+  // Trace JET côté (mock) serveur, puis Z de nouveau possible.
+  const traced = await page.evaluate(() => {
+    const raw = localStorage.getItem('pos.mock.state.v1') ?? '{}';
+    const st = JSON.parse(raw) as { events?: Array<{ type?: string; event_type?: string }> };
+    return (st.events ?? []).some((e) => (e.type ?? e.event_type) === 'offline_sale_abandoned');
+  });
+  expect(traced).toBe(true);
+  await navLink(page, 'Caisse').click();
+  await expect(page.getByTestId('closing-queue-blocked')).toHaveCount(0);
+  await expect(page.getByTestId('close-session-button')).toBeEnabled();
+});

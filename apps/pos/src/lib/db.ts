@@ -13,7 +13,11 @@ export interface StoredReceipt {
   created_at: string;
 }
 
-export type QueueStatus = 'pending' | 'replaying' | 'done' | 'failed';
+/**
+ * `abandoned` : élément en échec abandonné par un admin après journalisation JET
+ * (`offline_sale_abandoned`, payload complet) ; conservé localement, exclu des compteurs et du Z.
+ */
+export type QueueStatus = 'pending' | 'replaying' | 'done' | 'failed' | 'abandoned';
 
 /**
  * File des ventes à rejouer (lot 4 hors ligne) : ventes encaissées hors ligne (ticket provisoire
@@ -38,6 +42,8 @@ export interface QueuedCheckout {
   /** Ticket définitif `T-YYYY-NNNNNN` attribué au rejeu. */
   server_ticket_code?: string | null;
   server_transaction_id?: string | null;
+  abandoned_at?: string | null;
+  abandon_reason?: string | null;
   done_at?: string | null;
 }
 

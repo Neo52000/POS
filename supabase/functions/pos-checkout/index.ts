@@ -51,6 +51,8 @@ export const CheckoutSchema = z
     business_at: z.string().datetime({ offset: true }),
     offline_queued: z.boolean().default(false),
     provisional_ref: z.string().max(64).optional(),
+    // Paiement CB déjà capté, enregistrement différé (fenêtre hors ligne, remboursement autorisé).
+    deferred_capture: z.boolean().default(false),
     customer_account_id: uuid.optional(),
     quote_id: uuid.optional(),
     invoice_requested: z.boolean().default(false),

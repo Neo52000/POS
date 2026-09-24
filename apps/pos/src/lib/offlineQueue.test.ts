@@ -24,6 +24,7 @@ vi.mock('@/lib/supabase', () => ({
 import { ApiError } from './apiError';
 import { clearDb, db, setMeta } from './db';
 import {
+  abandonQueueItem,
   evaluateOfflineLimits,
   nextProvisionalRef,
   queueOfflineSale,
@@ -34,6 +35,7 @@ import { markOffline, markOnline, resetConnectivityForTests } from './connectivi
 import { logEvent, replayEvents } from './events';
 import { supabase } from '@/lib/supabase';
 import type { ProvisionalTicketContext } from './ticket';
+import { submitCheckout } from '@/hooks/useCheckout';
 import { useUiStore } from '@/stores/uiStore';
 
 const CTX: ProvisionalTicketContext = {
@@ -259,5 +261,85 @@ describe('offlineQueue', () => {
     expect(calls.map((c) => c['p_event_type'])).toEqual(['offline_enter', 'drawer_opened']);
     expect(calls[0]?.['p_client_at']).toBe('2026-09-24T08:00:00.000Z');
     expect(await db.events.count()).toBe(0);
+  });
+
+  it('abandon tracé : motif, en ligne, élément en échec, JET avant le statut local', async () => {
+    const rpcMock = vi.mocked(supabase.rpc);
+    await queueN(1);
+    checkoutMock.mockImplementation(async () => {
+      throw new ApiError('TOTALS_MISMATCH', 'TOTALS_MISMATCH', null, 422);
+    });
+    await replayQueue();
+    const [item] = await db.queue.toArray();
+    expect(item?.status).toBe('failed');
+    const id = item?.client_txn_id ?? '';
+
+    await expect(abandonQueueItem(id, 'bref')).rejects.toMatchObject({ code: 'VALIDATION' });
+
+    markOffline('test');
+    await expect(abandonQueueItem(id, 'vente ressaisie en ligne')).rejects.toMatchObject({
+      code: 'OFFLINE_FORBIDDEN',
+    });
+    markOnline('test');
+
+    // Journal injoignable : aucun effet local.
+    rpcMock.mockClear();
+    rpcMock.mockImplementationOnce((() =>
+      Promise.reject(new TypeError('Failed to fetch'))) as unknown as typeof supabase.rpc);
+    await expect(abandonQueueItem(id, 'vente ressaisie en ligne')).rejects.toMatchObject({
+      code: 'NETWORK',
+    });
+    expect((await db.queue.toArray())[0]?.status).toBe('failed');
+
+    // Succès : événement complet puis statut abandoned, exclu des compteurs bloquants.
+    rpcMock.mockClear();
+    const done = await abandonQueueItem(id, '  vente ressaisie en ligne  ');
+    expect(done.status).toBe('abandoned');
+    const call = rpcMock.mock.calls.find((c) => c[0] === 'pos_log_event');
+    const args = call?.[1] as Record<string, unknown>;
+    expect(args['p_event_type']).toBe('offline_sale_abandoned');
+    const ev = args['p_payload'] as Record<string, unknown>;
+    expect(ev).toMatchObject({
+      client_txn_id: id,
+      reason: 'vente ressaisie en ligne',
+      last_error_code: 'TOTALS_MISMATCH',
+    });
+    expect((ev['payload'] as CheckoutPayload).client_txn_id).toBe(id);
+    expect(await queueStats()).toMatchObject({ pending: 0, failed: 0, abandoned: 1 });
+    await expect(abandonQueueItem(id, 'vente ressaisie en ligne')).rejects.toMatchObject({
+      code: 'VALIDATION',
+    });
+  });
+
+  it('remboursement CB crédité puis coupure : mis en file avec deferred_capture', async () => {
+    checkoutMock.mockImplementation(async () => {
+      throw new ApiError('NETWORK', 'Failed to fetch');
+    });
+    const refund = payload({
+      kind: 'refund',
+      refund_of_transaction_id: '16fd2706-8baf-433b-82eb-8c7fada847da',
+      refund_reason: 'retour client',
+      lines: [
+        {
+          line_no: 1,
+          label: 'Stylo',
+          qty: -2,
+          unit_price_ttc_cents: 120,
+          vat_rate: 20,
+          discount_percent: 0,
+        },
+      ],
+      payments: [{ method: 'cb', amount_cents: -240, tpe_response: { AE: '10' } }],
+      totals: { total_ht_cents: -200, total_vat_cents: -40, total_ttc_cents: -240 },
+    });
+    await expect(submitCheckout({ payload: refund, context: CTX })).rejects.toMatchObject({
+      code: 'QUEUED_AFTER_CB',
+    });
+    const [item] = await db.queue.toArray();
+    expect(item?.payload).toMatchObject({
+      kind: 'refund',
+      deferred_capture: true,
+      offline_queued: false,
+    });
   });
 });

@@ -10,7 +10,13 @@ import {
 import type { OfflineLimitState, OfflineLimits, QueueStats } from '@/lib/offlineQueue';
 import { useLiveQuery } from './useLiveQuery';
 
-const EMPTY_STATS: QueueStats = { pending: 0, failed: 0, done: 0, oldestBusinessAt: null };
+const EMPTY_STATS: QueueStats = {
+  pending: 0,
+  failed: 0,
+  done: 0,
+  abandoned: 0,
+  oldestBusinessAt: null,
+};
 
 export interface OfflineQueueState {
   stats: QueueStats;

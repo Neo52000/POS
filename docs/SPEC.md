@@ -57,6 +57,7 @@ v1|<ticket_number>|<register_code>|<client_txn_id>|<business_at ISO ms UTC>|<kin
   business_at: string (ISO),
   offline_queued: boolean,
   provisional_ref?: string,
+  deferred_capture?: boolean,      // CB déjà captée, enregistrement différé (§11.2)
   customer_account_id?: uuid,
   quote_id?: uuid,
   invoice_requested: boolean,
@@ -154,7 +155,12 @@ Palette Data Noir : `bg #0a0a0f`, `surface #111118`, `border #1e1e2e`, `text #e2
   (JET `offline_reattached`) ; aucune session ouverte → `SESSION_NOT_OPEN` (la PWA garde la vente).
 - `pos_client_settings()` → `{offline_max_txns, offline_max_hours, clock_tolerance, server_now}`.
 - Référence provisoire `OFF-<code caisse>-<YYYYMMDD>-<nnn>` ; JET `offline_enter`, `offline_exit`,
-  `offline_replay_failed`.
+  `offline_replay_failed`, `offline_sale_abandoned` (abandon admin : payload complet + motif,
+  enregistré avant le statut local `abandoned`).
+- `CheckoutPayload.deferred_capture?: boolean` (défaut `false`) : paiement CB déjà capté,
+  enregistrement retardé par une coupure. Exige un paiement `cb` non `manual_fallback`
+  (`VALIDATION` sinon) ; applique la fenêtre hors ligne et le rattachement de session ; autorisé
+  pour un remboursement ; tracé dans l'événement JET de la transaction. Aucun impact sur le hash.
 
 ### 11.3 Clôtures (lot 5)
 

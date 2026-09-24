@@ -45,6 +45,24 @@ function uuidFrom(prefix: string, n: number): string {
   return `${prefix}-0000-4000-8000-${String(n).padStart(12, '0')}`;
 }
 
+/**
+ * Échec métier forcé (tests e2e) : `window.__posMockFailNextCheckout = 'TOTALS_MISMATCH'` (ou
+ * `localStorage['pos.mock.failNextCheckout']`) fait échouer le prochain enregistrement NON
+ * idempotent avec ce code, puis l'interrupteur se désarme.
+ */
+function takeForcedFailure(): string | null {
+  const w = globalThis as { __posMockFailNextCheckout?: string | null };
+  let code = w.__posMockFailNextCheckout ?? null;
+  try {
+    code = code ?? globalThis.localStorage?.getItem('pos.mock.failNextCheckout') ?? null;
+    globalThis.localStorage?.removeItem('pos.mock.failNextCheckout');
+  } catch {
+    // stockage indisponible : interrupteur mémoire seulement
+  }
+  w.__posMockFailNextCheckout = null;
+  return code;
+}
+
 export function createMockEdge(): EdgeClient {
   return {
     async checkout(payload: CheckoutPayload): Promise<PosCheckoutResult> {
@@ -67,13 +85,24 @@ export function createMockEdge(): EdgeClient {
       if (payload.offline_queued && payload.kind === 'refund') {
         throw new ApiError('VALIDATION', 'Remboursement hors ligne interdit', null, 400);
       }
+      // deferred_capture : exige une CB réellement captée (non manuelle).
+      const deferred = payload.deferred_capture === true;
+      if (
+        deferred &&
+        !payload.payments.some((p) => p.method === 'cb' && p.manual_fallback !== true)
+      ) {
+        throw new ApiError('VALIDATION', 'deferred_capture exige une CB captée', null, 400);
+      }
+      const forced = takeForcedFailure();
+      if (forced) throw new ApiError(forced as 'TOTALS_MISMATCH', forced, null, 422);
       // Horodatage métier : ±10 min en ligne ; hors ligne ≤ 72 h dans le passé, ≤ 5 min dans le futur.
       const nowMs = Date.now();
       const businessMs = Date.parse(payload.business_at);
-      const outOfRange = payload.offline_queued
-        ? businessMs < nowMs - CLOCK_TOLERANCE.offline_hours * 3600_000 ||
-          businessMs > nowMs + CLOCK_TOLERANCE.future_minutes * 60_000
-        : Math.abs(businessMs - nowMs) > CLOCK_TOLERANCE.online_minutes * 60_000;
+      const outOfRange =
+        payload.offline_queued || deferred
+          ? businessMs < nowMs - CLOCK_TOLERANCE.offline_hours * 3600_000 ||
+            businessMs > nowMs + CLOCK_TOLERANCE.future_minutes * 60_000
+          : Math.abs(businessMs - nowMs) > CLOCK_TOLERANCE.online_minutes * 60_000;
       if (outOfRange) {
         throw new ApiError('BUSINESS_AT_OUT_OF_RANGE', 'BUSINESS_AT_OUT_OF_RANGE', null, 422);
       }
@@ -81,7 +110,7 @@ export function createMockEdge(): EdgeClient {
       const sessionOpen = !!st.session && st.session.status === 'open';
       if (!sessionOpen || st.session?.id !== payload.session_id) {
         // Vente hors ligne dont la session est fermée : rattachée à la session ouverte.
-        if (payload.offline_queued && sessionOpen && st.session) {
+        if ((payload.offline_queued || deferred) && sessionOpen && st.session) {
           sessionId = st.session.id;
           st.events.push({
             type: 'offline_reattached',
