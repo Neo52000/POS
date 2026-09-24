@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { TicketPayload } from '@pos/core';
-import { renderTicketText, ticketCode } from './ticket';
+import { computeCart } from '@pos/core';
+import type { CheckoutPayload, TicketPayload } from '@pos/core';
+import { buildProvisionalTicket, renderTicketText, ticketCode } from './ticket';
 
 const ticket: TicketPayload = {
   version: 1,
@@ -68,5 +69,97 @@ describe('ticket', () => {
     expect(text).toContain('TOTAL TTC');
     expect(text).toContain('Rendu');
     expect(text).toContain('#abcd1234');
+  });
+});
+
+describe('ticket provisoire (hors ligne)', () => {
+  const lines: CheckoutPayload['lines'] = [
+    {
+      line_no: 2,
+      label: 'Livre « Le Petit Prince »',
+      qty: 1,
+      unit_price_ttc_cents: 790,
+      vat_rate: 5.5,
+      discount_percent: 0,
+    },
+    {
+      line_no: 1,
+      label: 'Stylo bille BIC Cristal bleu',
+      qty: 3,
+      unit_price_ttc_cents: 120,
+      vat_rate: 20,
+      discount_percent: 12.5,
+      public_price_ttc_cents: 120,
+    },
+    {
+      line_no: 3,
+      label: 'Impression / photocopie',
+      qty: 7,
+      unit_price_ttc_cents: 20,
+      vat_rate: '20.00',
+      discount_percent: 0,
+      price_tier_title: 'A4 noir & blanc',
+    },
+  ];
+  const totals = computeCart(lines);
+  const payload: CheckoutPayload = {
+    client_txn_id: '00000000-0000-4000-8000-000000000001',
+    register_id: '11111111-1111-4111-8111-111111111111',
+    session_id: '55555555-5555-4555-8555-000000000001',
+    kind: 'sale',
+    business_at: '2026-09-24T09:15:00.000Z',
+    offline_queued: true,
+    provisional_ref: 'OFF-TEST-01-20260924-001',
+    invoice_requested: true,
+    lines,
+    payments: [
+      { method: 'cash', amount_cents: 2000 },
+      { method: 'cheque', amount_cents: 0, reference: 'CHQ 1' },
+    ],
+    change_cents: 2000 - totals.total_ttc_cents,
+    totals: {
+      total_ht_cents: totals.total_ht_cents,
+      total_vat_cents: totals.total_vat_cents,
+      total_ttc_cents: totals.total_ttc_cents,
+    },
+    app_version: 'test',
+  };
+
+  it('a les mêmes totaux que computeCart et est marqué provisoire', () => {
+    const t = buildProvisionalTicket(payload, {
+      register_code: 'TEST-01',
+      cashier_name: 'vendeur',
+      settings: { legal: { company_name: 'Reine & Fils SAS', address_lines: ['Chaumont'] } },
+      customer: { display_name: 'Mairie de Chaumont', siret: '215 201 218 00018' },
+      quote_number: 'DV-2026-0042',
+    });
+    expect(t.total_ttc_cents).toBe(totals.total_ttc_cents);
+    expect(t.total_ht_cents).toBe(totals.total_ht_cents);
+    expect(t.total_vat_cents).toBe(totals.total_vat_cents);
+    expect(t.vat_breakdown).toEqual(totals.vat_breakdown);
+    expect(t.lines.map((l) => l.line_ttc_cents)).toEqual(
+      [...totals.lines].sort((a, b) => a.line_no - b.line_no).map((l) => l.line_ttc_cents),
+    );
+    expect(t.lines[0]?.label).toBe('Stylo bille BIC Cristal bleu');
+    expect(t.lines[2]?.price_tier_title).toBe('A4 noir & blanc');
+    expect(t).toMatchObject({
+      ticket_number: null,
+      ticket_code: 'OFF-TEST-01-20260924-001',
+      business_at: '2026-09-24T09:15:00.000Z',
+      register_code: 'TEST-01',
+      change_cents: payload.change_cents,
+      quote_number: 'DV-2026-0042',
+      invoice_requested: true,
+      customer: { display_name: 'Mairie de Chaumont' },
+      compliance: { provisional: true, signature_status: 'pending_signature' },
+    });
+    expect(t.payments.map((p) => p.label)).toEqual(['Espèces', 'Chèque']);
+
+    const text = renderTicketText(t);
+    expect(text.every((l) => l.length <= 42)).toBe(true);
+    const joined = text.join('\n');
+    expect(joined).toContain('*** TICKET PROVISOIRE ***');
+    expect(joined).toContain('Ticket OFF-TEST-01-20260924-001');
+    expect(joined).toContain('signature en attente');
   });
 });

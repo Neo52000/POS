@@ -8,7 +8,7 @@
  */
 import { createClient } from '@supabase/supabase-js';
 import { randomUUID } from 'node:crypto';
-import { computeCart } from '@pos/core';
+import { computeCart } from '../packages/core/src/index.ts';
 
 const url = process.env.SUPABASE_URL;
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY;

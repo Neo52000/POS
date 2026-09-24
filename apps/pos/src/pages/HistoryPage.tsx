@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Loader2, Printer, RotateCcw, Undo2 } from 'lucide-react';
+import { Loader2, Printer, RotateCcw, Undo2, WifiOff } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -46,6 +46,7 @@ export function HistoryPage() {
   const full = useTransactionFull(selectedId);
   const { print } = usePrinter();
   const toast = useUiStore((s) => s.toast);
+  const offline = useUiStore((s) => s.connectivity === 'offline');
 
   const ticket = useMemo(
     () => (full.data ? buildTicketPayload(full.data, { duplicate: true }) : null),
@@ -84,6 +85,15 @@ export function HistoryPage() {
             </Button>
           </div>
         </div>
+        {offline && (
+          <p
+            className="mb-3 flex items-center gap-2 rounded-xl bg-warning/10 px-3 py-2 text-sm text-warning"
+            data-testid="history-offline"
+          >
+            <WifiOff className="h-4 w-4" /> Hors ligne : historique serveur indisponible, ventes
+            hors ligne visibles dans « Hors ligne ».
+          </p>
+        )}
         <div className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-border bg-surface">
           {tickets.isError && <p className="p-4 text-danger">{errorMessage(tickets.error)}</p>}
           <Table>
@@ -168,15 +178,21 @@ export function HistoryPage() {
                 <Printer className="h-5 w-5" /> Duplicata
               </Button>
               {full.data.transaction.kind === 'sale' && (
-                <Button
-                  variant="danger"
-                  size="touch"
-                  className="flex-1"
-                  onClick={() => setRefundOf(full.data ?? null)}
-                  data-testid="refund-button"
+                <span
+                  className="flex flex-1"
+                  title={offline ? 'Remboursement impossible hors ligne' : undefined}
                 >
-                  <Undo2 className="h-5 w-5" /> Rembourser
-                </Button>
+                  <Button
+                    variant="danger"
+                    size="touch"
+                    className="flex-1"
+                    onClick={() => setRefundOf(full.data ?? null)}
+                    disabled={offline}
+                    data-testid="refund-button"
+                  >
+                    <Undo2 className="h-5 w-5" /> Rembourser
+                  </Button>
+                </span>
               )}
             </div>
             {full.data.transaction.refund_reason && (

@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { Archive, History, Lock, Settings, ShoppingCart, Vault } from 'lucide-react';
+import {
+  Archive,
+  ClipboardList,
+  History,
+  Lock,
+  Settings,
+  ShoppingCart,
+  Vault,
+  WifiOff,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -12,6 +21,8 @@ import {
 import { Input } from '@/components/ui/input';
 import { ReceiptFallbackDialog } from '@/components/ticket/ReceiptFallbackDialog';
 import { useBridgeHealth } from '@/hooks/useBridgeHealth';
+import { useIsAdmin } from '@/hooks/useIsAdmin';
+import { useOfflineQueue } from '@/hooks/useOfflineQueue';
 import { usePrinter } from '@/hooks/usePrinter';
 import { useSession } from '@/hooks/useSession';
 import { hasPin } from '@/lib/pin';
@@ -21,12 +32,23 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import { useUiStore } from '@/stores/uiStore';
 import { StatusBar } from './StatusBar';
 
-const NAV = [
+interface NavItem {
+  to: string;
+  label: string;
+  icon: typeof ShoppingCart;
+  end?: boolean;
+  adminOnly?: boolean;
+  badge?: 'offline';
+}
+
+const NAV: NavItem[] = [
   { to: '/', label: 'Vente', icon: ShoppingCart, end: true },
   { to: '/history', label: 'Historique', icon: History },
   { to: '/closing', label: 'Caisse', icon: Archive },
+  { to: '/offline', label: 'Hors ligne', icon: WifiOff, badge: 'offline' },
+  { to: '/inventory', label: 'Inventaire', icon: ClipboardList, adminOnly: true },
   { to: '/settings', label: 'Réglages', icon: Settings },
-] as const;
+];
 
 function DrawerButton() {
   const [open, setOpen] = useState(false);
@@ -79,21 +101,11 @@ export function AppShell() {
   const navigate = useNavigate();
   const lock = useSessionStore((s) => s.lock);
   const user = useSessionStore((s) => s.user);
-  const setOnline = useUiStore((s) => s.setOnline);
   const autoLockMinutes = useSettingsStore((s) => s.autoLockMinutes);
+  const { isAdmin } = useIsAdmin();
+  const { unsynced, stats } = useOfflineQueue();
   useBridgeHealth(true);
   useSession();
-
-  useEffect(() => {
-    const on = (): void => setOnline(true);
-    const off = (): void => setOnline(false);
-    window.addEventListener('online', on);
-    window.addEventListener('offline', off);
-    return () => {
-      window.removeEventListener('online', on);
-      window.removeEventListener('offline', off);
-    };
-  }, [setOnline]);
 
   const doLock = useCallback(() => {
     if (!hasPin()) return;
@@ -125,23 +137,36 @@ export function AppShell() {
           Ma Papeterie <span className="text-accent">POS</span>
         </span>
         <nav className="flex items-center gap-1" aria-label="Navigation principale">
-          {NAV.map(({ to, label, icon: Icon, ...rest }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={'end' in rest ? rest.end : false}
-              className={({ isActive }) =>
-                cn(
-                  'flex h-11 items-center gap-2 rounded-xl px-4 text-sm font-medium transition-colors',
-                  isActive
-                    ? 'bg-accent/15 text-accent'
-                    : 'text-muted hover:bg-border/60 hover:text-text',
-                )
-              }
-            >
-              <Icon className="h-4 w-4" /> {label}
-            </NavLink>
-          ))}
+          {NAV.filter((n) => !n.adminOnly || isAdmin).map(
+            ({ to, label, icon: Icon, end, badge }) => (
+              <NavLink
+                key={to}
+                to={to}
+                end={end ?? false}
+                className={({ isActive }) =>
+                  cn(
+                    'flex h-11 items-center gap-2 rounded-xl px-4 text-sm font-medium transition-colors',
+                    isActive
+                      ? 'bg-accent/15 text-accent'
+                      : 'text-muted hover:bg-border/60 hover:text-text',
+                  )
+                }
+              >
+                <Icon className="h-4 w-4" /> {label}
+                {badge === 'offline' && unsynced > 0 && (
+                  <span
+                    className={cn(
+                      'ml-1 rounded-full px-2 py-0.5 text-xs font-semibold',
+                      stats.failed > 0 ? 'bg-danger text-white' : 'bg-warning text-bg',
+                    )}
+                    data-testid="nav-offline-badge"
+                  >
+                    {unsynced}
+                  </span>
+                )}
+              </NavLink>
+            ),
+          )}
         </nav>
         <div className="ml-auto flex items-center gap-1">
           <span className="mr-2 hidden text-xs text-muted md:inline">{user?.email}</span>

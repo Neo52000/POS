@@ -1,0 +1,294 @@
+{
+  "generated_at": "2026-09-01T04:00:00.000Z",
+  "data": {
+    "register": {
+      "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+      "code": "CHAUMONT-01",
+      "label": "Caisse comptoir Chaumont"
+    },
+    "period_start": "2026-07-31T22:00:00+00:00",
+    "period_end": "2026-08-31T22:00:00+00:00",
+    "transactions": [
+      {
+        "id": "00000000-0000-4000-8000-000000000040",
+        "client_txn_id": "3f2504e0-4f89-4d3c-9a6b-0f1e2d3c4b5a",
+        "register_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+        "session_id": "c56a4180-65aa-42ec-a945-5fd21dec0538",
+        "ticket_number": 41,
+        "kind": "sale",
+        "business_at": "2026-08-01T07:30:00.000+00:00",
+        "received_at": "2026-08-01T07:30:01.500+00:00",
+        "total_ht_cents": 1683,
+        "total_vat_cents": 178,
+        "total_ttc_cents": 1861,
+        "vat_breakdown": [
+          {
+            "rate": "5.50",
+            "base_ht_cents": 1100,
+            "vat_cents": 61,
+            "ttc_cents": 1161
+          },
+          {
+            "rate": "20.00",
+            "base_ht_cents": 583,
+            "vat_cents": 117,
+            "ttc_cents": 700
+          }
+        ],
+        "customer_account_id": null,
+        "prev_hash": "9971e182483d408e76f913c08cd04cbf94049822ceb53d43a732209583d5b23a",
+        "hash": "f1b6a584fe675891edcd0ab081bc655697b15f20fcfdf7a83aa57812a3b5cd71",
+        "signature_status": "signed",
+        "lines": [
+          {
+            "line_no": 1,
+            "product_id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+            "ean": "3000000000017",
+            "sku": null,
+            "label": "Cahier 96p",
+            "qty": 2,
+            "unit_price_ttc_cents": 350,
+            "unit_price_ht_cents": 292,
+            "vat_rate": 20,
+            "discount_percent": 0,
+            "discount_reason": null,
+            "line_ttc_cents": 700,
+            "line_ht_cents": 583,
+            "line_vat_cents": 117,
+            "eco_tax_cents": 0
+          },
+          {
+            "line_no": 2,
+            "product_id": null,
+            "ean": null,
+            "sku": null,
+            "label": "Livre « Été »",
+            "qty": 1,
+            "unit_price_ttc_cents": 1290,
+            "unit_price_ht_cents": 1223,
+            "vat_rate": 5.5,
+            "discount_percent": 10,
+            "discount_reason": null,
+            "line_ttc_cents": 1161,
+            "line_ht_cents": 1100,
+            "line_vat_cents": 61,
+            "eco_tax_cents": 0
+          }
+        ],
+        "payments": [
+          {
+            "method": "cash",
+            "amount_cents": 2000,
+            "reference": null,
+            "manual_fallback": false
+          }
+        ]
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000041",
+        "client_txn_id": "16fd2706-8baf-433b-82eb-8c7fada847da",
+        "register_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+        "session_id": "c56a4180-65aa-42ec-a945-5fd21dec0538",
+        "ticket_number": 42,
+        "kind": "sale",
+        "business_at": "2026-08-14T15:05:07.123+00:00",
+        "received_at": "2026-08-14T15:05:08.623+00:00",
+        "total_ht_cents": 2075,
+        "total_vat_cents": 415,
+        "total_ttc_cents": 2490,
+        "vat_breakdown": [
+          {
+            "rate": "20.00",
+            "base_ht_cents": 2075,
+            "vat_cents": 415,
+            "ttc_cents": 2490
+          }
+        ],
+        "customer_account_id": null,
+        "prev_hash": "f1b6a584fe675891edcd0ab081bc655697b15f20fcfdf7a83aa57812a3b5cd71",
+        "hash": "8256c461ae286df6d7cc9fe79e75ec6c87322fbf29f35251ef053920e19c2d29",
+        "signature_status": "signed",
+        "lines": [
+          {
+            "line_no": 1,
+            "product_id": null,
+            "ean": null,
+            "sku": null,
+            "label": "Stylo plume",
+            "qty": 1,
+            "unit_price_ttc_cents": 2490,
+            "unit_price_ht_cents": 2075,
+            "vat_rate": 20,
+            "discount_percent": 0,
+            "discount_reason": null,
+            "line_ttc_cents": 2490,
+            "line_ht_cents": 2075,
+            "line_vat_cents": 415,
+            "eco_tax_cents": 0
+          }
+        ],
+        "payments": [
+          {
+            "method": "cb",
+            "amount_cents": 1490,
+            "reference": null,
+            "manual_fallback": false
+          },
+          {
+            "method": "gift_ucia",
+            "amount_cents": 1000,
+            "reference": "UCIA-0042",
+            "manual_fallback": false
+          }
+        ]
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000042",
+        "client_txn_id": "6ba7b810-9dad-41d1-80b4-00c04fd430c8",
+        "register_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+        "session_id": "c56a4180-65aa-42ec-a945-5fd21dec0538",
+        "ticket_number": 43,
+        "kind": "refund",
+        "business_at": "2026-08-31T21:59:57.250+00:00",
+        "received_at": "2026-08-31T21:59:58.750+00:00",
+        "total_ht_cents": -2075,
+        "total_vat_cents": -415,
+        "total_ttc_cents": -2490,
+        "vat_breakdown": [
+          {
+            "rate": "20.00",
+            "base_ht_cents": -2075,
+            "vat_cents": -415,
+            "ttc_cents": -2490
+          }
+        ],
+        "customer_account_id": null,
+        "prev_hash": "8256c461ae286df6d7cc9fe79e75ec6c87322fbf29f35251ef053920e19c2d29",
+        "hash": "464bc2cd8bfc44f7263eb94df4dbad1e3da1ab15cafd0eff9c2b323ebbff8a54",
+        "signature_status": "signed",
+        "lines": [
+          {
+            "line_no": 1,
+            "product_id": null,
+            "ean": null,
+            "sku": null,
+            "label": "Stylo plume",
+            "qty": -1,
+            "unit_price_ttc_cents": 2490,
+            "unit_price_ht_cents": 2075,
+            "vat_rate": 20,
+            "discount_percent": 0,
+            "discount_reason": null,
+            "line_ttc_cents": -2490,
+            "line_ht_cents": -2075,
+            "line_vat_cents": -415,
+            "eco_tax_cents": 0
+          }
+        ],
+        "payments": [
+          {
+            "method": "cb",
+            "amount_cents": -2490,
+            "reference": null,
+            "manual_fallback": false
+          }
+        ]
+      }
+    ],
+    "events": [
+      {
+        "id": 1001,
+        "register_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+        "event_type": "session_open",
+        "payload": {
+          "opening_float_cents": 15000
+        },
+        "created_at": "2026-08-01T07:00:00.000+00:00",
+        "event_number": 500,
+        "prev_hash": "0557ea4a83cd1cc7908411bf3591ff7c8b7ece58fe1742e94de1553b903eb4e8",
+        "hash": "135ace8271308719f7db58ca6efcb1e80d9fcf17dfbb36499ee71b1402bc8567"
+      },
+      {
+        "id": 1002,
+        "register_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+        "event_type": "drawer_opened",
+        "payload": {
+          "reason": "Rendu"
+        },
+        "created_at": "2026-08-14T15:06:00.000+00:00",
+        "event_number": 501,
+        "prev_hash": "135ace8271308719f7db58ca6efcb1e80d9fcf17dfbb36499ee71b1402bc8567",
+        "hash": "ed1672ce7f5208d2bffa545b31a8ac790c1b55ada68db10f963d63bcaf444e4d"
+      },
+      {
+        "id": 1003,
+        "register_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+        "event_type": "offline_reattached",
+        "payload": {
+          "provisional_ref": "OFF-CHAUMONT-01-20260831-001"
+        },
+        "created_at": "2026-08-31T21:00:00.000+00:00",
+        "event_number": 502,
+        "prev_hash": "ed1672ce7f5208d2bffa545b31a8ac790c1b55ada68db10f963d63bcaf444e4d",
+        "hash": "91116619d052ce28c83bc6a25830fa4f88b684584f938e3438ff4e891b58205f"
+      }
+    ],
+    "closings": [
+      {
+        "closing_number": 90,
+        "register_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+        "period_type": "daily",
+        "period_start": "2026-07-31T22:00:00+00:00",
+        "period_end": "2026-08-01T22:00:00+00:00",
+        "total_ttc_cents": 2511,
+        "grand_total_perpetual_cents": 1234567,
+        "created_at": "2026-08-01T17:00:00+00:00",
+        "prev_hash": "b12fc21a8095cf21b583d4efe7d508b86f791f6e98d8ff67758ea63ae1be85e5",
+        "hash": "791b471e0c1a90bcde5d50089d57ca3359aaff7ed4daeac16098a45a067ba365"
+      },
+      {
+        "closing_number": 91,
+        "register_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+        "period_type": "daily",
+        "period_start": "2026-08-13T22:00:00+00:00",
+        "period_end": "2026-08-14T22:00:00+00:00",
+        "total_ttc_cents": 2490,
+        "grand_total_perpetual_cents": 1237057,
+        "created_at": "2026-08-14T17:00:00+00:00",
+        "prev_hash": "791b471e0c1a90bcde5d50089d57ca3359aaff7ed4daeac16098a45a067ba365",
+        "hash": "aee3729f63187fff266df9a4b17ab45e1eab026728bd9d31fbb39b58e4aede22"
+      }
+    ],
+    "chain_heads": {
+      "anchor_ticket_number": 40,
+      "anchor_ticket_hash": "9971e182483d408e76f913c08cd04cbf94049822ceb53d43a732209583d5b23a",
+      "last_ticket_number": 43,
+      "last_ticket_hash": "464bc2cd8bfc44f7263eb94df4dbad1e3da1ab15cafd0eff9c2b323ebbff8a54",
+      "last_event_id": 1003,
+      "last_event_hash": "91116619d052ce28c83bc6a25830fa4f88b684584f938e3438ff4e891b58205f",
+      "last_closing_number": 91,
+      "last_closing_hash": "aee3729f63187fff266df9a4b17ab45e1eab026728bd9d31fbb39b58e4aede22"
+    },
+    "previous_archive": {
+      "id": "7c1f4c2e-9a7b-4d3e-8f21-0b5c6d7e8f90",
+      "period_start": "2026-06-30T22:00:00+00:00",
+      "hash": "0a74cacca6b873bf5346d622bf637940367b10903259200b2959d46ea230d919",
+      "manifest_sha256": "2adc6dbaae06c92621da0e25367721c5ac3ca8e8510b460d76e0ee444a3ce830",
+      "last_ticket_number": 40,
+      "last_event_id": 1000,
+      "last_closing_number": 89
+    },
+    "software": {
+      "name": "Ma Papeterie POS",
+      "version": "0.1.0"
+    }
+  },
+  "expected": {
+    "manifest_sha256": "47639c5f993cac13f22897a397aa592eb70837dbd92c3204a142b3ae6757c8fa",
+    "files": {
+      "transactions.jsonl": "242a861404b68f164843628b5b940f2809d1bc5ac1bc28cbc6c1abb3981c9323",
+      "events.jsonl": "50d076c653c8e87774be156d11986498ec02008d9e934e5afea9a78a043c8a41",
+      "closings.jsonl": "a133beb8b0450d0160602e0030d7b1ba111d4f46c2b1abdc6587e9d5fdb44dcc"
+    }
+  }
+}

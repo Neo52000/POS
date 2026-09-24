@@ -235,4 +235,75 @@ export type PosEventType =
   | 'sale_abandoned'
   | 'manual_cb_fallback'
   | 'price_override'
-  | 'refund';
+  | 'refund'
+  | 'offline_enter'
+  | 'offline_exit'
+  | 'offline_replay_failed';
+
+/** `pos_client_settings()` (lot 4). */
+export interface PosClientSettings {
+  offline_max_txns: number;
+  offline_max_hours: number;
+  clock_tolerance: { online_minutes: number; offline_hours: number; future_minutes: number };
+  server_now: string;
+}
+
+/** Ligne de `pos_catalog_page` (catalogue ma-papeterie, synchro hors ligne). */
+export interface CatalogPageRow extends PosProduct {
+  updated_at: string;
+  pos_visible: boolean;
+}
+
+/** Ligne de `pos_archives` (lot 5). */
+export interface PosArchive {
+  id: string;
+  register_id: string;
+  period_start: string;
+  period_end: string;
+  storage_path: string;
+  manifest_sha256: string;
+  hash: string;
+  created_at: string;
+}
+
+/** Réponse `pos-export-archive`. */
+export interface ExportArchiveResult {
+  archives: Array<{
+    register_code: string;
+    period_start: string;
+    period_end: string;
+    storage_path: string;
+    manifest_sha256: string;
+    hash: string;
+    already_exists: boolean;
+    counts: { transactions: number; events: number; closings: number };
+  }>;
+}
+
+/** Entrée `pos-stock-adjust` (lot 6). */
+export interface StockAdjustItem {
+  product_id: string;
+  counted: number;
+  idempotency_key: string;
+  label?: string;
+}
+
+export interface StockAdjustInput {
+  items: StockAdjustItem[];
+  reason: string;
+  register_id?: string;
+}
+
+export interface StockAdjustLineResult {
+  product_id: string;
+  applied: boolean;
+  already_applied: boolean;
+  stock_before: number;
+  stock_after: number;
+  delta: number;
+  error?: string;
+}
+
+export interface StockAdjustResult {
+  results: StockAdjustLineResult[];
+}

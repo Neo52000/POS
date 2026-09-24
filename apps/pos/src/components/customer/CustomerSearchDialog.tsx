@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { useCustomerSearch } from '@/hooks/useCustomerSearch';
 import { formatEurCents } from '@/lib/format';
 import { errorMessage } from '@/lib/utils';
+import { useUiStore } from '@/stores/uiStore';
 import type { PosCustomer } from '@/types/pos';
 
 export interface CustomerSearchDialogProps {
@@ -22,7 +23,8 @@ export interface CustomerSearchDialogProps {
 
 export function CustomerSearchDialog({ open, onOpenChange, onPick }: CustomerSearchDialogProps) {
   const [q, setQ] = useState('');
-  const { data, isFetching, isError, error } = useCustomerSearch(open ? q : '');
+  const offline = useUiStore((s) => s.connectivity === 'offline');
+  const { data, isFetching, isError, error } = useCustomerSearch(open && !offline ? q : '');
 
   return (
     <Dialog
@@ -42,11 +44,17 @@ export function CustomerSearchDialog({ open, onOpenChange, onPick }: CustomerSea
         <Input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Rechercher un client…"
+          placeholder={offline ? 'Recherche indisponible hors ligne' : 'Rechercher un client…'}
+          disabled={offline}
           autoFocus
           data-testid="customer-search-input"
         />
         <div className="min-h-[200px] flex-1 overflow-y-auto">
+          {offline && (
+            <p className="py-4 text-center text-warning" data-testid="customer-search-offline">
+              Hors ligne : recherche client indisponible.
+            </p>
+          )}
           {isFetching && (
             <div className="flex justify-center py-6 text-muted">
               <Loader2 className="h-6 w-6 animate-spin" />

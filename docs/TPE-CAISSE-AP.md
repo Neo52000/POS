@@ -18,9 +18,8 @@ PWA (Chrome kiosque, PC comptoir)            PC comptoir                     LAN
   origine HTTPS appelle `localhost` : le pont l'ajoute.
 - Une **connexion TCP par transaction** vers le TPE ; le TPE ferme la connexion après sa réponse.
 - Un **seul paiement à la fois** (`409 busy`), les phases sont diffusées sur `WS /events`.
-- iPad (plus tard) : Safari refuse le contenu mixte, donc TLS obligatoire. Prévu : le pont
-  écoute sur l'IP LAN, certificat Let's Encrypt **DNS-01** pour `bridge.ma-papeterie.fr`
-  (résolu vers l'IP privée du PC), terminaison TLS par un reverse proxy local (Caddy).
+- iPad : Safari refuse le contenu mixte, donc TLS obligatoire. Le pont sert lui-même le HTTPS
+  (option `tls`, Fastify `https`), voir §9 ; aucun reverse proxy n'est nécessaire.
 
 ## 2. Trame
 
@@ -134,7 +133,7 @@ Le tout peut être répété sans TPE avec `tpe.simulate: true` (simulateur int�
 
 - **Un paiement à la fois** et une seule caisse (`CA=01`).
 - Pas de TLS entre le pont et le TPE (protocole en clair sur le LAN boutique, comme prévu par
-  Caisse-AP) ; le LAN doit rester privé.
+  Caisse-AP) ; le LAN doit rester privé. Le TLS du §9 ne concerne que PWA ↔ pont.
 - Le pont ne conserve **aucun état** : en cas de redémarrage pendant un paiement, la réponse est
   perdue (la caisse traite alors comme un `timeout` : vérification manuelle sur le TPE).
 - `/payment/cancel` n'interrompt pas la saisie côté TPE, il libère seulement la caisse.
@@ -164,3 +163,34 @@ response_frame 1 € accepté :
 response_frame refus :
 Durée moyenne :
 ```
+
+## 9. HTTPS natif du pont (iPad)
+
+Safari (iPad) n'autorise une page `https://pos.ma-papeterie.fr` à appeler le pont que si celui-ci
+est lui aussi en HTTPS avec un certificat de confiance. Le pont termine TLS lui-même (Fastify
+`https: { cert, key }`) : **Caddy ou tout autre reverse proxy n'est plus nécessaire**.
+
+Configuration (`bridge.config.json`) :
+
+```json
+{
+  "http": { "host": "0.0.0.0", "port": 8787 },
+  "allowedOrigins": ["https://pos.ma-papeterie.fr"],
+  "tls": { "certPath": "tls/fullchain.pem", "keyPath": "tls/privkey.pem" }
+}
+```
+
+- `tls` absent : HTTP simple (PC comptoir, `127.0.0.1`) — comportement inchangé.
+- Chemins relatifs résolus depuis le dossier de `bridge.config.json`. Fichier illisible → le pont
+  refuse de démarrer (code 2) avec `tls.certPath illisible : …`.
+- Au démarrage, le journal indique le schéma : `pont TPE prêt (HTTPS)` et
+  `url: https://0.0.0.0:8787`. Le WebSocket devient `wss://…/events`.
+- Dans l'exemple fourni, la clé est présente sous le nom `"//tls"` (les clés commençant par `//`
+  sont ignorées) : la renommer en `"tls"` pour l'activer.
+
+Certificat : nom `bridge.ma-papeterie.fr`, enregistrement DNS public `A` vers l'**IP privée** du PC
+comptoir, certificat Let's Encrypt obtenu par challenge **DNS-01** (aucun port exposé sur
+Internet). Le certificat est lu au démarrage : après chaque renouvellement (≤ 90 jours),
+**redémarrer le service** du pont. Côté PWA de l'iPad : `VITE_BRIDGE_URL=https://bridge.ma-papeterie.fr:8787`.
+Procédure complète : `docs/BASCULE.md` (J-4). Test automatisé : `services/tpe-bridge/test/tls.test.ts`
+(certificat auto-signé de test dans `test/fixtures/tls/`, jamais utilisé en production).

@@ -3,13 +3,16 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { AppShell } from '@/components/layout/AppShell';
 import { Toaster } from '@/components/ui/toaster';
+import { startOfflineRuntime } from '@/lib/offlineRuntime';
 import { queryClient } from '@/lib/queryClient';
 import { supabase } from '@/lib/supabase';
 import { useSessionStore } from '@/stores/sessionStore';
 import { ClosingPage } from '@/pages/ClosingPage';
 import { HistoryPage } from '@/pages/HistoryPage';
+import { InventoryPage } from '@/pages/InventoryPage';
 import { LockPage } from '@/pages/LockPage';
 import { LoginPage } from '@/pages/LoginPage';
+import { OfflinePage } from '@/pages/OfflinePage';
 import { SalePage } from '@/pages/SalePage';
 import { SettingsPage } from '@/pages/SettingsPage';
 
@@ -46,6 +49,9 @@ function RequireAuth() {
   const status = useSessionStore((s) => s.authStatus);
   const locked = useSessionStore((s) => s.locked);
   const location = useLocation();
+  // Connectivité, file hors ligne, synchro catalogue : actifs tant qu'un vendeur est connecté
+  // (y compris écran verrouillé).
+  useEffect(() => (status === 'signed_in' ? startOfflineRuntime() : undefined), [status]);
   if (status === 'loading') return <Splash />;
   if (status === 'signed_out')
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
@@ -73,6 +79,8 @@ function Router() {
           <Route index element={<SalePage />} />
           <Route path="/history" element={<HistoryPage />} />
           <Route path="/closing" element={<ClosingPage />} />
+          <Route path="/offline" element={<OfflinePage />} />
+          <Route path="/inventory" element={<InventoryPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Route>
       </Route>

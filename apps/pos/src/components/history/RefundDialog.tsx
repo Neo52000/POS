@@ -16,6 +16,7 @@ import { PaymentSheet } from '@/components/payment/PaymentSheet';
 import type { PosCheckoutResult } from '@/lib/edge';
 import { formatEurCents, formatQty } from '@/lib/format';
 import { ticketCode } from '@/lib/ticket';
+import { useUiStore } from '@/stores/uiStore';
 import type { TransactionFull } from '@/types/pos';
 
 export interface RefundDialogProps {
@@ -29,6 +30,7 @@ export function RefundDialog({ full, onClose, onDone }: RefundDialogProps) {
   const [qtys, setQtys] = useState<Record<string, number>>({});
   const [reason, setReason] = useState('');
   const [paying, setPaying] = useState(false);
+  const offline = useUiStore((s) => s.connectivity === 'offline');
 
   const lines = full?.lines ?? [];
   const refundLines: CartLineInput[] = useMemo(
@@ -53,7 +55,7 @@ export function RefundDialog({ full, onClose, onDone }: RefundDialogProps) {
     [lines, qtys],
   );
   const totals = useMemo(() => computeCart(refundLines), [refundLines]);
-  const valid = refundLines.length > 0 && reason.trim().length >= 3;
+  const valid = refundLines.length > 0 && reason.trim().length >= 3 && !offline;
 
   const setQty = (id: string, max: number, n: number): void =>
     setQtys((q) => ({ ...q, [id]: Math.min(max, Math.max(0, n)) }));
@@ -142,6 +144,11 @@ export function RefundDialog({ full, onClose, onDone }: RefundDialogProps) {
               {formatEurCents(Math.abs(totals.total_ttc_cents))}
             </span>
           </div>
+          {offline && (
+            <p className="text-sm text-danger" data-testid="refund-offline">
+              Hors ligne : remboursement impossible (il sera possible au retour du réseau).
+            </p>
+          )}
           <DialogFooter>
             <Button variant="secondary" size="touch" onClick={close}>
               Annuler
@@ -150,6 +157,7 @@ export function RefundDialog({ full, onClose, onDone }: RefundDialogProps) {
               variant="danger"
               size="touch"
               disabled={!valid}
+              title={offline ? 'Remboursement impossible hors ligne' : undefined}
               onClick={() => setPaying(true)}
               data-testid="refund-next"
             >

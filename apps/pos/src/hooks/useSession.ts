@@ -1,5 +1,7 @@
 import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { isNetworkFailure } from '@/lib/apiError';
+import { isOffline } from '@/lib/connectivity';
 import { supabase } from '@/lib/supabase';
 import { useSessionStore } from '@/stores/sessionStore';
 import type { PosRegister, PosSession } from '@/types/pos';
@@ -8,9 +10,90 @@ export interface SessionLoad {
   register: PosRegister | null;
   registers: PosRegister[];
   session: PosSession | null;
+  /** Vrai si les données viennent du cache local (réseau indisponible). */
+  fromCache?: boolean;
 }
 
+/** Dernière caisse + session ouverte connues (utilisées hors ligne). */
+export const SESSION_CACHE_KEY = 'pos.session.cache.v1';
+
+interface SessionCache {
+  register: PosRegister;
+  registers: PosRegister[];
+  session: PosSession | null;
+  cached_at: string;
+}
+
+export function readSessionCache(): SessionCache | null {
+  try {
+    const raw = localStorage.getItem(SESSION_CACHE_KEY);
+    return raw ? (JSON.parse(raw) as SessionCache) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeSessionCache(load: SessionLoad): void {
+  try {
+    if (!load.register) {
+      localStorage.removeItem(SESSION_CACHE_KEY);
+      return;
+    }
+    const cache: SessionCache = {
+      register: load.register,
+      registers: load.registers,
+      session: load.session && load.session.status === 'open' ? load.session : null,
+      cached_at: new Date().toISOString(),
+    };
+    localStorage.setItem(SESSION_CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    // stockage indisponible
+  }
+}
+
+/** Met à jour la session du cache (ouverture / clôture). */
+export function updateCachedSession(session: PosSession | null): void {
+  const cache = readSessionCache();
+  if (!cache) return;
+  try {
+    localStorage.setItem(
+      SESSION_CACHE_KEY,
+      JSON.stringify({ ...cache, session: session?.status === 'open' ? session : null }),
+    );
+  } catch {
+    // stockage indisponible
+  }
+}
+
+/**
+ * Réseau : lecture Supabase puis mise en cache. Échec réseau (ou caisse hors ligne) : dernière
+ * caisse/session connues. Sans cache, l'erreur est propagée : on ne prétend jamais qu'une session
+ * est ouverte.
+ */
 async function loadSession(preferredRegisterId: string | null): Promise<SessionLoad> {
+  try {
+    const load = await loadSessionRemote(preferredRegisterId);
+    writeSessionCache(load);
+    return load;
+  } catch (e) {
+    const cache = readSessionCache();
+    if (
+      cache &&
+      (isOffline() || isNetworkFailure(e)) &&
+      (!preferredRegisterId || cache.register.id === preferredRegisterId)
+    ) {
+      return {
+        register: cache.register,
+        registers: cache.registers,
+        session: cache.session,
+        fromCache: true,
+      };
+    }
+    throw e;
+  }
+}
+
+async function loadSessionRemote(preferredRegisterId: string | null): Promise<SessionLoad> {
   const { data: regs, error } = await supabase
     .from('pos_registers')
     .select('id, code, label, is_active')

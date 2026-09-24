@@ -43,3 +43,16 @@ export async function requirePos(req: Request): Promise<AuthContext> {
   if (ok !== true) throw new ApiError('FORBIDDEN_ROLE', 'Rôle pos ou admin requis');
   return { kind: 'user', userId: data.user.id, db: serviceClient(), userDb: udb };
 }
+
+/**
+ * Autorise un administrateur de caisse (`is_pos_admin()`, évalué avec le JWT utilisateur) ou le
+ * service role (crons, appels internes). Vendeur simple → 403 FORBIDDEN_ROLE.
+ */
+export async function requirePosAdmin(req: Request): Promise<AuthContext> {
+  const auth = await requirePos(req);
+  if (auth.kind === 'service' || !auth.userDb) return auth;
+  const { data: ok, error } = await auth.userDb.rpc('is_pos_admin');
+  if (error) throw new ApiError('DB_ERROR', error.message);
+  if (ok !== true) throw new ApiError('FORBIDDEN_ROLE', 'Rôle admin requis');
+  return auth;
+}

@@ -211,6 +211,43 @@ export async function computeTransactionHashAsync(input: CanonicalTxnInput): Pro
   return sha256HexAsync(await buildCanonicalStringAsync(input));
 }
 
+/** Contrôle d'un maillon : hash recalculé, continuité de numérotation, `prev_hash`. */
+function checkLink(
+  previous: ChainedTxn | undefined,
+  txn: ChainedTxn,
+  expected: string,
+): ChainBreak | null {
+  const actual = txn.hash.toLowerCase();
+  if (expected !== actual) {
+    return { ticket_number: txn.ticket_number, expected, actual, reason: 'HASH_MISMATCH' };
+  }
+  if (previous) {
+    const expectedTicket = previous.ticket_number + 1;
+    if (txn.ticket_number !== expectedTicket) {
+      return {
+        ticket_number: txn.ticket_number,
+        expected: String(expectedTicket),
+        actual: String(txn.ticket_number),
+        reason: 'TICKET_GAP',
+      };
+    }
+    const prevHash = nullable(txn.prev_hash).toLowerCase();
+    if (prevHash !== previous.hash.toLowerCase()) {
+      return {
+        ticket_number: txn.ticket_number,
+        expected: previous.hash.toLowerCase(),
+        actual: prevHash,
+        reason: 'PREV_HASH_MISMATCH',
+      };
+    }
+  }
+  return null;
+}
+
+function byTicketNumber(transactions: readonly ChainedTxn[]): ChainedTxn[] {
+  return [...transactions].sort((a, b) => a.ticket_number - b.ticket_number);
+}
+
 /**
  * Vérifie une chaîne de transactions (triées par `ticket_number`) :
  * - chaque `hash` est recalculable depuis ses champs ;
@@ -219,48 +256,23 @@ export async function computeTransactionHashAsync(input: CanonicalTxnInput): Pro
  * Le `prev_hash` du premier élément n'est vérifié que par sa contribution au hash.
  */
 export function verifyChain(transactions: readonly ChainedTxn[]): ChainVerification {
-  const ordered = [...transactions].sort((a, b) => a.ticket_number - b.ticket_number);
   let previous: ChainedTxn | undefined;
-  for (const txn of ordered) {
-    const expected = computeTransactionHash(txn);
-    const actual = txn.hash.toLowerCase();
-    if (expected !== actual) {
-      return {
-        ok: false,
-        first_break: {
-          ticket_number: txn.ticket_number,
-          expected,
-          actual,
-          reason: 'HASH_MISMATCH',
-        },
-      };
-    }
-    if (previous) {
-      const expectedTicket = previous.ticket_number + 1;
-      if (txn.ticket_number !== expectedTicket) {
-        return {
-          ok: false,
-          first_break: {
-            ticket_number: txn.ticket_number,
-            expected: String(expectedTicket),
-            actual: String(txn.ticket_number),
-            reason: 'TICKET_GAP',
-          },
-        };
-      }
-      const prevHash = nullable(txn.prev_hash).toLowerCase();
-      if (prevHash !== previous.hash.toLowerCase()) {
-        return {
-          ok: false,
-          first_break: {
-            ticket_number: txn.ticket_number,
-            expected: previous.hash.toLowerCase(),
-            actual: prevHash,
-            reason: 'PREV_HASH_MISMATCH',
-          },
-        };
-      }
-    }
+  for (const txn of byTicketNumber(transactions)) {
+    const failure = checkLink(previous, txn, computeTransactionHash(txn));
+    if (failure) return { ok: false, first_break: failure };
+    previous = txn;
+  }
+  return { ok: true };
+}
+
+/** `verifyChain` avec SHA-256 WebCrypto (navigateur, Deno, Node) : mêmes règles, même résultat. */
+export async function verifyChainAsync(
+  transactions: readonly ChainedTxn[],
+): Promise<ChainVerification> {
+  let previous: ChainedTxn | undefined;
+  for (const txn of byTicketNumber(transactions)) {
+    const failure = checkLink(previous, txn, await computeTransactionHashAsync(txn));
+    if (failure) return { ok: false, first_break: failure };
     previous = txn;
   }
   return { ok: true };

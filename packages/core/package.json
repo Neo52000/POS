@@ -18,7 +18,8 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "gen:vectors": "tsx scripts/gen-hash-vectors.ts && prettier --write src/__fixtures__/hash-vectors.json"
+    "gen:vectors": "tsx scripts/gen-hash-vectors.ts && prettier --write src/__fixtures__/hash-vectors.json",
+    "gen:archive-vector": "tsx scripts/gen-archive-vector.ts && prettier --write src/__fixtures__/archive-vector.json"
   },
   "devDependencies": {
     "typescript": "^5.9.0",

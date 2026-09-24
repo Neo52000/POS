@@ -2,6 +2,10 @@ import { create } from 'zustand';
 import type { TicketPayload } from '@pos/core';
 
 export type BridgeStatus = 'unknown' | 'ok' | 'ko';
+/** `replaying` : en ligne, rejeu de la file hors ligne en cours. */
+export type Connectivity = 'online' | 'offline' | 'replaying';
+/** Raison d'arrêt du rejeu nécessitant une action humaine. */
+export type ReplayBlock = 'session_not_open' | 'unauthorized' | null;
 export type ToastVariant = 'default' | 'success' | 'warning' | 'danger';
 
 export interface ToastItem {
@@ -20,7 +24,12 @@ export interface ToastInput {
 }
 
 interface UiState {
+  /** `connectivity !== 'offline'` (conservé pour les consommateurs existants). */
   online: boolean;
+  connectivity: Connectivity;
+  /** Début réel de la période hors ligne (ISO), `null` en ligne. */
+  offlineSince: string | null;
+  replayBlock: ReplayBlock;
   bridgeStatus: BridgeStatus;
   bridgeVersion: string | null;
   tpeReachable: boolean | null;
@@ -30,6 +39,8 @@ interface UiState {
   /** Ticket affiché plein écran quand l'impression via le pont échoue. */
   receiptFallback: TicketPayload | null;
   setOnline: (online: boolean) => void;
+  setConnectivity: (c: Connectivity, offlineSince?: string | null) => void;
+  setReplayBlock: (b: ReplayBlock) => void;
   setBridgeHealth: (
     h: {
       ok: boolean;
@@ -48,6 +59,13 @@ let toastSeq = 0;
 
 export const useUiStore = create<UiState>()((set) => ({
   online: typeof navigator === 'undefined' ? true : navigator.onLine,
+  connectivity:
+    typeof navigator === 'undefined' || navigator.onLine
+      ? ('online' as const)
+      : ('offline' as const),
+  offlineSince:
+    typeof navigator === 'undefined' || navigator.onLine ? null : new Date().toISOString(),
+  replayBlock: null,
   bridgeStatus: 'unknown',
   bridgeVersion: null,
   tpeReachable: null,
@@ -55,7 +73,26 @@ export const useUiStore = create<UiState>()((set) => ({
   bridgeSimulate: false,
   toasts: [],
   receiptFallback: null,
-  setOnline: (online) => set({ online }),
+  setOnline: (online) =>
+    set((s) =>
+      online
+        ? { online: true, connectivity: 'online', offlineSince: null }
+        : {
+            online: false,
+            connectivity: 'offline',
+            offlineSince: s.offlineSince ?? new Date().toISOString(),
+          },
+    ),
+  setConnectivity: (connectivity, offlineSince) =>
+    set((s) => ({
+      connectivity,
+      online: connectivity !== 'offline',
+      offlineSince:
+        connectivity === 'offline'
+          ? (offlineSince ?? s.offlineSince ?? new Date().toISOString())
+          : null,
+    })),
+  setReplayBlock: (replayBlock) => set({ replayBlock }),
   setBridgeHealth: (h) =>
     set(
       h

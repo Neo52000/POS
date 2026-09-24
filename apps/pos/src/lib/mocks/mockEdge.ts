@@ -5,10 +5,13 @@ import type { EdgeClient, PosCheckoutResult } from '@/lib/edge';
 import { buildTicketPayload } from '@/lib/ticket';
 import { businessDate } from '@/lib/format';
 import type {
+  ExportArchiveResult,
+  PosArchive,
   PosPayment,
   PosTransaction,
   PosTransactionLine,
   ResolvedPrice,
+  StockAdjustLineResult,
   TransactionFull,
 } from '@/types/pos';
 import {
@@ -18,7 +21,19 @@ import {
   MOCK_SETTINGS,
   mockResolvePrice,
 } from './mockData';
+import { mockProducts } from './mockCatalog';
+import { assertMockOnline } from './mockNetwork';
 import { mockSave, mockState } from './mockStore';
+
+/** `pos_settings.clock_tolerance` (contrat lot 4). */
+const CLOCK_TOLERANCE = { online_minutes: 10, offline_hours: 72, future_minutes: 5 };
+
+/** Mois précédent (approximation Europe/Paris : bornes au 1er du mois, heure locale du poste). */
+function previousMonthBounds(now = new Date()): { start: Date; end: Date } {
+  const end = new Date(now.getFullYear(), now.getMonth(), 1);
+  const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  return { start, end };
+}
 
 function fakeHash(seed: string): string {
   let h = 0;
@@ -33,6 +48,7 @@ function uuidFrom(prefix: string, n: number): string {
 export function createMockEdge(): EdgeClient {
   return {
     async checkout(payload: CheckoutPayload): Promise<PosCheckoutResult> {
+      assertMockOnline();
       const st = mockState();
       const existing = st.transactions.find(
         (t) => t.transaction.client_txn_id === payload.client_txn_id,
@@ -48,8 +64,37 @@ export function createMockEdge(): EdgeClient {
       }
       const valid = validateCheckoutPayload(payload);
       if (!valid.ok) throw new ApiError('VALIDATION', 'Payload invalide', valid.errors, 400);
-      if (!st.session || st.session.status !== 'open' || st.session.id !== payload.session_id) {
-        throw new ApiError('SESSION_NOT_OPEN', 'SESSION_NOT_OPEN', null, 409);
+      if (payload.offline_queued && payload.kind === 'refund') {
+        throw new ApiError('VALIDATION', 'Remboursement hors ligne interdit', null, 400);
+      }
+      // Horodatage métier : ±10 min en ligne ; hors ligne ≤ 72 h dans le passé, ≤ 5 min dans le futur.
+      const nowMs = Date.now();
+      const businessMs = Date.parse(payload.business_at);
+      const outOfRange = payload.offline_queued
+        ? businessMs < nowMs - CLOCK_TOLERANCE.offline_hours * 3600_000 ||
+          businessMs > nowMs + CLOCK_TOLERANCE.future_minutes * 60_000
+        : Math.abs(businessMs - nowMs) > CLOCK_TOLERANCE.online_minutes * 60_000;
+      if (outOfRange) {
+        throw new ApiError('BUSINESS_AT_OUT_OF_RANGE', 'BUSINESS_AT_OUT_OF_RANGE', null, 422);
+      }
+      let sessionId = payload.session_id;
+      const sessionOpen = !!st.session && st.session.status === 'open';
+      if (!sessionOpen || st.session?.id !== payload.session_id) {
+        // Vente hors ligne dont la session est fermée : rattachée à la session ouverte.
+        if (payload.offline_queued && sessionOpen && st.session) {
+          sessionId = st.session.id;
+          st.events.push({
+            type: 'offline_reattached',
+            payload: {
+              client_txn_id: payload.client_txn_id,
+              from_session_id: payload.session_id,
+              to_session_id: sessionId,
+            },
+            at: new Date().toISOString(),
+          });
+        } else {
+          throw new ApiError('SESSION_NOT_OPEN', 'SESSION_NOT_OPEN', null, 409);
+        }
       }
       const totals = computeCart(payload.lines);
       if (
@@ -94,7 +139,7 @@ export function createMockEdge(): EdgeClient {
         id,
         client_txn_id: payload.client_txn_id,
         register_id: payload.register_id,
-        session_id: payload.session_id,
+        session_id: sessionId,
         ticket_number: n,
         kind: payload.kind,
         refund_of_transaction_id: payload.refund_of_transaction_id ?? null,
@@ -191,7 +236,111 @@ export function createMockEdge(): EdgeClient {
         idempotent_replay: false,
       };
     },
+    async exportArchive(input): Promise<ExportArchiveResult> {
+      assertMockOnline();
+      const st = mockState();
+      const { start, end } = input.period_start
+        ? (() => {
+            const s = new Date(input.period_start);
+            return { start: s, end: new Date(s.getFullYear(), s.getMonth() + 1, 1) };
+          })()
+        : previousMonthBounds();
+      const periodStart = start.toISOString();
+      const periodEnd = end.toISOString();
+      const ym = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}`;
+      const storagePath = `${MOCK_REGISTER.code}/${ym}.zip`;
+      const existing = st.archives.find(
+        (a) => a.register_id === MOCK_REGISTER.id && a.period_start === periodStart,
+      );
+      const txns = st.transactions.filter(
+        (t) => t.transaction.business_at >= periodStart && t.transaction.business_at < periodEnd,
+      );
+      let archive: PosArchive;
+      if (existing) {
+        archive = existing;
+      } else {
+        const prev = st.archives[st.archives.length - 1]?.hash ?? '';
+        const manifest = fakeHash(`manifest|${storagePath}|${txns.length}`);
+        archive = {
+          id: uuidFrom('a1000000', st.archives.length + 1),
+          register_id: MOCK_REGISTER.id,
+          period_start: periodStart,
+          period_end: periodEnd,
+          storage_path: storagePath,
+          manifest_sha256: manifest,
+          hash: fakeHash(`archive|${storagePath}|${manifest}|${prev}`),
+          created_at: new Date().toISOString(),
+        };
+        st.archives.push(archive);
+        mockSave();
+      }
+      return {
+        archives: [
+          {
+            register_code: MOCK_REGISTER.code,
+            period_start: archive.period_start,
+            period_end: archive.period_end,
+            storage_path: archive.storage_path,
+            manifest_sha256: archive.manifest_sha256,
+            hash: archive.hash,
+            already_exists: !!existing,
+            counts: { transactions: txns.length, events: st.events.length, closings: 0 },
+          },
+        ],
+      };
+    },
+    async stockAdjust(input) {
+      assertMockOnline();
+      if (!input.reason || input.reason.trim().length < 3) {
+        throw new ApiError('VALIDATION', 'reason: 3..200 caractères', null, 400);
+      }
+      if (input.items.length === 0 || input.items.length > 200) {
+        throw new ApiError('VALIDATION', 'items: 1..200', null, 400);
+      }
+      const st = mockState();
+      const products = mockProducts();
+      const results: StockAdjustLineResult[] = input.items.map((item) => {
+        const known = st.stockKeys[item.idempotency_key];
+        if (known) return { ...known, applied: false, already_applied: true };
+        const product = products.find((p) => p.id === item.product_id);
+        if (!product) {
+          return {
+            product_id: item.product_id,
+            applied: false,
+            already_applied: false,
+            stock_before: 0,
+            stock_after: 0,
+            delta: 0,
+            error: 'PRODUCT_NOT_FOUND',
+          };
+        }
+        const before = product.stock_boutique;
+        const r: StockAdjustLineResult = {
+          product_id: item.product_id,
+          applied: true,
+          already_applied: false,
+          stock_before: before,
+          stock_after: item.counted,
+          delta: item.counted - before,
+        };
+        st.stock[item.product_id] = item.counted;
+        st.stockKeys[item.idempotency_key] = r;
+        return r;
+      });
+      st.events.push({
+        type: 'stock_adjustment',
+        payload: {
+          items: results.length,
+          delta_sum: results.reduce((s, r) => s + r.delta, 0),
+          reason: input.reason,
+        },
+        at: new Date().toISOString(),
+      });
+      mockSave();
+      return { results };
+    },
     async customerSearch(q) {
+      assertMockOnline();
       const needle = q.trim().toLowerCase();
       return MOCK_CUSTOMERS.filter(
         (c) =>
@@ -201,9 +350,11 @@ export function createMockEdge(): EdgeClient {
       );
     },
     async customerQuotes(accountId) {
+      assertMockOnline();
       return MOCK_QUOTES[accountId] ?? [];
     },
     async resolvePrices(accountId, lines) {
+      assertMockOnline();
       const out: ResolvedPrice[] = [];
       for (const l of lines) {
         const r = mockResolvePrice(accountId, l.product_id, l.qty);

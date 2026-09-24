@@ -2,6 +2,7 @@ import { Building2, FileText, Loader2, UserPlus, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useCustomerStore } from '@/stores/customerStore';
+import { useUiStore } from '@/stores/uiStore';
 
 export interface CustomerBadgeProps {
   onSearch: () => void;
@@ -14,6 +15,7 @@ export function CustomerBadge({ onSearch, onQuotes }: CustomerBadgeProps) {
   const resolving = useCustomerStore((s) => s.resolving);
   const error = useCustomerStore((s) => s.error);
   const detach = useCustomerStore((s) => s.detach);
+  const offline = useUiStore((s) => s.connectivity === 'offline');
 
   if (!account) {
     return (
@@ -23,9 +25,12 @@ export function CustomerBadge({ onSearch, onQuotes }: CustomerBadgeProps) {
           size="touch"
           className="w-full justify-start"
           onClick={onSearch}
+          disabled={offline}
+          title={offline ? 'Recherche client indisponible hors ligne' : undefined}
           data-testid="customer-button"
         >
           <UserPlus className="h-5 w-5 text-accent" /> Client pro
+          {offline && <span className="ml-auto text-xs text-muted">(hors ligne)</span>}
         </Button>
       </div>
     );
@@ -61,6 +66,7 @@ export function CustomerBadge({ onSearch, onQuotes }: CustomerBadgeProps) {
           size="touch"
           className="justify-start"
           onClick={onQuotes}
+          disabled={offline}
           data-testid="quotes-button"
         >
           <FileText className="h-5 w-5" /> {account.open_quotes_count} devis ouvert

@@ -76,7 +76,7 @@ Règles : `gift_ucia` et `cheque` exigent `reference` non vide ; `transfer` exig
 { transaction: PosTransaction, lines: PosTransactionLine[], payments: PosPayment[], ticket: TicketPayload, idempotent_replay: boolean }
 ```
 
-Codes d'erreur (HTTP 4xx, corps `{ error: { code, message, details? } }`) : `UNAUTHORIZED`, `FORBIDDEN_ROLE`, `VALIDATION` (zod), `SESSION_NOT_OPEN`, `TOTALS_MISMATCH`, `PAYMENTS_MISMATCH`, `REFUND_EXCEEDS_SOLD`, `REFUND_TARGET_NOT_FOUND`, `QUOTE_NOT_FOUND`. 5xx : `DB_ERROR`, `FISKALY_ERROR` (n'annule PAS la vente : le résultat est renvoyé avec `signature_status='pending_signature'`).
+Codes d'erreur (HTTP 4xx, corps `{ error: { code, message, details? } }`) : `UNAUTHORIZED`, `FORBIDDEN_ROLE`, `VALIDATION` (zod), `SESSION_NOT_OPEN`, `TOTALS_MISMATCH`, `PAYMENTS_MISMATCH`, `REFUND_EXCEEDS_SOLD`, `REFUND_TARGET_NOT_FOUND`, `QUOTE_NOT_FOUND`, `REGISTER_NOT_FOUND` (404), `BUSINESS_AT_OUT_OF_RANGE` (422), `CHAIN_INCONSISTENT` (409) — voir §11. 5xx : `DB_ERROR`, `FISKALY_ERROR` (n'annule PAS la vente : le résultat est renvoyé avec `signature_status='pending_signature'`).
 
 ## 6. `TicketPayload` (`@pos/core` `ticket.ts`) — rendu ESC/POS par le bridge, aperçu HTML par la PWA
 
@@ -131,3 +131,91 @@ Port 8787, JSON, header `X-Bridge-Token` obligatoire (sauf `/health`), CORS stri
 ## 10. Design (PWA)
 
 Palette Data Noir : `bg #0a0a0f`, `surface #111118`, `border #1e1e2e`, `text #e2e8f0`, `muted #64748b`, `accent #6366f1`, `success #22c55e`, `warning #f59e0b`, `danger #ef4444`. Police Poppins (fallback system-ui). Cibles tactiles ≥ 56 px, boutons de paiement ≥ 72 px, total TTC ≥ 40 px. Format prix `fr-FR` EUR (`1 234,56 €`).
+
+## 11. Lots 4 à 6 — hors ligne, clôtures Europe/Paris, archives, inventaire
+
+### 11.1 Codes d'erreur ajoutés (`_shared/http.ts` ≡ `CHECKOUT_ERROR_CODES`)
+
+| Code                       | HTTP | Origine                                                                           |
+| -------------------------- | ---- | --------------------------------------------------------------------------------- |
+| `BUSINESS_AT_OUT_OF_RANGE` | 422  | `business_at` hors `pos_settings.clock_tolerance` (§11.2)                         |
+| `CHAIN_INCONSISTENT`       | 409  | ticket précédent introuvable au chaînage ; ZIP d'archive existant et différent    |
+| `REGISTER_NOT_FOUND`       | 404  | caisse inconnue                                                                   |
+| `PERIOD_NOT_ENDED`         | 409  | archive demandée pour une période non terminée (ignorée par `pos-export-archive`) |
+
+### 11.2 Hors ligne (lot 4) — détail : `docs/HORS-LIGNE.md`
+
+- `pos_settings.clock_tolerance = {"online_minutes":10,"offline_hours":72,"future_minutes":5}`.
+- `pos_finalize_sale`, **après** l'idempotence (un `client_txn_id` connu renvoie toujours
+  `idempotent_replay: true`) : `offline_queued` + `refund` → `VALIDATION` ; en ligne
+  `|business_at − now()| > online_minutes` → `BUSINESS_AT_OUT_OF_RANGE` ; hors ligne
+  `business_at < now() − offline_hours` ou `> now() + future_minutes` → `BUSINESS_AT_OUT_OF_RANGE`.
+- Vente hors ligne dont la session est fermée : rattachée à la session **ouverte** de la caisse
+  (JET `offline_reattached`) ; aucune session ouverte → `SESSION_NOT_OPEN` (la PWA garde la vente).
+- `pos_client_settings()` → `{offline_max_txns, offline_max_hours, clock_tolerance, server_now}`.
+- Référence provisoire `OFF-<code caisse>-<YYYYMMDD>-<nnn>` ; JET `offline_enter`, `offline_exit`,
+  `offline_replay_failed`.
+
+### 11.3 Clôtures (lot 5)
+
+- `pos_period_bounds(p_type, p_ref) → (period_start, period_end)` : période `daily|monthly|annual`
+  contenant `p_ref`, bornes en Europe/Paris, fin exclusive. Période précédente : appeler avec
+  `period_start − 1 ms` de la période courante.
+- `pos-closing` : sans `period_start` (cron) → période précédente ; avec `period_start` → période
+  qui le contient. Plus aucun calcul de fuseau en TypeScript (`_shared/periods.ts`).
+- `pos_verify_closings_chain(register) → (ok, checked, first_break_number, reason)`.
+
+### 11.4 Archives (lot 5) — `pos-archive/v1`
+
+- **Partition contiguë** par caisse : tickets `ticket_number >` dernier archivé et
+  `received_at < period_end` ; JET `id >` dernier archivé et `created_at < period_end` ; clôtures
+  `closing_number >` dernière archivée et `created_at < period_end`. Première archive : depuis l'origine.
+- `pos_archive_data(register, start, end)` (admin / service) →
+  `{register:{id,code,label}, period_start, period_end, transactions:[row + lines + payments],
+events, closings, chain_heads:{anchor_ticket_number, anchor_ticket_hash, last_ticket_number,
+last_ticket_hash, last_event_id, last_event_hash, last_closing_number, last_closing_hash},
+previous_archive:{id, period_start, hash, manifest_sha256, last_ticket_number, last_event_id,
+last_closing_number}|null, software:{name, version}}` (`last_*` = `null` si aucun élément).
+- ZIP (fflate, date d'entrée fixe) : `transactions.jsonl`, `events.jsonl`, `closings.jsonl` (une
+  ligne JSON **canonique** par enregistrement — clés triées récursivement, sans espaces —, `\n`
+  final, fichier vide si aucun) et `manifest.json` =
+  `{format:"pos-archive/v1", register_code, period_start, period_end, generated_at, software,
+files:[{name, sha256, bytes, records}], chain_heads, previous_archive:{hash, manifest_sha256}|null,
+first_ticket_number, last_ticket_number}` sérialisé canoniquement (sans `\n` final).
+  Horodatages du manifeste en ISO UTC ms.
+- `manifest_sha256` = SHA-256 hex de `manifest.json`.
+- `pos_register_archive(register, start, end, storage_path, manifest, manifest_sha256)` (service
+  role) → `{archive, already_exists}` ; lit `manifest.chain_heads.last_*` ;
+  `hash = SHA-256('v1|archive|' || code || '|' || start || '|' || end || '|' || manifest_sha256 || '|' || prev_hash)` ;
+  JET `archive`. `pos_verify_archives_chain(register) → (ok, checked, first_break_id, reason)`.
+- Stockage : bucket privé `pos-archives`, chemin `<register_code>/<YYYY-MM>.zip` (mois de Paris de
+  `period_start`), jamais écrasé ; lecture admin (`is_pos_admin`).
+- Implémentation : `@pos/core` `archive.ts` (`canonicalJson`, `toJsonl`, `buildArchiveFiles`,
+  `verifyArchive`) ; miroir Deno `supabase/functions/_shared/archive.ts`, égalité vérifiée par
+  Vitest sur `packages/core/src/__fixtures__/archive-vector.json`.
+- `verifyArchive(files)` : manifeste canonique, SHA-256 / taille / nombre d'enregistrements par
+  fichier, `first/last_ticket_number`, premier ticket = `anchor_ticket_number + 1` avec
+  `prev_hash = anchor_ticket_hash`, chaîne des tickets recalculée (`verifyChainAsync`, mêmes règles
+  que `verifyChain`), liaison `prev_hash` du JET et des clôtures, têtes `last_*`, dates de
+  réception < `period_end`.
+
+### 11.5 Edge Functions ajoutées
+
+- `pos-export-archive` — POST, service role ou admin (`requirePosAdmin`). Entrée
+  `{register_id?: uuid, period_start?: ISO, source?}` (défaut : mois précédent Europe/Paris, toutes
+  les caisses actives ; cron `0 4 1 * *` UTC `{"source":"pg_cron"}`). Sortie
+  `{period_start, period_end, archives:[{register_code, period_start, period_end, storage_path,
+manifest_sha256, hash, already_exists, counts:{transactions, events, closings}}],
+skipped:[{register_code, reason}]}`.
+- `pos-stock-adjust` — POST, admin ou service role. Entrée `{items:[{product_id: uuid, counted:
+int ≥ 0, idempotency_key: string(8..80), label?}] (1..200, clés uniques), reason: string(3..200),
+register_id?: uuid}`. Appelle par paquets de 10 la RPC ma-papeterie
+  `pos_set_stock_boutique(p_product_id, p_counted, p_reason, p_idempotency_key)` →
+  `{product_id, applied, already_applied, stock_before, stock_after, delta}` (erreurs par article
+  `PRODUCT_NOT_FOUND`, `VALIDATION`). Sortie `{results:[{…, error?}], event_id}` ; un événement JET
+  `stock_adjustment` par lot (`items`, `applied`, `already_applied`, `errors`, `delta_sum`, `reason`).
+
+### 11.6 Pont TPE
+
+Option `tls: {certPath, keyPath}` (PEM) → HTTPS natif Fastify (`docs/TPE-CAISSE-AP.md` §9) ; les
+clés de premier niveau de `bridge.config.json` commençant par `//` sont ignorées (commentaires).

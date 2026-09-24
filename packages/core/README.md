@@ -7,10 +7,10 @@ Référence normative : [`docs/SPEC.md`](../../docs/SPEC.md) §1 à §7.
 Consommé par Node (`services/tpe-bridge`, `scripts/`) et par Vite (`apps/pos`). Le SHA-256 est
 isolé dans `src/sha256.ts` :
 
-| Fonction                                                            | Runtime                                             |
-| ------------------------------------------------------------------- | --------------------------------------------------- |
-| `sha256Hex`, `computeTransactionHash`, `linesDigest`, `verifyChain` | Node (`node:crypto` via `process.getBuiltinModule`) |
-| `sha256HexAsync`, `computeTransactionHashAsync`, `*DigestAsync`     | WebCrypto (navigateur **et** Node)                  |
+| Fonction                                                                                                                  | Runtime                                             |
+| ------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| `sha256Hex`, `computeTransactionHash`, `linesDigest`, `verifyChain`                                                       | Node (`node:crypto` via `process.getBuiltinModule`) |
+| `sha256HexAsync`, `computeTransactionHashAsync`, `*DigestAsync`, `verifyChainAsync`, `buildArchiveFiles`, `verifyArchive` | WebCrypto (navigateur **et** Node)                  |
 
 Hors Node, `sha256Hex` lève `SHA256_SYNC_UNAVAILABLE` : la PWA doit utiliser les variantes `*Async`.
 
@@ -21,6 +21,7 @@ pnpm --filter @pos/core typecheck
 pnpm --filter @pos/core test
 pnpm --filter @pos/core build        # → dist/ (ESM + .d.ts)
 pnpm --filter @pos/core gen:vectors  # régénère src/__fixtures__/hash-vectors.json (+ prettier)
+pnpm --filter @pos/core gen:archive-vector  # régénère src/__fixtures__/archive-vector.json (nouveau format uniquement)
 ```
 
 ## Modules
@@ -36,6 +37,9 @@ pnpm --filter @pos/core gen:vectors  # régénère src/__fixtures__/hash-vectors
   (SPEC §7).
 - `ticket.ts` — `TicketPayload` et types associés, `buildTicketCode`, `paymentMethodLabel`
   (SPEC §6).
+- `archive.ts` — format d'archive `pos-archive/v1` : `canonicalJson`, `toJsonl`, `buildArchiveFiles`,
+  `verifyArchive`, `archivedTransactionToChained` (SPEC §11.4). SHA-256 WebCrypto (isomorphe) ;
+  miroir Deno dans `supabase/functions/_shared/archive.ts`, vecteur `__fixtures__/archive-vector.json`.
 - `types.ts` — `CheckoutPayload`, `CheckoutResult`, codes d'erreur, `validateCheckoutPayload`
   (SPEC §4, validation manuelle sans zod).
 

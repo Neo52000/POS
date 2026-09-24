@@ -1,7 +1,7 @@
-import { PAYMENT_METHOD_LABELS, formatEurCents, isPaymentMethod } from '@pos/core';
-import type { TicketPayload } from '@pos/core';
+import { PAYMENT_METHOD_LABELS, computeCart, formatEurCents, isPaymentMethod } from '@pos/core';
+import type { CheckoutPayload, TicketPayload } from '@pos/core';
 import { env } from '@/lib/env';
-import type { PosSettingsMap, TransactionFull } from '@/types/pos';
+import type { CustomerSnapshot, PosSettingsMap, TransactionFull } from '@/types/pos';
 import { formatDateTime, formatPercent, formatQty, formatVatRate } from '@/lib/format';
 
 function footerLines(raw: PosSettingsMap['ticket_footer']): string[] {
@@ -111,6 +111,95 @@ export function buildTicketPayload(
   }
   if (full.quote_number) payload.quote_number = full.quote_number;
   return payload;
+}
+
+/** Contexte local nécessaire au ticket provisoire (hors ligne). */
+export interface ProvisionalTicketContext {
+  register_code: string;
+  cashier_name: string;
+  settings: PosSettingsMap | null;
+  customer?: CustomerSnapshot | null;
+  quote_number?: string | null;
+}
+
+function headerFrom(settings: PosSettingsMap | null): TicketPayload['header'] {
+  const legal = settings?.legal ?? {};
+  return {
+    company_name: legal.company_name ?? 'Reine & Fils SAS',
+    address_lines: Array.isArray(legal.address_lines) ? legal.address_lines.map(String) : [],
+    siret: legal.siret ?? '',
+    vat_number: legal.vat_number ?? '',
+    ...(legal.phone ? { phone: legal.phone } : {}),
+  };
+}
+
+/**
+ * Ticket provisoire d'une vente mise en file hors ligne (lot 4) : mêmes totaux que ceux que
+ * calculera le serveur (`computeCart`, SPEC §2), `ticket_number: null`, `ticket_code` =
+ * `provisional_ref`, `compliance.provisional = true` (numéro, hash et signature attribués au rejeu).
+ */
+export function buildProvisionalTicket(
+  payload: CheckoutPayload,
+  ctx: ProvisionalTicketContext,
+): TicketPayload {
+  const totals = computeCart(payload.lines);
+  const settings = ctx.settings;
+  const ticket: TicketPayload = {
+    version: 1,
+    register_code: ctx.register_code,
+    ticket_number: null,
+    ticket_code: payload.provisional_ref ?? '',
+    duplicate: false,
+    kind: payload.kind,
+    business_at: payload.business_at,
+    cashier_name: ctx.cashier_name,
+    header: headerFrom(settings),
+    lines: [...totals.lines]
+      .sort((a, b) => a.line_no - b.line_no)
+      .map((l) => ({
+        label: l.label,
+        qty: l.qty,
+        unit_price_ttc_cents: l.unit_price_ttc_cents,
+        discount_percent: l.discount_percent,
+        line_ttc_cents: l.line_ttc_cents,
+        vat_rate: l.vat_rate,
+        ...(l.price_tier_title ? { price_tier_title: l.price_tier_title } : {}),
+        ...(l.public_price_ttc_cents != null
+          ? { public_price_ttc_cents: l.public_price_ttc_cents }
+          : {}),
+      })),
+    vat_breakdown: totals.vat_breakdown,
+    total_ht_cents: totals.total_ht_cents,
+    total_vat_cents: totals.total_vat_cents,
+    total_ttc_cents: totals.total_ttc_cents,
+    payments: payload.payments.map((p) => ({
+      method: p.method,
+      label: PAYMENT_METHOD_LABELS[p.method],
+      amount_cents: p.amount_cents,
+      ...(p.reference ? { reference: p.reference } : {}),
+    })),
+    change_cents: payload.change_cents,
+    footer: { lines: footerLines(settings?.ticket_footer) },
+    compliance: {
+      hash_short: '',
+      signature_status: 'pending_signature',
+      software: 'Ma Papeterie POS',
+      version: env.appVersion,
+      provisional: true,
+    },
+    invoice_requested: payload.invoice_requested,
+  };
+  const customer = ctx.customer;
+  if (customer && (customer.display_name || customer.company_name)) {
+    ticket.customer = {
+      display_name: customer.display_name ?? customer.company_name ?? '',
+      ...(customer.company_name ? { company_name: customer.company_name } : {}),
+      ...(customer.siret ? { siret: customer.siret } : {}),
+      ...(customer.vat_number ? { vat_number: customer.vat_number } : {}),
+    };
+  }
+  if (ctx.quote_number) ticket.quote_number = ctx.quote_number;
+  return ticket;
 }
 
 // ---------------------------------------------------------------------------
@@ -232,6 +321,11 @@ export function renderTicketText(ticket: TicketPayload, width = WIDTH): string[]
   for (const l of ticket.footer.lines) out.push(center(l, width));
   if (ticket.footer.lines.length) out.push('');
   out.push(center(`${ticket.compliance.software} v${ticket.compliance.version}`, width));
+  if (ticket.compliance.provisional) {
+    out.push(center('Vente hors ligne - signature en attente', width));
+    out.push(center('N° définitif attribué à la synchronisation', width));
+    return out;
+  }
   out.push(
     center(
       `${SIGNATURE_LABEL[ticket.compliance.signature_status] ?? ticket.compliance.signature_status} · #${ticket.compliance.hash_short}`,

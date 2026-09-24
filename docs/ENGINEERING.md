@@ -7,23 +7,27 @@
 
 ## Commandes
 
-| Commande                                                                          | Rôle                                                                      |
-| --------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| `pnpm install`                                                                    | Installe tous les workspaces                                              |
-| `pnpm lint` / `pnpm format:check` / `pnpm typecheck` / `pnpm test` / `pnpm build` | Qualité (identique à la CI)                                               |
-| `pnpm dev:pos`                                                                    | PWA en dev (`http://localhost:5173`)                                      |
-| `pnpm dev:bridge`                                                                 | Pont TPE local (port 8787) — lit `services/tpe-bridge/bridge.config.json` |
-| `pnpm dev:tpe-sim`                                                                | Simulateur de TPE Caisse-AP (TCP 8888)                                    |
-| `pnpm e2e`                                                                        | Playwright (PWA + simulateur + Fiskaly mock)                              |
-| `pnpm verify-chain [CODE]`                                                        | Vérifie la chaîne de hash d'une caisse (local + SQL)                      |
-| `pnpm smoke:fiskaly [N] [CODE]`                                                   | Ventes de bout en bout via `pos-checkout`                                 |
-| `cd supabase/functions && deno check */index.ts && deno lint`                     | Typecheck/lint des Edge Functions                                         |
+| Commande                                                                          | Rôle                                                                                        |
+| --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `pnpm install`                                                                    | Installe tous les workspaces                                                                |
+| `pnpm lint` / `pnpm format:check` / `pnpm typecheck` / `pnpm test` / `pnpm build` | Qualité (identique à la CI)                                                                 |
+| `pnpm dev:pos`                                                                    | PWA en dev (`http://localhost:5173`)                                                        |
+| `pnpm dev:bridge`                                                                 | Pont TPE local (port 8787) — lit `services/tpe-bridge/bridge.config.json`                   |
+| `pnpm dev:tpe-sim`                                                                | Simulateur de TPE Caisse-AP (TCP 8888)                                                      |
+| `pnpm e2e`                                                                        | Playwright (PWA + simulateur + Fiskaly mock)                                                |
+| `pnpm verify-chain [CODE]`                                                        | Audit tickets (local + SQL), JET, clôtures, archives ; toutes les caisses actives sans code |
+| `pnpm verify-archive <zip> [--manifest-sha256 <hex>]`                             | Vérifie un ZIP d'archive `pos-archive/v1` (code de sortie 0/1/2)                            |
+| `pnpm --filter @pos/core gen:archive-vector`                                      | Régénère le vecteur d'archive (uniquement pour un nouveau format)                           |
+| `pnpm smoke:fiskaly [N] [CODE]`                                                   | Ventes de bout en bout via `pos-checkout`                                                   |
+| `cd supabase/functions && deno check */index.ts && deno lint`                     | Typecheck/lint des Edge Functions (`deno.lock` à jour, `npm:fflate@0.8`)                    |
 
 ## Variables d'environnement
 
 - PWA (`apps/pos/.env`) : `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (projet Pos), `VITE_CATALOG_SUPABASE_URL`, `VITE_CATALOG_SUPABASE_ANON_KEY` (projet ma-papeterie, lecture catalogue), `VITE_BRIDGE_URL` (défaut `http://localhost:8787`), `VITE_APP_VERSION`.
 - Edge Functions (secrets du projet Pos) : `FISKALY_MODE` (`mock` | `live`), `FISKALY_BASE_URL`, `FISKALY_API_KEY`, `FISKALY_API_SECRET`, `MAPAP_SUPABASE_URL`, `MAPAP_SERVICE_ROLE_KEY` (clé service de ma-papeterie) (+ `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` fournis par la plateforme).
-- Scripts : `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`.
+- Vault (projet Pos) : `pos_functions_url` (créé par migration), `pos_service_role_key` (à créer par l'admin, même valeur que `SUPABASE_SERVICE_ROLE_KEY` des Edge Functions) — utilisés par `pos_cron_call`.
+- Scripts : `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (`verify-archive` : facultatifs, pour lire l'empreinte attendue dans `pos_archives`).
+- Pont TPE : `bridge.config.json` (dont `tls` pour l'iPad), `BRIDGE_TOKEN`, `LOG_LEVEL`.
 
 ## Migrations
 
@@ -41,6 +45,18 @@
 - Déploiement : `supabase functions deploy pos-checkout` (etc.) ou MCP `deploy_edge_function`. `verify_jwt=false` dans `config.toml` : l'auth est faite dans le code (`_shared/auth.ts`).
 - `FISKALY_MODE=mock` par défaut : signatures déterministes, aucun appel réseau. Passer en `live` avec les clés du dashboard Fiskaly (TEST puis LIVE).
 - Contrat Fiskaly : uniquement dans `_shared/fiskaly/types.ts` et `client.ts`.
+- Les Edge Functions n'importent pas `packages/core` (spécificateurs `.js`, déploiement limité à `supabase/functions`) : le code partagé est recopié dans `_shared/` (`ticket.ts`, `archive.ts`). `_shared/archive.ts` est un **miroir exact** sans import de `@pos/core` `archive.ts` : toute modification se fait des deux côtés, `pnpm --filter @pos/core test` (bloc « miroir Deno ») compare les deux sur `archive-vector.json`.
+- Fonctions du lot 4-6 :
+
+  | Fonction             | Auth                             | Appel                                                                                    |
+  | -------------------- | -------------------------------- | ---------------------------------------------------------------------------------------- |
+  | `pos-closing`        | vendeur / admin / service        | `{period_type, period_start?, register_id?}` ; bornes `pos_period_bounds` (Europe/Paris) |
+  | `pos-export-archive` | admin (`is_pos_admin`) / service | `{register_id?, period_start?}` ; cron `0 4 1 * *` UTC ; bucket `pos-archives`           |
+  | `pos-stock-adjust`   | admin / service                  | `{items[1..200], reason, register_id?}` → RPC ma-papeterie `pos_set_stock_boutique`      |
+
+  Relance manuelle d'une archive (idempotente) :
+  `curl -X POST "$SUPABASE_URL/functions/v1/pos-export-archive" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" -H 'Content-Type: application/json' -d '{"period_start":"2026-10-15T12:00:00+02:00"}'`
+  (une période non terminée est renvoyée dans `skipped` avec `PERIOD_NOT_ENDED`).
 
 ## Rôle vendeur (projet Pos)
 
@@ -51,3 +67,11 @@ insert into public.pos_user_roles (user_id, role) values ('<uuid auth.users>', '
 ## Déploiement PWA
 
 Site Netlify dédié (`pos.ma-papeterie.fr`), build défini dans `netlify.toml`. Variables `VITE_*` dans les settings Netlify.
+
+## Documents d'exploitation
+
+- `docs/HORS-LIGNE.md` — fonctionnement et dépannage hors ligne.
+- `docs/PERIMETRE-NF525.md` — périmètre fiscal, flux, empreintes, règle de version.
+- `docs/ISCA-PROCEDURES.md` — preuves et procédures (auditeur : `pnpm verify-chain`, `pnpm verify-archive`, `pos_verify_*`).
+- `docs/ATTESTATION-EDITEUR.md` — gabarit d'attestation (lire l'avertissement).
+- `docs/BASCULE.md` — check-list de mise en service J-7 → J+7 et retour arrière.

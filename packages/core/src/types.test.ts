@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { isIsoDate, isUuidV4, validateCheckoutPayload } from './types.js';
+import { CHECKOUT_ERROR_CODES, isIsoDate, isUuidV4, validateCheckoutPayload } from './types.js';
 import type { CheckoutPayload } from './types.js';
 
 function validPayload(): CheckoutPayload {
@@ -262,5 +262,14 @@ describe('validateCheckoutPayload', () => {
       }),
     );
     expect(errors.length).toBeGreaterThanOrEqual(4);
+  });
+});
+
+describe('CHECKOUT_ERROR_CODES', () => {
+  it('contient les codes du lot 4 (horloge, chaîne, caisse)', () => {
+    for (const code of ['BUSINESS_AT_OUT_OF_RANGE', 'CHAIN_INCONSISTENT', 'REGISTER_NOT_FOUND']) {
+      expect(CHECKOUT_ERROR_CODES).toContain(code);
+    }
+    expect(new Set(CHECKOUT_ERROR_CODES).size).toBe(CHECKOUT_ERROR_CODES.length);
   });
 });

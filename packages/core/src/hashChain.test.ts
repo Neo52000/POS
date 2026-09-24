@@ -16,6 +16,7 @@ import {
   paymentsCanonicalText,
   paymentsDigest,
   verifyChain,
+  verifyChainAsync,
 } from './hashChain.js';
 import type { CanonicalTxnInput, ChainedTxn } from './hashChain.js';
 import { sha256Hex } from './sha256.js';
@@ -323,5 +324,15 @@ describe('verifyChain', () => {
       ok: false,
       first_break: { ticket_number: 4, reason: 'TICKET_GAP', expected: '3', actual: '4' },
     });
+  });
+
+  it('verifyChainAsync (WebCrypto) returns exactly the same results', async () => {
+    const chain = makeChain(4);
+    const tampered = [...chain];
+    tampered[1] = { ...chain[1]!, total_ttc_cents: chain[1]!.total_ttc_cents + 1 };
+    const gap = [chain[0]!, chain[1]!, chain[3]!];
+    for (const input of [chain, [...chain].reverse(), [], tampered, gap]) {
+      expect(await verifyChainAsync(input)).toEqual(verifyChain(input));
+    }
   });
 });

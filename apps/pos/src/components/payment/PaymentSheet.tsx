@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   Banknote,
   CheckCircle2,
@@ -9,6 +10,7 @@ import {
   Loader2,
   Lock,
   Trash2,
+  WifiOff,
 } from 'lucide-react';
 import { PAYMENT_METHOD_LABELS, validatePayments } from '@pos/core';
 import type { CartTotals, CheckoutPayload, PaymentInput, PaymentMethod } from '@pos/core';
@@ -22,9 +24,13 @@ import {
 } from '@/components/ui/sheet';
 import { ReceiptPreview } from '@/components/ticket/ReceiptPreview';
 import { useCheckout } from '@/hooks/useCheckout';
+import type { CheckoutOutcome } from '@/hooks/useCheckout';
+import { useOfflineQueue } from '@/hooks/useOfflineQueue';
 import { usePrinter } from '@/hooks/usePrinter';
-import { describeApiError, isApiError } from '@/lib/edge';
+import { describeApiError, isApiError } from '@/lib/apiError';
 import type { PosCheckoutResult } from '@/lib/edge';
+import { cachedTicketSettings } from '@/lib/ticketSettings';
+import type { ProvisionalTicketContext } from '@/lib/ticket';
 import { env } from '@/lib/env';
 import { formatEurCents } from '@/lib/format';
 import { uuidv4 } from '@/lib/uuid';
@@ -77,9 +83,14 @@ export function PaymentSheet({
   const [invoiceRequested, setInvoiceRequested] = useState(false);
   const [clientTxnId, setClientTxnId] = useState(() => uuidv4());
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<PosCheckoutResult | null>(null);
+  const [result, setResult] = useState<CheckoutOutcome | null>(null);
 
+  const navigate = useNavigate();
   const checkout = useCheckout();
+  const offline = useUiStore((s) => s.connectivity === 'offline');
+  const { limitState } = useOfflineQueue();
+  const user = useSessionStore((s) => s.user);
+  const quotes = useCustomerStore((s) => s.quotes);
   const { print, openDrawer } = usePrinter();
   const toast = useUiStore((s) => s.toast);
   const register = useSessionStore((s) => s.register);
@@ -96,8 +107,16 @@ export function PaymentSheet({
     () => validatePayments(total, payments, change),
     [total, payments, change],
   );
+  const refundBlockedOffline = offline && !!refund;
+  /** Limites hors ligne atteintes : aucun nouvel encaissement (sauf CB déjà débitée). */
+  const saleBlockedOffline = offline && !refund && limitState.blocked;
   const canSubmit =
-    validation.ok && totals.lines.length > 0 && !checkout.isPending && !!session && !!register;
+    validation.ok &&
+    totals.lines.length > 0 &&
+    !checkout.isPending &&
+    !!session &&
+    !!register &&
+    !refundBlockedOffline;
 
   // Réinitialisation à chaque ouverture.
   useEffect(() => {
@@ -192,24 +211,61 @@ export function PaymentSheet({
       },
       app_version: env.appVersion,
     };
+    const quoteNumber = quoteId ? quotes.find((q) => q.id === quoteId)?.quote_number : null;
+    const context: ProvisionalTicketContext = {
+      register_code: register.code,
+      cashier_name: user?.email?.split('@')[0] ?? '',
+      settings: cachedTicketSettings(),
+      customer:
+        account && !refund
+          ? {
+              display_name: account.display_name,
+              ...(account.company_name ? { company_name: account.company_name } : {}),
+              ...(account.siret ? { siret: account.siret } : {}),
+              ...(account.vat_number ? { vat_number: account.vat_number } : {}),
+            }
+          : null,
+      quote_number: !refund ? (quoteNumber ?? null) : null,
+    };
     try {
-      const res = await checkout.mutateAsync(payload);
-      setResult(res);
-      if (res.idempotent_replay)
+      const outcome = await checkout.mutateAsync({ payload, context });
+      setResult(outcome);
+      if (outcome.status === 'recorded' && outcome.result.idempotent_replay)
         toast({ title: 'Vente déjà enregistrée (rejeu idempotent)', variant: 'warning' });
-      void print(res.ticket);
+      if (outcome.status === 'queued') {
+        toast({
+          title: `Vente hors ligne ${outcome.provisionalRef}`,
+          description:
+            'Ticket provisoire : la vente sera synchronisée automatiquement au retour du réseau.',
+          variant: 'warning',
+          durationMs: 6000,
+        });
+      }
+      void print(outcome.ticket);
       if (payments.some((p) => p.method === 'cash')) void openDrawer('Encaissement espèces', false);
       if (refund) {
-        toast({ title: `Remboursement ${res.ticket.ticket_code} enregistré`, variant: 'success' });
+        toast({
+          title: `Remboursement ${outcome.ticket.ticket_code} enregistré`,
+          variant: 'success',
+        });
       } else {
         clearCart('sale_completed');
         detachCustomer();
       }
-      onSuccess?.(res);
+      if (outcome.status === 'recorded') onSuccess?.(outcome.result);
     } catch (e) {
       const message = describeApiError(e);
       setError(message);
-      if (isApiError(e) && e.code === 'QUEUED_AFTER_CB') {
+      if (isApiError(e) && e.code === 'OFFLINE_LIMIT_REACHED') {
+        toast({
+          title: 'Ventes hors ligne bloquées',
+          description: e.message !== e.code ? e.message : message,
+          variant: 'danger',
+          durationMs: 10_000,
+        });
+        onOpenChange(false);
+        navigate('/offline');
+      } else if (isApiError(e) && e.code === 'QUEUED_AFTER_CB') {
         toast({
           title: 'Vente à rejouer',
           description: message,
@@ -240,11 +296,24 @@ export function PaymentSheet({
           >
             <CheckCircle2 className="h-20 w-20 text-success" />
             <p className="text-3xl font-semibold">
-              {refund ? 'Remboursement enregistré' : 'Vente enregistrée'}
+              {refund
+                ? 'Remboursement enregistré'
+                : result.status === 'queued'
+                  ? 'Vente enregistrée hors ligne'
+                  : 'Vente enregistrée'}
             </p>
             <p className="text-5xl font-bold tabular" data-testid="ticket-code">
               {result.ticket.ticket_code}
             </p>
+            {result.status === 'queued' && (
+              <p
+                className="flex items-center gap-2 text-base text-warning"
+                data-testid="checkout-provisional"
+              >
+                <WifiOff className="h-5 w-5" /> Ticket provisoire · synchronisation automatique au
+                retour du réseau
+              </p>
+            )}
             {result.ticket.change_cents > 0 && (
               <p className="text-2xl">
                 Rendu monnaie :{' '}
@@ -304,7 +373,7 @@ export function PaymentSheet({
                       size="pay"
                       variant="secondary"
                       className="justify-start"
-                      disabled={signedRemaining === 0}
+                      disabled={signedRemaining === 0 || refundBlockedOffline || saleBlockedOffline}
                       onClick={() => setMode(method)}
                       data-testid={testId}
                     >
@@ -415,6 +484,30 @@ export function PaymentSheet({
                     ? 'Le total des paiements ne couvre pas le montant.'
                     : validation.message}
                 </p>
+              )}
+              {offline && (
+                <div
+                  className={cn(
+                    'mx-4 my-2 rounded-xl px-3 py-2 text-sm',
+                    refund || limitState.blocked
+                      ? 'bg-danger/10 text-danger'
+                      : 'bg-warning/10 text-warning',
+                  )}
+                  data-testid="payment-offline-notice"
+                >
+                  {refund ? (
+                    'Hors ligne : remboursement impossible.'
+                  ) : limitState.blocked ? (
+                    <>
+                      {limitState.message}{' '}
+                      <Link to="/offline" className="underline" onClick={() => onOpenChange(false)}>
+                        Voir la file
+                      </Link>
+                    </>
+                  ) : (
+                    'Hors ligne : la vente sera enregistrée avec un ticket provisoire (OFF-…).'
+                  )}
+                </div>
               )}
               {error && (
                 <p

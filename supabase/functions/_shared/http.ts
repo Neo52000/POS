@@ -12,6 +12,10 @@ export type ErrorCode =
   | 'REFUND_TARGET_NOT_FOUND'
   | 'QUOTE_NOT_FOUND'
   | 'NOT_FOUND'
+  | 'REGISTER_NOT_FOUND'
+  | 'BUSINESS_AT_OUT_OF_RANGE'
+  | 'CHAIN_INCONSISTENT'
+  | 'PERIOD_NOT_ENDED'
   | 'DB_ERROR'
   | 'FISKALY_ERROR'
   | 'INTERNAL';
@@ -28,6 +32,13 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
   REFUND_TARGET_NOT_FOUND: 404,
   QUOTE_NOT_FOUND: 404,
   NOT_FOUND: 404,
+  REGISTER_NOT_FOUND: 404,
+  // Horodatage métier hors des bornes pos_settings.clock_tolerance (lot 4).
+  BUSINESS_AT_OUT_OF_RANGE: 422,
+  // Chaîne de hash incohérente (verrou/tête de chaîne) : ne jamais rejouer aveuglément.
+  CHAIN_INCONSISTENT: 409,
+  // Archive / clôture demandée pour une période non terminée (period_end > maintenant).
+  PERIOD_NOT_ENDED: 409,
   DB_ERROR: 500,
   FISKALY_ERROR: 502,
   INTERNAL: 500,
