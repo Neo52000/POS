@@ -10,6 +10,7 @@ import {
   Wifi,
   WifiOff,
 } from 'lucide-react';
+import { AbandonDialog } from '@/components/offline/AbandonDialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -21,6 +22,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { useIsAdmin } from '@/hooks/useIsAdmin';
 import { useLiveQuery } from '@/hooks/useLiveQuery';
 import { useOfflineQueue, useQueuedEvents, useQueueItems } from '@/hooks/useOfflineQueue';
 import { usePrinter } from '@/hooks/usePrinter';
@@ -41,6 +43,7 @@ const STATUS_BADGE: Record<
   replaying: { label: 'Rejeu…', variant: 'default' },
   failed: { label: 'Échec', variant: 'danger' },
   done: { label: 'Synchronisée', variant: 'success' },
+  abandoned: { label: 'Abandonnée', variant: 'default' },
 };
 
 function reportText(r: ReplayReport): string {
@@ -65,11 +68,17 @@ export function OfflinePage() {
   const clientSettings = useLiveQuery(getCachedClientSettings, [], null);
   const { print } = usePrinter();
   const [busy, setBusy] = useState<string | null>(null);
+  const [abandoning, setAbandoning] = useState<QueuedCheckout | null>(null);
+  const { isAdmin } = useIsAdmin();
 
-  const open = items.filter((i) => i.status !== 'done');
+  const open = items.filter((i) => i.status !== 'done' && i.status !== 'abandoned');
   const done = items
     .filter((i) => i.status === 'done')
     .sort((a, b) => String(b.done_at ?? '').localeCompare(String(a.done_at ?? '')))
+    .slice(0, 20);
+  const abandoned = items
+    .filter((i) => i.status === 'abandoned')
+    .sort((a, b) => String(b.abandoned_at ?? '').localeCompare(String(a.abandoned_at ?? '')))
     .slice(0, 20);
   const pendingEvents = events.filter((e) => e.status === 'pending').length;
   const failedEvents = events.filter((e) => e.status === 'failed').length;
@@ -254,6 +263,17 @@ export function OfflinePage() {
                             <RotateCcw className="h-5 w-5" /> Rejouer
                           </Button>
                         )}
+                        {item.status === 'failed' && isAdmin && (
+                          <Button
+                            variant="ghost"
+                            size="touch"
+                            onClick={() => setAbandoning(item)}
+                            disabled={busy !== null}
+                            data-testid="abandon-item"
+                          >
+                            Abandonner
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -273,6 +293,29 @@ export function OfflinePage() {
             </TableBody>
           </Table>
         </div>
+
+        {abandoned.length > 0 && (
+          <div className="rounded-2xl border border-border bg-surface p-4">
+            <p className="mb-2 text-xs uppercase tracking-wide text-muted">
+              Abandonnées (tracées au journal)
+            </p>
+            <ul className="flex flex-col gap-1 text-sm">
+              {abandoned.map((item) => (
+                <li
+                  key={item.client_txn_id}
+                  className="flex items-center gap-3"
+                  data-testid="queue-item-abandoned"
+                >
+                  <span className="tabular text-muted">{item.provisional_ref ?? '—'}</span>
+                  <span className="min-w-0 flex-1 truncate">{item.abandon_reason}</span>
+                  <span className="ml-auto tabular">
+                    {formatEurCents(item.payload.totals.total_ttc_cents)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {done.length > 0 && (
           <div className="rounded-2xl border border-border bg-surface p-4">
@@ -403,6 +446,7 @@ export function OfflinePage() {
           </Button>
         </div>
       </aside>
+      <AbandonDialog item={abandoning} onClose={() => setAbandoning(null)} />
     </div>
   );
 }

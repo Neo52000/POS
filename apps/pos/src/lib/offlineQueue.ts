@@ -4,7 +4,7 @@ import { markOffline } from '@/lib/connectivity';
 import { db, getMeta, replaceReceipt, saveReceipt, setMeta } from '@/lib/db';
 import type { QueuedCheckout } from '@/lib/db';
 import { edge } from '@/lib/edge';
-import { logEvent, replayEvents } from '@/lib/events';
+import { logEvent, logEventNow, replayEvents } from '@/lib/events';
 import { businessDate } from '@/lib/format';
 import { queryClient } from '@/lib/queryClient';
 import { supabase } from '@/lib/supabase';
@@ -81,6 +81,8 @@ export interface QueueStats {
   pending: number;
   failed: number;
   done: number;
+  /** Éléments en échec abandonnés par un admin (tracés au JET), exclus du blocage du Z. */
+  abandoned: number;
   /** `business_at` le plus ancien des ventes en attente. */
   oldestBusinessAt: string | null;
 }
@@ -90,15 +92,17 @@ export async function queueStats(): Promise<QueueStats> {
   let pending = 0;
   let failed = 0;
   let done = 0;
+  let abandoned = 0;
   let oldest: string | null = null;
   for (const it of items) {
     if (it.status === 'pending' || it.status === 'replaying') {
       pending += 1;
       if (!oldest || it.business_at < oldest) oldest = it.business_at;
     } else if (it.status === 'failed') failed += 1;
+    else if (it.status === 'abandoned') abandoned += 1;
     else done += 1;
   }
-  return { pending, failed, done, oldestBusinessAt: oldest };
+  return { pending, failed, done, abandoned, oldestBusinessAt: oldest };
 }
 
 export interface OfflineLimitState {
@@ -395,6 +399,67 @@ export async function replayQueue(opts: { retry?: string } = {}): Promise<Replay
     });
   }
   return withReplayLock(runReplay);
+}
+
+// ---------------------------------------------------------------------------
+// Abandon tracé (admin)
+// ---------------------------------------------------------------------------
+
+export const ABANDON_REASON_MIN = 10;
+
+/**
+ * Abandon d'un élément en échec : l'événement JET `offline_sale_abandoned` (payload complet, motif,
+ * dernier code d'erreur) est d'abord enregistré côté serveur — en ligne obligatoire — puis
+ * seulement l'élément passe `abandoned` localement (conservé, exclu des compteurs et du Z).
+ * Rien n'est supprimé : la preuve reste dans le journal chaîné et archivé. Si la vente doit être
+ * comptabilisée, elle est ressaisie en ligne.
+ */
+export async function abandonQueueItem(
+  clientTxnId: string,
+  reason: string,
+): Promise<QueuedCheckout> {
+  const motive = reason.trim();
+  if (motive.length < ABANDON_REASON_MIN) {
+    throw new ApiError(
+      'VALIDATION',
+      `Motif obligatoire (${ABANDON_REASON_MIN} caractères minimum)`,
+    );
+  }
+  if (useUiStore.getState().connectivity === 'offline') {
+    throw new ApiError(
+      'OFFLINE_FORBIDDEN',
+      "Abandon impossible hors ligne : la trace doit d'abord être enregistrée au journal",
+    );
+  }
+  const item = await db.queue.where('client_txn_id').equals(clientTxnId).first();
+  if (!item || item.local_seq == null) throw new ApiError('NOT_FOUND', 'Élément introuvable');
+  if (item.status !== 'failed') {
+    throw new ApiError('VALIDATION', 'Seul un élément en échec peut être abandonné');
+  }
+  await logEventNow('offline_sale_abandoned', {
+    client_txn_id: item.client_txn_id,
+    provisional_ref: item.provisional_ref,
+    business_at: item.business_at,
+    last_error_code: item.last_error_code ?? null,
+    last_error: item.last_error ?? null,
+    attempts: item.attempts,
+    reason: motive,
+    payload: item.payload,
+  });
+  const now = new Date().toISOString();
+  await db.queue.update(item.local_seq, {
+    status: 'abandoned',
+    abandoned_at: now,
+    abandon_reason: motive,
+    updated_at: now,
+  });
+  return {
+    ...item,
+    status: 'abandoned',
+    abandoned_at: now,
+    abandon_reason: motive,
+    updated_at: now,
+  };
 }
 
 export async function hasPendingQueue(): Promise<boolean> {

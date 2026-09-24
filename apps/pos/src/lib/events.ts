@@ -1,4 +1,4 @@
-import { isNetworkFailure } from '@/lib/apiError';
+import { ApiError, isNetworkFailure } from '@/lib/apiError';
 import { isOffline, probeNow } from '@/lib/connectivity';
 import { db } from '@/lib/db';
 import type { QueuedEvent } from '@/lib/db';
@@ -24,6 +24,36 @@ async function sendEvent(ev: QueuedEvent): Promise<SendOutcome> {
     if (isNetworkFailure(e)) return { kind: 'network' };
     return { kind: 'error', message: e instanceof Error ? e.message : String(e) };
   }
+}
+
+/**
+ * Envoi immédiat, sans file : lève une `ApiError` (NETWORK / INTERNAL) si le serveur n'a pas
+ * enregistré l'événement. Réservé aux actions dont la preuve JET doit exister AVANT l'effet local
+ * (abandon d'une vente en échec).
+ */
+export async function logEventNow(
+  type: PosEventType,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  const { register, session } = useSessionStore.getState();
+  const now = new Date().toISOString();
+  const outcome = await sendEvent({
+    event_type: type,
+    payload,
+    client_at: now,
+    register_id: register?.id ?? null,
+    session_id: session?.id ?? null,
+    status: 'pending',
+    attempts: 0,
+    created_at: now,
+  });
+  if (outcome.kind === 'network') {
+    throw new ApiError(
+      'NETWORK',
+      'Journal des événements injoignable : réessayer une fois en ligne',
+    );
+  }
+  if (outcome.kind === 'error') throw new ApiError('INTERNAL', outcome.message);
 }
 
 async function hasPendingEvents(): Promise<boolean> {

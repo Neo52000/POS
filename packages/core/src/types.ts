@@ -22,6 +22,11 @@ export interface CheckoutPayload {
   business_at: string;
   offline_queued: boolean;
   provisional_ref?: string;
+  /**
+   * Paiement CB déjà capté par le TPE, enregistrement retardé par une coupure réseau : le serveur
+   * applique la fenêtre hors ligne (y compris pour un remboursement). Exige une CB non manuelle.
+   */
+  deferred_capture?: boolean;
   customer_account_id?: string;
   quote_id?: string;
   invoice_requested: boolean;
@@ -268,6 +273,7 @@ export function validateCheckoutPayload(payload: unknown): CheckoutValidation {
   if (!isIsoDate(p['business_at'])) c.fail(`${root}.business_at`, 'must be an ISO 8601 date');
   c.boolean(p, 'offline_queued', root, true);
   c.string(p, 'provisional_ref', root, false);
+  c.boolean(p, 'deferred_capture', root, false);
   c.uuid(p, 'customer_account_id', root, false);
   c.uuid(p, 'quote_id', root, false);
   c.boolean(p, 'invoice_requested', root, true);

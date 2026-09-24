@@ -66,7 +66,9 @@ archivage (automatique, voir §4).
   cumulé depuis l'origine.
 - JET (`pos_events`) : connexions, ouvertures/fermetures, abandons, suppressions de ligne,
   modifications de prix, ouvertures de tiroir, réimpressions, passages hors ligne
-  (`offline_enter`/`offline_exit`/`offline_reattached`/`offline_replay_failed`), ajustements de
+  (`offline_enter`/`offline_exit`/`offline_reattached`/`offline_replay_failed`), abandons tracés
+  d'une vente hors ligne en échec (`offline_sale_abandoned`, contenu complet + motif, admin,
+  enregistré avant tout effet local), ajustements de
   stock (`stock_adjustment`), archives (`archive`).
 - Accès : authentification Supabase, rôles `pos` / `admin` (`pos_user_roles`), RLS `is_pos()` ;
   clés de service et secrets Fiskaly uniquement dans les secrets des Edge Functions et Vault.

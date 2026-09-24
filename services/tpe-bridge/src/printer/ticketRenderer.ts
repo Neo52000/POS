@@ -220,7 +220,12 @@ export function renderTicketLines(
 
   // Conformité
   push(center(`Ticket ${payload.ticket_code}`, width), { align: 'center' });
-  push(center(`Hash ${payload.compliance.hash_short}`, width), { align: 'center' });
+  // Ticket provisoire (hors ligne) : l'empreinte chaînée n'existe qu'après l'enregistrement serveur.
+  const hashLine =
+    payload.compliance.provisional || !payload.compliance.hash_short
+      ? "Empreinte attribuée à l'enregistrement"
+      : `Hash ${payload.compliance.hash_short}`;
+  push(center(hashLine, width), { align: 'center' });
   push(center(signatureLine(payload), width), { align: 'center' });
   if (payload.compliance.provisional) {
     push(center('TICKET PROVISOIRE - signature différée', width), { align: 'center' });

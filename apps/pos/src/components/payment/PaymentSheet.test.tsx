@@ -28,7 +28,13 @@ vi.mock('@/lib/bridge', () => ({
 }));
 vi.mock('@/lib/offlineQueue', () => ({
   DEFAULT_OFFLINE_LIMITS: { offline_max_txns: 50, offline_max_hours: 24 },
-  queueStats: vi.fn(async () => ({ pending: 0, failed: 0, done: 0, oldestBusinessAt: null })),
+  queueStats: vi.fn(async () => ({
+    pending: 0,
+    failed: 0,
+    done: 0,
+    abandoned: 0,
+    oldestBusinessAt: null,
+  })),
   getOfflineLimits: vi.fn(async () => ({ offline_max_txns: 50, offline_max_hours: 24 })),
   evaluateOfflineLimits: () => ({ blocked: false, reason: null, message: null, limits: {} }),
   queueOfflineSale: vi.fn(),

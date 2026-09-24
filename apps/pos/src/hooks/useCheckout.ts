@@ -35,7 +35,9 @@ export type CheckoutOutcome =
  * - En ligne, échec NETWORK/TIMEOUT : bascule hors ligne et même traitement (même `client_txn_id`,
  *   `business_at` inchangé) ; le rejeu est idempotent côté serveur.
  * - Remboursement : jamais hors ligne (refus serveur). Seul cas mis en file : remboursement CB déjà
- *   crédité par le TPE puis échec réseau (`QUEUED_AFTER_CB`).
+ *   crédité par le TPE puis échec réseau (`QUEUED_AFTER_CB`), marqué `deferred_capture` pour que le
+ *   serveur l'accepte dans la fenêtre hors ligne (72 h) et le rattache à la session ouverte.
+ * - Toute opération dont la CB est déjà captée et qui part en file porte `deferred_capture: true`.
  * Les limites hors ligne sont ignorées si une CB a déjà été débitée (la vente doit être tracée).
  */
 export async function submitCheckout({
@@ -43,11 +45,12 @@ export async function submitCheckout({
   context,
 }: CheckoutRequest): Promise<CheckoutOutcome> {
   const captured = hasCapturedCb(payload);
+  const deferred: CheckoutPayload = captured ? { ...payload, deferred_capture: true } : payload;
   if (isOffline()) {
     if (payload.kind === 'refund') {
       throw new ApiError('OFFLINE_FORBIDDEN', 'Remboursement impossible hors ligne');
     }
-    const q = await queueOfflineSale(payload, context, { force: captured });
+    const q = await queueOfflineSale(deferred, context, { force: captured });
     return {
       status: 'queued',
       ticket: q.ticket,
@@ -63,10 +66,10 @@ export async function submitCheckout({
     if (!isNetworkError(e)) throw e;
     if (payload.kind === 'refund') {
       if (!captured) throw e;
-      await enqueueSale(payload, { error: describeApiError(e) });
+      await enqueueSale(deferred, { error: describeApiError(e) });
       throw new ApiError('QUEUED_AFTER_CB', undefined, { client_txn_id: payload.client_txn_id });
     }
-    const q = await queueOfflineSale(payload, context, {
+    const q = await queueOfflineSale(deferred, context, {
       force: captured,
       error: describeApiError(e),
     });

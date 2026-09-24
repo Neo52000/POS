@@ -238,7 +238,8 @@ export type PosEventType =
   | 'refund'
   | 'offline_enter'
   | 'offline_exit'
-  | 'offline_replay_failed';
+  | 'offline_replay_failed'
+  | 'offline_sale_abandoned';
 
 /** `pos_client_settings()` (lot 4). */
 export interface PosClientSettings {

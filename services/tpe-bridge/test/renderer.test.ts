@@ -89,6 +89,9 @@ describe('renderTicket', () => {
     expect(text).toContain('Signature \x82lectronique en attente');
     expect(text).toContain('TICKET PROVISOIRE');
     expect(text).toContain('signature diff\x82r\x82e');
+    // Empreinte chaînée inexistante avant l'enregistrement : pas de « Hash » trompeur.
+    expect(text).toContain("Empreinte attribu\x82e \x85 l'enregistrement");
+    expect(text).not.toContain('Hash deadbeef');
   });
 
   it('remboursement : quantités et montants négatifs', () => {
