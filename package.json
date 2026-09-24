@@ -19,6 +19,7 @@
     "dev:bridge": "pnpm --filter @pos/tpe-bridge dev",
     "dev:tpe-sim": "pnpm --filter @pos/tpe-bridge sim",
     "verify-chain": "tsx scripts/verify-chain.ts",
+    "verify-archive": "tsx scripts/verify-archive.ts",
     "smoke:fiskaly": "tsx scripts/fiskaly-sandbox-smoke.ts"
   },
   "devDependencies": {
@@ -29,6 +30,7 @@
     "eslint-config-prettier": "^10.1.0",
     "eslint-plugin-react-hooks": "^7.0.0",
     "eslint-plugin-react-refresh": "^0.4.20",
+    "fflate": "^0.8.3",
     "globals": "^16.0.0",
     "prettier": "^3.6.0",
     "tsx": "^4.20.0",

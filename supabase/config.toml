@@ -17,3 +17,7 @@ verify_jwt = false
 verify_jwt = false
 [functions.pos-stock-sync]
 verify_jwt = false
+[functions.pos-export-archive]
+verify_jwt = false
+[functions.pos-stock-adjust]
+verify_jwt = false

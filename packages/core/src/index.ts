@@ -6,3 +6,4 @@ export * from './hashChain.js';
 export * from './caisseAp.js';
 export * from './ticket.js';
 export * from './types.js';
+export * from './archive.js';
