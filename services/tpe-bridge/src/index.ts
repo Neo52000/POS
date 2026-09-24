@@ -2,7 +2,14 @@
  * Point d'entrée du pont TPE : configuration, simulateur intégré (optionnel), serveur HTTP/WS,
  * arrêt propre sur SIGINT/SIGTERM.
  */
-import { ConfigError, loadConfig } from './config.js';
+import { dirname } from 'node:path';
+import {
+  ConfigError,
+  loadConfig,
+  loadTlsMaterial,
+  resolveConfigPath,
+  type TlsMaterial,
+} from './config.js';
 import { createLogger } from './logger.js';
 import { buildServer } from './server.js';
 import { startSimulator, type SimulatorHandle } from '../simulator/tpe-sim.js';
@@ -19,8 +26,11 @@ async function main(): Promise<void> {
   const logger = createLogger({ pretty });
 
   let config;
+  let tls: TlsMaterial | undefined;
   try {
     config = loadConfig();
+    // Chemins TLS relatifs résolus depuis le répertoire de bridge.config.json.
+    if (config.tls) tls = loadTlsMaterial(config.tls, dirname(resolveConfigPath()));
   } catch (error) {
     if (error instanceof ConfigError) {
       logger.fatal(error.message);
@@ -41,7 +51,13 @@ async function main(): Promise<void> {
     );
   }
 
-  const { app, ctx } = await buildServer({ config, version: BRIDGE_VERSION, logger, tpeEndpoint });
+  const { app, ctx, scheme } = await buildServer({
+    config,
+    version: BRIDGE_VERSION,
+    logger,
+    tpeEndpoint,
+    tls,
+  });
 
   let stopping = false;
   const shutdown = (signal: string): void => {
@@ -73,12 +89,14 @@ async function main(): Promise<void> {
   logger.info(
     {
       version: BRIDGE_VERSION,
+      url: `${scheme}://${config.http.host}:${config.http.port}`,
+      scheme,
       http: config.http,
       tpe: { ...tpeEndpoint, simulate: config.tpe.simulate, timeoutMs: config.tpe.timeoutMs },
       printer: { type: config.printer.type, host: config.printer.host, port: config.printer.port },
       allowedOrigins: config.allowedOrigins,
     },
-    'pont TPE prêt',
+    `pont TPE prêt (${scheme.toUpperCase()})`,
   );
 }
 

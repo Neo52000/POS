@@ -18,5 +18,10 @@
     "codepage": "CP858",
     "width": 42
   },
-  "drawer": { "pin": 0 }
+  "drawer": { "pin": 0 },
+  "//": "Les clés commençant par // sont ignorées. iPad (Safari exige HTTPS) : renommer \"//tls\" en \"tls\", passer http.host à 0.0.0.0 (ou l'IP LAN du PC) et pointer la PWA sur https://bridge.ma-papeterie.fr:8787. Chemins relatifs = relatifs à ce fichier. Voir docs/TPE-CAISSE-AP.md §9.",
+  "//tls": {
+    "certPath": "tls/fullchain.pem",
+    "keyPath": "tls/privkey.pem"
+  }
 }

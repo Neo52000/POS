@@ -13,7 +13,7 @@ import Fastify, {
 } from 'fastify';
 import type { Logger } from 'pino';
 import { CaisseApClient } from './caisseap/client.js';
-import type { BridgeConfig } from './config.js';
+import { loadTlsMaterial, type BridgeConfig, type TlsMaterial } from './config.js';
 import { EventHub } from './events.js';
 import { PaymentService } from './payments.js';
 import { createPrinter, type Printer } from './printer/transport.js';
@@ -32,11 +32,15 @@ export interface BuildServerOptions {
   /** Imprimante injectée (tests) ; défaut : construite depuis `config.printer`. */
   printer?: Printer;
   tpeClient?: CaisseApClient;
+  /** Certificat/clé déjà lus ; défaut : lus depuis `config.tls` (chemins relatifs au cwd). */
+  tls?: TlsMaterial;
 }
 
 export interface BridgeServer {
   app: FastifyInstance;
   ctx: BridgeContext;
+  /** `https` si `config.tls` est défini (Fastify `https: { cert, key }`), sinon `http`. */
+  scheme: 'http' | 'https';
 }
 
 export const TOKEN_HEADER = 'x-bridge-token';
@@ -72,13 +76,19 @@ export async function buildServer(options: BuildServerOptions): Promise<BridgeSe
   const events = new EventHub();
   const payments = new PaymentService(tpeClient, events, logger);
 
-  const app = Fastify({
+  const tls = options.tls ?? (config.tls ? loadTlsMaterial(config.tls) : undefined);
+  const fastifyOptions = {
     loggerInstance: logger as unknown as FastifyBaseLogger,
     // Journal par requête désactivé par défaut (LOG_REQUESTS=1 pour l'activer) : les routes journalisent l'essentiel.
     logController: new LogController({ disableRequestLogging: process.env.LOG_REQUESTS !== '1' }),
     bodyLimit: 8 * 1024 * 1024,
     trustProxy: false,
-  });
+  };
+  // HTTPS natif (iPad) : plus besoin de reverse proxy local. Les routes et le WebSocket (wss://)
+  // sont identiques ; le type d'instance est unifié pour les modules de routes.
+  const app = (tls
+    ? Fastify({ ...fastifyOptions, https: { cert: tls.cert, key: tls.key } })
+    : Fastify(fastifyOptions)) as unknown as FastifyInstance;
 
   const ctx: BridgeContext = {
     config,
@@ -150,5 +160,5 @@ export async function buildServer(options: BuildServerOptions): Promise<BridgeSe
   registerPrintRoutes(app, ctx);
   registerEventRoutes(app, ctx);
 
-  return { app, ctx };
+  return { app, ctx, scheme: tls ? 'https' : 'http' };
 }

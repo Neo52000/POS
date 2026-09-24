@@ -54,3 +54,34 @@ export async function applyStockMovements(movements: StockMovementInput[]): Prom
   if (error) throw new Error(`pos_apply_stock_movements: ${error.message}`);
   return (data as StockMovementResult[]) ?? [];
 }
+
+export interface SetStockBoutiqueResult {
+  product_id: string;
+  applied: boolean;
+  already_applied: boolean;
+  stock_before: number;
+  stock_after: number;
+  delta: number;
+}
+
+/**
+ * Inventaire : fixe `products.stock_boutique` au stock compté (RPC ma-papeterie
+ * `pos_set_stock_boutique`, service role, idempotente par `idempotencyKey`, tracée dans
+ * `pos_stock_movements` avec reason `inventory`). L'erreur PostgREST est relancée telle quelle :
+ * son `message` porte le code métier (`PRODUCT_NOT_FOUND`, `VALIDATION`).
+ */
+export async function setStockBoutique(
+  productId: string,
+  counted: number,
+  reason: string,
+  idempotencyKey: string,
+): Promise<SetStockBoutiqueResult> {
+  const { data, error } = await mapapClient().rpc('pos_set_stock_boutique', {
+    p_product_id: productId,
+    p_counted: counted,
+    p_reason: reason,
+    p_idempotency_key: idempotencyKey,
+  });
+  if (error) throw error;
+  return data as SetStockBoutiqueResult;
+}

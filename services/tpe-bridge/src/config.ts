@@ -18,6 +18,19 @@ export const HttpConfigSchema = z
   })
   .strict();
 
+/**
+ * TLS natif (iPad / Safari : la PWA HTTPS ne peut joindre qu'un pont HTTPS). Certificat et clé
+ * PEM lus au démarrage ; ex. Let's Encrypt DNS-01 pour `bridge.ma-papeterie.fr`.
+ */
+export const TlsConfigSchema = z
+  .object({
+    /** Chaîne de certificats PEM (`fullchain.pem`). */
+    certPath: z.string().min(1),
+    /** Clé privée PEM (`privkey.pem`), lisible uniquement par le compte du service. */
+    keyPath: z.string().min(1),
+  })
+  .strict();
+
 export const TpeConfigSchema = z
   .object({
     /** Adresse IP fixe du TPE (Caisse-AP over IP). */
@@ -90,6 +103,8 @@ export const BridgeConfigSchema = z
     tpe: TpeConfigSchema.default({}),
     printer: PrinterConfigSchema.default({}),
     drawer: DrawerConfigSchema.default({}),
+    /** Absent : HTTP simple (PC comptoir, `127.0.0.1`). Présent : HTTPS natif Fastify. */
+    tls: TlsConfigSchema.optional(),
   })
   .strict();
 
@@ -97,6 +112,7 @@ export type BridgeConfig = z.infer<typeof BridgeConfigSchema>;
 export type BridgeConfigInput = z.input<typeof BridgeConfigSchema>;
 export type TpeConfig = BridgeConfig['tpe'];
 export type PrinterConfig = BridgeConfig['printer'];
+export type TlsConfig = z.infer<typeof TlsConfigSchema>;
 
 export const DEFAULT_CONFIG_FILE = './bridge.config.json';
 
@@ -111,9 +127,18 @@ export class ConfigError extends Error {
   }
 }
 
+/**
+ * JSON n'a pas de commentaires : les clés de premier niveau commençant par `//` sont ignorées
+ * (ex. `"//tls": {…}` dans l'exemple — renommer en `"tls"` pour l'activer).
+ */
+function stripCommentKeys(input: unknown): unknown {
+  if (input === null || typeof input !== 'object' || Array.isArray(input)) return input;
+  return Object.fromEntries(Object.entries(input).filter(([key]) => !key.startsWith('//')));
+}
+
 /** Valide un objet déjà parsé (utile pour les tests et l'index). */
 export function parseConfig(input: unknown, source = '<inline>'): BridgeConfig {
-  const result = BridgeConfigSchema.safeParse(input);
+  const result = BridgeConfigSchema.safeParse(stripCommentKeys(input));
   if (!result.success) {
     const detail = result.error.issues
       .map((issue) => `  - ${issue.path.join('.') || '<racine>'} : ${issue.message}`)
@@ -160,4 +185,26 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): BridgeConfig {
     json = { ...(json as Record<string, unknown>), token: env.BRIDGE_TOKEN };
   }
   return parseConfig(json, path);
+}
+
+export interface TlsMaterial {
+  cert: Buffer;
+  key: Buffer;
+}
+
+/**
+ * Lit le certificat et la clé TLS. Les chemins relatifs sont résolus depuis le répertoire du
+ * fichier de configuration (`baseDir`), sinon depuis le répertoire courant.
+ */
+export function loadTlsMaterial(tls: TlsConfig, baseDir: string = process.cwd()): TlsMaterial {
+  const read = (label: string, file: string): Buffer => {
+    const path = resolve(baseDir, file);
+    try {
+      return readFileSync(path);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new ConfigError(`tls.${label} illisible : ${path} (${reason})`, path);
+    }
+  };
+  return { cert: read('certPath', tls.certPath), key: read('keyPath', tls.keyPath) };
 }

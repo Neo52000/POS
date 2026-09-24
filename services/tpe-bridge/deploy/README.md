@@ -34,6 +34,7 @@ Copiez `bridge.config.example.json` vers `bridge.config.json` à côté de `dist
 | `tpe.host`       | IP fixe du TPE (réservation DHCP sur la box) — `simulate: true` pour tester |
 | `printer.host`   | IP fixe de l'imprimante ; `type: "none"` pour tester sans imprimante        |
 | `drawer.pin`     | `0` (connecteur RJ11 standard) ou `1`                                       |
+| `tls`            | iPad uniquement : `{ certPath, keyPath }` (PEM) → HTTPS natif, voir TPE §9  |
 
 `BRIDGE_TOKEN` (variable d'environnement) remplace `token` si défini. Le fichier contient le
 jeton : restreignez-en la lecture (`chmod 600` / ACL Windows).
@@ -59,7 +60,9 @@ Le script :
 Commandes utiles : `nssm restart MaPapeterieTpeBridge`, `nssm edit MaPapeterieTpeBridge`,
 `Get-Content C:\ProgramData\MaPapeterie\tpe-bridge\logs\bridge.log -Wait`.
 
-Pare-feu : rien à ouvrir en entrée (écoute 127.0.0.1). En sortie, autoriser `node.exe` vers
+Pare-feu : rien à ouvrir en entrée (écoute 127.0.0.1). Avec `tls` (iPad, `http.host` =
+`0.0.0.0` ou IP LAN) : autoriser en entrée TCP 8787 depuis le LAN uniquement (profil privé) ;
+après renouvellement du certificat, `nssm restart MaPapeterieTpeBridge`. En sortie, autoriser `node.exe` vers
 le LAN (TCP 8888 et 9100) si le pare-feu bloque les connexions sortantes.
 
 ## 4. Linux (systemd)
