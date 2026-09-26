@@ -107,3 +107,53 @@ test('captures : favoris → panier → paiement → succès → attente → rep
   await expect(page.getByTestId('draft-banner')).toBeVisible();
   await shot(page, '8-reprise');
 });
+
+test('captures : remise globale, écran client, clôture bloquée', async ({ page, context }) => {
+  await resetStorage(page);
+  await login(page);
+  await ensureSessionOpen(page);
+  const display = await context.newPage();
+  await display.setViewportSize({ width: 1366, height: 800 });
+  await display.goto('/display');
+  await page.bringToFront();
+
+  await add(page, '3* cahier', /Clairefontaine/);
+  await add(page, 'stylo', /Pilot V5/);
+  await add(page, 'petit prince', /Petit Prince/);
+  await page.getByTestId('product-search').fill('');
+  await page.keyboard.press('F6');
+  await page.getByTestId('global-discount-input').fill('10');
+  await shot(page, '9-remise-globale-dialogue');
+  await page.getByTestId('apply-global-discount').click();
+  await shot(page, '10-remise-globale-panier');
+  await expect(display.getByTestId('display-total')).toBeVisible();
+  await shot(display, '11-ecran-client-panier');
+
+  await page.getByTestId('checkout-button').click();
+  await page.getByTestId('pay-cash').click();
+  await page.getByTestId('cash-shortcut-5000').click();
+  await page.getByTestId('cash-confirm').click();
+  await page.getByTestId('validate-payment').click();
+  await expect(display.getByTestId('display-change')).toBeVisible();
+  await shot(display, '12-ecran-client-rendu');
+  await page.getByTestId('close-success').click();
+
+  // Encaissement interrompu (CB débitée) : le Z est bloqué.
+  await add(page, 'cahier', /Clairefontaine/);
+  await page.getByTestId('checkout-button').click();
+  await page.getByTestId('pay-cb').click();
+  await expect(page.getByTestId('payment-list')).toContainText('Carte bancaire');
+  await page.reload();
+  await page.getByTestId('clear-cart').click();
+  await page.getByTestId('confirm-action').click();
+  await add(page, 'stylo', /Lamy/);
+  await page.getByTestId('park-cart').click();
+  await page
+    .getByRole('navigation', { name: 'Navigation principale' })
+    .getByRole('link', { name: 'Caisse' })
+    .click();
+  await expect(page.getByTestId('closing-draft-blocked')).toBeVisible();
+  await expect(page.getByText('Ticket mis en attente').first()).toBeHidden({ timeout: 15_000 });
+  await expect(page.getByText('Stock boutique à zéro').first()).toBeHidden({ timeout: 15_000 });
+  await shot(page, '13-cloture-bloquee');
+});
