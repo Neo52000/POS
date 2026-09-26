@@ -157,3 +157,26 @@ test('captures : remise globale, écran client, clôture bloquée', async ({ pag
   await expect(page.getByText('Stock boutique à zéro').first()).toBeHidden({ timeout: 15_000 });
   await shot(page, '13-cloture-bloquee');
 });
+
+test('captures : KPI du jour et météo', async ({ page }) => {
+  await resetStorage(page);
+  await login(page);
+  await ensureSessionOpen(page);
+  for (const [q, name] of [
+    ['cahier', /Clairefontaine/],
+    ['stylo', /Lamy/],
+  ] as const) {
+    await add(page, q, name);
+    await page.getByTestId('checkout-button').click();
+    await page.getByTestId('pay-cb').click();
+    await page.getByTestId('validate-payment').click();
+    await expect(page.getByTestId('payment-sheet')).toBeHidden({ timeout: 8000 });
+  }
+  await page
+    .getByRole('navigation', { name: 'Navigation principale' })
+    .getByRole('link', { name: 'Historique' })
+    .click();
+  await expect(page.getByTestId('kpi-weather')).toBeVisible();
+  await expect(page.getByText('Session n°1 ouverte').first()).toBeHidden({ timeout: 15_000 });
+  await shot(page, '14-kpi-meteo');
+});

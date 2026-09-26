@@ -13,6 +13,7 @@ import {
 import { RefundDialog } from '@/components/history/RefundDialog';
 import { ReceiptPreview } from '@/components/ticket/ReceiptPreview';
 import { usePrinter } from '@/hooks/usePrinter';
+import { DayKpiStrip } from '@/components/kpi/DayKpiStrip';
 import { useTodayTickets } from '@/hooks/useTodayTickets';
 import { useTransactionFull } from '@/hooks/useTransactionFull';
 import { logEvent } from '@/lib/events';
@@ -69,7 +70,8 @@ export function HistoryPage() {
   return (
     <div className="grid h-full grid-cols-[1fr_440px]" data-testid="history-page">
       <section className="flex min-h-0 flex-col p-4">
-        <div className="mb-3 flex items-center justify-between">
+        <DayKpiStrip tickets={tickets.data} />
+        <div className="mb-3 mt-4 flex items-center justify-between">
           <h2 className="text-xl font-semibold">Tickets du jour</h2>
           <div className="flex items-center gap-3 text-sm text-muted">
             <span>
