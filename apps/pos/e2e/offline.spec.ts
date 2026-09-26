@@ -23,6 +23,8 @@ async function sellCahierCash(page: Page): Promise<string> {
   await page.getByTestId('validate-payment').click();
   await expect(page.getByTestId('checkout-success')).toBeVisible();
   const code = (await page.getByTestId('ticket-code').textContent()) ?? '';
+  // Rendu monnaie dû : l'écran de succès reste affiché jusqu'à fermeture manuelle.
+  await page.getByTestId('close-success').click();
   await expect(page.getByTestId('payment-sheet')).toBeHidden({ timeout: 8000 });
   return code;
 }
@@ -76,6 +78,8 @@ test('hors ligne : vente provisoire OFF-…, garde-fous, rejeu au retour du rés
   await expect(page.getByTestId('checkout-success').getByTestId('receipt-preview')).toContainText(
     'TICKET PROVISOIRE',
   );
+  // Rendu monnaie dû : l'écran de succès reste affiché jusqu'à fermeture manuelle.
+  await page.getByTestId('close-success').click();
   await expect(page.getByTestId('payment-sheet')).toBeHidden({ timeout: 8000 });
   await expect(page.getByTestId('cart-line')).toHaveCount(0);
   await expect(page.getByTestId('offline-queue-count')).toContainText('1 en file');

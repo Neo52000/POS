@@ -21,6 +21,8 @@ import { replayQueue } from '@/lib/offlineQueue';
 import { rpc } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import { useCartStore } from '@/stores/cartStore';
+import { draftCapturedCents, useCheckoutDraftStore } from '@/stores/checkoutDraftStore';
+import { useParkedStore } from '@/stores/parkedStore';
 import { useSessionStore } from '@/stores/sessionStore';
 import { useUiStore } from '@/stores/uiStore';
 import type { CloseSessionResult, PosClosing, PosRegister, PosSession } from '@/types/pos';
@@ -240,6 +242,14 @@ function CloseSession({
   const offline = useUiStore((s) => s.connectivity === 'offline');
   const { stats } = useOfflineQueue();
   const queueBlocks = stats.pending > 0 || stats.failed > 0;
+  // Encaissement interrompu : de l'argent a pu être perçu (CB débitée, espèces au tiroir) sans
+  // ticket. Le Z le figerait dans la mauvaise période et fausserait l'écart de caisse.
+  const draft = useCheckoutDraftStore((s) => s.draft);
+  const draftCaptured = draftCapturedCents(draft);
+  const draftBlocks = draft !== null;
+  // Tickets en attente : sans valeur fiscale, ils survivent au Z (simple avertissement).
+  const parked = useParkedStore((s) => s.parked);
+  const parkedTotal = parked.reduce((sum, p) => sum + p.total_ttc_cents, 0);
 
   const todaySales = (tickets.data ?? []).filter((t) => t.session_id === session.id);
   const todayTotal = todaySales.reduce((s, t) => s + Number(t.total_ttc_cents), 0);
@@ -375,8 +385,37 @@ function CloseSession({
           </p>
         </div>
       </div>
+      {draftBlocks && (
+        <p
+          className="rounded-xl bg-danger/10 px-3 py-2 text-sm text-danger"
+          role="alert"
+          data-testid="closing-draft-blocked"
+        >
+          Encaissement interrompu
+          {draftCaptured > 0 ? ` (CB déjà débitée : ${formatEurCents(draftCaptured)})` : ''}
+          {draft.session_id && draft.session_id !== session.id
+            ? ', commencé dans une session précédente'
+            : ''}{' '}
+          : reprenez-le ou abandonnez-le avant de clôturer.{' '}
+          <Link to="/" className="underline">
+            Aller à la vente
+          </Link>
+        </p>
+      )}
+      {parked.length > 0 && (
+        <p
+          className="rounded-xl bg-warning/10 px-3 py-2 text-sm text-warning"
+          data-testid="closing-parked-warning"
+        >
+          {parked.length} ticket(s) en attente ({formatEurCents(parkedTotal)}) : ils resteront en
+          attente après la clôture.
+        </p>
+      )}
       {cartLines > 0 && (
-        <p className="rounded-xl bg-warning/10 px-3 py-2 text-sm text-warning">
+        <p
+          className="rounded-xl bg-warning/10 px-3 py-2 text-sm text-warning"
+          data-testid="closing-cart-blocked"
+        >
           Le panier en cours contient {cartLines} ligne(s) : videz-le ou encaissez avant de
           clôturer.
         </p>
@@ -409,7 +448,7 @@ function CloseSession({
       <Button
         variant="danger"
         size="pay"
-        disabled={pending || cartLines > 0 || offline || queueBlocks}
+        disabled={pending || cartLines > 0 || offline || queueBlocks || draftBlocks}
         onClick={() => void close()}
         data-testid="close-session-button"
       >

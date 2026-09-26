@@ -225,3 +225,120 @@ register_id?: uuid}`. Appelle par paquets de 10 la RPC ma-papeterie
 
 Option `tls: {certPath, keyPath}` (PEM) → HTTPS natif Fastify (`docs/TPE-CAISSE-AP.md` §9) ; les
 clés de premier niveau de `bridge.config.json` commençant par `//` sont ignorées (commentaires).
+
+## 12. Interface de vente (PWA) — robustesse d'encaissement et saisie
+
+### 12.1 Argent encaissé ⇒ vente garantie
+
+- **Brouillon d'encaissement** (`pos.checkout-draft.v1`, localStorage, écriture synchrone) : dès le
+  premier paiement saisi, il contient les lignes figées, le client, les paiements (dont `captured`),
+  le rendu et le `client_txn_id`. Il est effacé au succès (enregistré ou mis en file) ou à la
+  fermeture sans CB captée. Après un rechargement, la page de vente affiche « Encaissement
+  interrompu » avec deux choix : **Reprendre**, qui garde le même `client_txn_id` (rejeu
+  idempotent), ou **Abandonner**, qui passe par une confirmation.
+- **CB captée** : la feuille de paiement ne se ferme plus (Échap, « Retour au panier »). Seule
+  exception : un refus serveur, auquel cas le brouillon est conservé. L'abandon d'un brouillon
+  avec CB captée exige l'enregistrement **préalable** au JET (`logEventNow`) de
+  `checkout_draft_abandoned` avec le payload complet et `captured_cents`. Le remboursement se fait
+  ensuite via le TPE.
+- **Panier figé** pendant l'encaissement (`cartStore.locked`) : les tarifs pro asynchrones sont
+  ignorés. « Encaisser » attend la fin des résolutions en cours (`customerStore.pendingLines`).
+  Une réponse tarifaire plus ancienne que la dernière requête de la même ligne est ignorée.
+- Panier (`pos.cart.v1`) et client attaché (`pos.customer.v1`) persistants.
+- Garde synchrone anti double validation : un seul `pos-checkout` par tap.
+
+### 12.2 Vente à 0 €
+
+`payments ≥ 1` reste exigé (§4, `pos-checkout`). Pour un total de 0 € sans paiement saisi, la PWA
+envoie `payments: [{ method: 'cash', amount_cents: 0 }]`. Il n'y a aucun changement SQL ni de
+hash.
+
+### 12.3 Événements JET ajoutés (`pos_log_event`, type libre)
+
+| Événement                                       | Déclencheur                          | Payload                                                                          |
+| ----------------------------------------------- | ------------------------------------ | -------------------------------------------------------------------------------- |
+| `line_discount`                                 | remise % modifiée                    | `product_id, label, qty, unit_price_ttc_cents, from_percent, to_percent`         |
+| `price_override`                                | prix unitaire forcé (hors devis)     | `product_id, label, qty, from_cents, to_cents, public_price_ttc_cents`           |
+| `qty_decreased`                                 | baisse de quantité (> 0)             | `product_id, label, from_qty, to_qty, unit_price_ttc_cents`                      |
+| `sale_parked` / `sale_recalled`                 | mise en attente / rappel             | `parked_id, lines, total_ttc_cents, …`                                           |
+| `sale_abandoned` (`reason: 'parked_discarded'`) | suppression d'un ticket en attente   | `lines, total_ttc_cents, quote_id`                                               |
+| `checkout_draft_abandoned`                      | abandon d'un encaissement interrompu | brouillon complet + `captured_cents`                                             |
+| `global_discount`                               | remise globale modifiée              | `from_percent, to_percent, lines, total_ttc_before_cents, total_ttc_after_cents` |
+
+### 12.4 Règles de saisie
+
+- Remise ligne plafonnée à `maxDiscountPercent` (réglage local, 30 % par défaut, modifiable par un
+  administrateur uniquement). Le plafond s'applique aussi à la remise implicite d'un prix forcé,
+  calculée par rapport au prix public. Au-delà, l'opération est réservée à un compte
+  `is_pos_admin()`. Un prix forcé (`price_overridden`) n'est jamais remplacé par un tarif pro.
+- Quantité : nombre > 0, 3 décimales maximum. Saisie directe au pavé (tap sur la quantité) ou
+  multiplicateur `n*` dans la recherche (« 3* », puis scan ou tuile).
+- Produits du catalogue validés (zod) : une ligne avec un prix non numérique, négatif ou `null`, ou
+  une TVA hors `VAT_RATES_FR`, est écartée. Elle n'est jamais convertie en 0.
+- Douchette : le 1er caractère d'une rafale est retiré du champ actif. Une rafale refusée
+  (checksum) déclenche un bip et un message. La douchette est suspendue sous tout dialogue.
+- Un EAN inconnu n'est pas mis en cache. Il est proposé en « article libre » avec son code.
+- Tickets en attente : 10 maximum, sans valeur fiscale. Rappeler un ticket met en attente le panier
+  courant.
+
+### 12.5 Raccourcis clavier (page de vente, hors dialogue)
+
+| Touche                      | Action                                       |
+| --------------------------- | -------------------------------------------- |
+| F1                          | recherche                                    |
+| F2                          | article libre                                |
+| F4                          | client pro                                   |
+| F8                          | mise en attente                              |
+| F9                          | tickets en attente                           |
+| F6                          | remise globale                               |
+| F12 ou Ctrl+Entrée          | encaisser                                    |
+| Suppr (recherche vide)      | supprimer la dernière ligne                  |
+| 1 à 5 (feuille de paiement) | CB, espèces, chèque, chèque cadeau, virement |
+
+Le viewport des notifications passe de F8 à Alt+N.
+
+### 12.6 Remise globale (PWA uniquement, sans changement serveur)
+
+Remise globale **en %** (0 à 100, 2 décimales). Chaque ligne est vendue avec
+`discount_percent = max(remise de la ligne, remise globale)`, sans cumul. Ce % effectif est envoyé
+tel quel dans le payload : il est haché, recalculé à l'identique par `pos_compute_cart` et imprimé
+sur le ticket. Il n'y a donc aucun changement SQL, zod ou hash, et les remboursements recopient le
+% stocké. La remise globale n'est jamais écrite dans les lignes du panier (la fusion des scans
+n'est pas modifiée). Elle est persistée avec le panier et transportée par les tickets en attente
+et le brouillon d'encaissement. Elle revient à 0 au vidage du panier et est gelée pendant
+l'encaissement. Le plafond `maxDiscountPercent` s'y applique, avec une dérogation administrateur.
+
+Une remise globale **en euros** n'est pas proposée : elle ne peut pas être exacte ligne par ligne
+(arrondi unitaire, SPEC §2). La rendre exacte exigerait une ligne négative, refusée aujourd'hui
+par le SQL (`unit_price_ttc_cents ≥ 0`, `qty > 0` en vente), par zod et par le contrôle des
+remboursements.
+
+### 12.7 Clôture Z : garde-fous
+
+| Situation                                                        | Effet                                                                        |
+| ---------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Brouillon d'encaissement présent (CB débitée ou espèces saisies) | **Z bloqué** (`closing-draft-blocked`) : reprendre ou abandonner (§12.1)     |
+| Tickets en attente                                               | avertissement (`closing-parked-warning`) ; ils restent en attente après le Z |
+| Panier non vide, hors ligne, file hors ligne non vide            | Z bloqué (inchangé)                                                          |
+
+Le brouillon enregistre la `session_id` dans laquelle l'encaissement a commencé, pour que le
+message de blocage l'indique.
+
+### 12.8 Écran client (`/display`)
+
+Route de premier niveau, **hors authentification** : elle ne démarre ni le runtime hors ligne ni
+le verrouillage, et ne lit jamais Supabase. La caisse diffuse son état sur
+`BroadcastChannel('pos-display')` (même origine, même navigateur). Messages :
+
+- `idle` : accueil ;
+- `cart` : lignes au % effectif et total ;
+- `payment` : total, déjà payé, reste ;
+- `sale_completed` : total, rendu, n° de ticket, affiché 8 s ; seul un nouveau panier
+  l'interrompt ;
+- `hello` : un écran ouvert en cours de vente reçoit le dernier état.
+
+Données diffusées : libellés, quantités, prix, remises, totaux et au plus le `display_name` du
+client pro. Jamais de SIRET, de TVA intracommunautaire ni de secret. Sans réponse de la caisse en
+1 s, l'écran lit une fois le panier persisté (`pos.cart.v1`). Pour l'ouvrir : bouton
+« Écran client » dans l'en-tête (`window.open`), puis placer la fenêtre sur le second écran et
+appuyer sur F11.

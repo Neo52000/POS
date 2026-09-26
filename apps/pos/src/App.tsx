@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
+import { ErrorBoundary } from '@/components/layout/ErrorBoundary';
 import { AppShell } from '@/components/layout/AppShell';
 import { Toaster } from '@/components/ui/toaster';
 import { startOfflineRuntime } from '@/lib/offlineRuntime';
@@ -8,6 +9,7 @@ import { queryClient } from '@/lib/queryClient';
 import { supabase } from '@/lib/supabase';
 import { useSessionStore } from '@/stores/sessionStore';
 import { ClosingPage } from '@/pages/ClosingPage';
+import { CustomerDisplayPage } from '@/pages/CustomerDisplayPage';
 import { HistoryPage } from '@/pages/HistoryPage';
 import { InventoryPage } from '@/pages/InventoryPage';
 import { LockPage } from '@/pages/LockPage';
@@ -84,6 +86,8 @@ function Router() {
           <Route path="/settings" element={<SettingsPage />} />
         </Route>
       </Route>
+      {/* Écran client : hors authentification, ne lit que ce que la caisse diffuse. */}
+      <Route path="/display" element={<CustomerDisplayPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
@@ -92,9 +96,11 @@ function Router() {
 export function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <Router />
-      </BrowserRouter>
+      <ErrorBoundary>
+        <BrowserRouter>
+          <Router />
+        </BrowserRouter>
+      </ErrorBoundary>
       <Toaster />
     </QueryClientProvider>
   );

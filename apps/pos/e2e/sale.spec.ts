@@ -62,6 +62,8 @@ test('remboursement depuis l’historique', async ({ page }) => {
   await page.getByTestId('cash-confirm').click();
   await page.getByTestId('validate-payment').click();
   const soldCode = await page.getByTestId('ticket-code').textContent();
+  // Rendu monnaie dû : l'écran de succès reste affiché jusqu'à fermeture manuelle.
+  await page.getByTestId('close-success').click();
   await expect(page.getByTestId('payment-sheet')).toBeHidden({ timeout: 8000 });
 
   // Historique → détail → Rembourser.
@@ -98,4 +100,87 @@ test('remboursement depuis l’historique', async ({ page }) => {
   await expect(
     page.getByTestId('history-row').filter({ hasText: 'Remboursement' }).first(),
   ).toBeVisible();
+});
+
+test('mise en attente puis rappel d’un ticket (échange avec le panier courant)', async ({
+  page,
+}) => {
+  await login(page);
+  await ensureSessionOpen(page);
+
+  await page.getByTestId('product-search').fill('stylo');
+  await page.getByTestId('product-tile').filter({ hasText: 'BIC Cristal' }).first().click();
+  await page.getByTestId('park-cart').click();
+  await expect(page.getByTestId('cart-line')).toHaveCount(0);
+  await expect(page.getByTestId('show-parked')).toContainText('1');
+
+  await page.getByTestId('product-search').fill('cahier');
+  await page.getByTestId('product-tile').filter({ hasText: 'Cahier' }).first().click();
+  await expect(page.getByTestId('cart-line').first()).toContainText('Cahier');
+  await page.getByTestId('show-parked').click();
+  await expect(page.getByTestId('parked-item')).toHaveCount(1);
+  await page.getByTestId('recall-parked').click();
+  await expect(page.getByTestId('parked-sheet')).toBeHidden();
+
+  await expect(page.getByTestId('cart-line')).toHaveCount(1);
+  await expect(page.getByTestId('cart-line').first()).toContainText('BIC Cristal');
+  // Le panier « cahier » a pris sa place en attente.
+  await page.getByTestId('show-parked').click();
+  await expect(page.getByTestId('parked-item')).toHaveCount(1);
+  await expect(page.getByTestId('parked-item').first()).toContainText('Cahier');
+});
+
+test('CB captée puis rechargement : reprise de l’encaissement sans double débit', async ({
+  page,
+}) => {
+  await login(page);
+  await ensureSessionOpen(page);
+  await page.getByTestId('product-search').fill('cahier');
+  await page.getByTestId('product-tile').first().click();
+  await page.getByTestId('checkout-button').click();
+  await page.getByTestId('pay-cb').click();
+  await expect(page.getByTestId('payment-list')).toContainText('Carte bancaire');
+  // Retour au panier impossible : la CB est débitée.
+  await expect(page.getByTestId('back-to-cart')).toBeDisabled();
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('payment-sheet')).toBeVisible();
+
+  // Crash / rechargement de la PWA.
+  await page.reload();
+  await expect(page.getByTestId('draft-banner')).toContainText('CB déjà débitée : 2,45');
+  await page.getByTestId('draft-resume').click();
+  await expect(page.getByTestId('payment-sheet')).toBeVisible();
+  await expect(page.getByTestId('remaining')).toHaveText(/0,00/);
+  await expect(page.getByLabel('Paiement CB capturé')).toBeVisible();
+  await page.getByTestId('validate-payment').click();
+  await expect(page.getByTestId('checkout-success')).toBeVisible();
+  await expect(page.getByTestId('payment-sheet')).toBeHidden({ timeout: 8000 });
+  await expect(page.getByTestId('draft-banner')).toHaveCount(0);
+  await expect(page.getByTestId('cart-line')).toHaveCount(0);
+});
+
+test('multiplicateur « 3* », raccourcis clavier et confirmation du vidage', async ({ page }) => {
+  await login(page);
+  await ensureSessionOpen(page);
+
+  await page.getByTestId('product-search').fill('3* cahier');
+  await expect(page.getByTestId('qty-multiplier')).toHaveText(/× 3/);
+  await page.getByTestId('product-tile').first().click();
+  await expect(page.getByTestId('line-qty').first()).toHaveText('3');
+  await expect(page.getByTestId('cart-total')).toHaveText(/7,35/);
+  await expect(page.getByTestId('qty-multiplier')).toHaveCount(0);
+
+  // F12 : encaisser ; Échap : retour au panier (aucun paiement saisi).
+  await page.keyboard.press('F12');
+  await expect(page.getByTestId('payment-sheet')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('payment-sheet')).toBeHidden();
+
+  // Vider : confirmation obligatoire.
+  await page.getByTestId('clear-cart').click();
+  await page.getByTestId('confirm-dialog').getByRole('button', { name: 'Annuler' }).click();
+  await expect(page.getByTestId('cart-line')).toHaveCount(1);
+  await page.getByTestId('clear-cart').click();
+  await page.getByTestId('confirm-action').click();
+  await expect(page.getByTestId('cart-line')).toHaveCount(0);
 });
