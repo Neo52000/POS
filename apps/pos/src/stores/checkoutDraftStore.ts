@@ -18,8 +18,11 @@ export interface DraftPayment extends PaymentInput {
  */
 export interface CheckoutDraft {
   client_txn_id: string;
+  /** Session où l'encaissement a commencé (message de blocage du Z). */
+  session_id: string | null;
   lines: CartLine[];
   quote_id: string | null;
+  global_discount_percent: number;
   account: PosCustomer | null;
   payments: DraftPayment[];
   change_cents: number;

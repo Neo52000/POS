@@ -6,7 +6,7 @@ vi.mock('@/lib/edge', () => ({
 }));
 
 import { logEvent } from '@/lib/events';
-import { selectTotals, useCartStore } from './cartStore';
+import { effectiveLines, selectTotals, useCartStore } from './cartStore';
 import { useCustomerStore } from './customerStore';
 import { MAX_PARKED, useParkedStore } from './parkedStore';
 import type { PosProduct } from '@/types/pos';
@@ -37,7 +37,12 @@ const LIVRE: PosProduct = {
 describe('cartStore', () => {
   beforeEach(() => {
     localStorage.clear();
-    useCartStore.setState({ lines: [], quote_id: null, locked: false });
+    useCartStore.setState({
+      lines: [],
+      quote_id: null,
+      locked: false,
+      global_discount_percent: 0,
+    });
     useParkedStore.setState({ parked: [] });
     useCustomerStore.setState({
       account: null,
@@ -260,5 +265,61 @@ describe('cartStore', () => {
       'sale_abandoned',
       expect.objectContaining({ reason: 'parked_discarded' }),
     );
+  });
+
+  it('remise globale : max(remise ligne, globale), sans cumul ni écriture dans les lignes', () => {
+    const s = useCartStore.getState();
+    const bic = s.addProduct(BIC, { qty: 2 }); // 2 × 1,20
+    s.setDiscount(bic.key, 15);
+    s.addProduct(LIVRE); // 7,90
+    s.setGlobalDiscount(10);
+    const totals = selectTotals(useCartStore.getState());
+    // BIC garde 15 % (> 10) : 102 × 2 = 204 ; livre à −10 % : 711.
+    expect(totals.lines.map((l) => l.discount_percent)).toEqual([15, 10]);
+    expect(totals.total_ttc_cents).toBe(204 + 711);
+    expect(useCartStore.getState().lines.map((l) => l.discount_percent)).toEqual([15, 0]);
+    expect(effectiveLines(useCartStore.getState().lines, 0)).toBe(useCartStore.getState().lines);
+    expect(logEvent).toHaveBeenCalledWith(
+      'global_discount',
+      expect.objectContaining({
+        from_percent: 0,
+        to_percent: 10,
+        total_ttc_before_cents: 204 + 790,
+        total_ttc_after_cents: 204 + 711,
+      }),
+    );
+  });
+
+  it('remise globale : persistée, remise à zéro au vidage, ignorée pendant l’encaissement', () => {
+    const s = useCartStore.getState();
+    s.addProduct(LIVRE);
+    s.setGlobalDiscount(5);
+    const raw = JSON.parse(localStorage.getItem('pos.cart.v1') ?? '{}') as {
+      state?: { global_discount_percent?: number };
+    };
+    expect(raw.state?.global_discount_percent).toBe(5);
+    s.setLocked(true);
+    s.setGlobalDiscount(20);
+    expect(useCartStore.getState().global_discount_percent).toBe(5);
+    s.setLocked(false);
+    s.clear('abandoned');
+    expect(logEvent).toHaveBeenCalledWith(
+      'sale_abandoned',
+      expect.objectContaining({ total_ttc_cents: 751 }),
+    );
+    expect(useCartStore.getState().global_discount_percent).toBe(0);
+  });
+
+  it('la remise globale suit le ticket mis en attente puis rappelé', () => {
+    const s = useCartStore.getState();
+    s.addProduct(LIVRE);
+    s.setGlobalDiscount(10);
+    useParkedStore.getState().park();
+    expect(useCartStore.getState().global_discount_percent).toBe(0);
+    const parked = useParkedStore.getState().parked[0];
+    expect(parked?.total_ttc_cents).toBe(711);
+    useParkedStore.getState().recall(parked?.id ?? '');
+    expect(useCartStore.getState().global_discount_percent).toBe(10);
+    expect(selectTotals(useCartStore.getState()).total_ttc_cents).toBe(711);
   });
 });

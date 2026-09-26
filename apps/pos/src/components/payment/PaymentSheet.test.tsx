@@ -71,8 +71,10 @@ function renderSheet(t = totals, onOpenChange: (open: boolean) => void = () => u
 
 const CAPTURED_DRAFT: CheckoutDraft = {
   client_txn_id: '99999999-9999-4999-8999-999999999999',
+  session_id: '55555555-5555-4555-8555-000000000001',
   lines: [],
   quote_id: null,
+  global_discount_percent: 0,
   account: null,
   payments: [
     {

@@ -10,12 +10,14 @@ import { PaymentSheet } from '@/components/payment/PaymentSheet';
 import { CameraScannerDialog } from '@/components/sale/CameraScannerDialog';
 import { CartPanel } from '@/components/sale/CartPanel';
 import { FreeLineDialog } from '@/components/sale/FreeLineDialog';
+import { GlobalDiscountDialog } from '@/components/sale/GlobalDiscountDialog';
 import { ParkedSheet } from '@/components/sale/ParkedSheet';
 import { PriceTierPicker } from '@/components/sale/PriceTierPicker';
 import { ProductGrid } from '@/components/sale/ProductGrid';
 import { useBarcodeScanner } from '@/hooks/useBarcodeScanner';
 import { lookupProductByEan } from '@/hooks/useProductByEan';
 import { PRODUCT_SEARCH_LIMIT, useProductSearch } from '@/hooks/useProductSearch';
+import { useIsAdmin } from '@/hooks/useIsAdmin';
 import { useSession } from '@/hooks/useSession';
 import { beep } from '@/lib/beep';
 import { searchProducts } from '@/lib/catalog';
@@ -46,6 +48,7 @@ export function SalePage() {
   const [quoteDialog, setQuoteDialog] = useState(false);
   const [parkedOpen, setParkedOpen] = useState(false);
   const [cartModal, setCartModal] = useState(false);
+  const [globalDialog, setGlobalDialog] = useState(false);
   const [confirmAbandon, setConfirmAbandon] = useState(false);
   const [abandoning, setAbandoning] = useState(false);
   const [paying, setPaying] = useState(false);
@@ -60,6 +63,7 @@ export function SalePage() {
   const removeLine = useCartStore((s) => s.remove);
   const setLocked = useCartStore((s) => s.setLocked);
   const lines = useCartStore((s) => s.lines);
+  const globalDiscount = useCartStore((s) => s.global_discount_percent);
   const attach = useCustomerStore((s) => s.attach);
   const pricingBusy = useCustomerStore((s) => s.resolving || s.pendingLines > 0);
   const parkedCount = useParkedStore((s) => s.parked.length);
@@ -67,8 +71,14 @@ export function SalePage() {
   const toggleFavorite = useSettingsStore((s) => s.toggleFavorite);
   const draft = useCheckoutDraftStore((s) => s.draft);
   const discardDraft = useCheckoutDraftStore((s) => s.discard);
+  const setGlobalDiscount = useCartStore((s) => s.setGlobalDiscount);
+  const maxDiscountPercent = useSettingsStore((s) => s.maxDiscountPercent);
+  const { isAdmin } = useIsAdmin();
   const toast = useUiStore((s) => s.toast);
-  const totals = useMemo(() => selectTotals({ lines }), [lines]);
+  const totals = useMemo(
+    () => selectTotals({ lines, global_discount_percent: globalDiscount }),
+    [lines, globalDiscount],
+  );
   const capturedCents = draftCapturedCents(draft);
 
   const anyDialogOpen =
@@ -80,6 +90,7 @@ export function SalePage() {
     paying ||
     parkedOpen ||
     cartModal ||
+    globalDialog ||
     confirmAbandon;
   const dialogOpenRef = useRef(anyDialogOpen);
   dialogOpenRef.current = anyDialogOpen;
@@ -230,7 +241,9 @@ export function SalePage() {
 
   const resumeDraft = (): void => {
     if (!draft) return;
-    useCartStore.getState().restore(draft.lines, draft.quote_id);
+    useCartStore
+      .getState()
+      .restore(draft.lines, draft.quote_id, draft.global_discount_percent ?? 0);
     useCustomerStore.setState({ account: draft.account, pricing: {}, error: null });
     setPaying(true);
   };
@@ -270,7 +283,9 @@ export function SalePage() {
         setFreeLineEan(null);
         setFreeLine(true);
       } else if (e.key === 'F4') setCustomerDialog(true);
-      else if (e.key === 'F8') park();
+      else if (e.key === 'F6') {
+        if (useCartStore.getState().lines.length > 0) setGlobalDialog(true);
+      } else if (e.key === 'F8') park();
       else if (e.key === 'F9') setParkedOpen(true);
       else if (e.key === 'F12' || ctrlEnter) checkout();
       else if (e.key === 'Delete' && queryRef.current === '') {
@@ -304,7 +319,7 @@ export function SalePage() {
               <p className="font-semibold">Encaissement interrompu</p>
               <p className="text-sm text-muted">
                 {draft.lines.length} ligne(s) ·{' '}
-                {formatEurCents(selectTotals({ lines: draft.lines }).total_ttc_cents)}
+                {formatEurCents(selectTotals(draft).total_ttc_cents)}
                 {capturedCents > 0
                   ? ` · CB déjà débitée : ${formatEurCents(capturedCents)}`
                   : ` · ${draft.payments.length} paiement(s) saisi(s)`}
@@ -444,6 +459,15 @@ export function SalePage() {
         parkedCount={parkedCount}
         pricingBusy={pricingBusy}
         onModalChange={setCartModal}
+        onGlobalDiscount={() => setGlobalDialog(true)}
+      />
+      <GlobalDiscountDialog
+        open={globalDialog}
+        current={globalDiscount}
+        onClose={() => setGlobalDialog(false)}
+        onApply={setGlobalDiscount}
+        maxPercent={maxDiscountPercent}
+        isAdmin={isAdmin}
       />
 
       <PriceTierPicker

@@ -9,6 +9,7 @@ import { queryClient } from '@/lib/queryClient';
 import { supabase } from '@/lib/supabase';
 import { useSessionStore } from '@/stores/sessionStore';
 import { ClosingPage } from '@/pages/ClosingPage';
+import { CustomerDisplayPage } from '@/pages/CustomerDisplayPage';
 import { HistoryPage } from '@/pages/HistoryPage';
 import { InventoryPage } from '@/pages/InventoryPage';
 import { LockPage } from '@/pages/LockPage';
@@ -85,6 +86,8 @@ function Router() {
           <Route path="/settings" element={<SettingsPage />} />
         </Route>
       </Route>
+      {/* Écran client : hors authentification, ne lit que ce que la caisse diffuse. */}
+      <Route path="/display" element={<CustomerDisplayPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

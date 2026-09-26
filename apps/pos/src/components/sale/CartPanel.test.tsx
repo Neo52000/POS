@@ -37,6 +37,7 @@ function renderPanel(overrides: Partial<Parameters<typeof CartPanel>[0]> = {}) {
     parkedCount: 0,
     pricingBusy: false,
     onModalChange: vi.fn(),
+    onGlobalDiscount: vi.fn(),
     ...overrides,
   };
   render(

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
+  MonitorSmartphone,
   Archive,
   ClipboardList,
   History,
@@ -11,6 +12,7 @@ import {
   WifiOff,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useCustomerDisplayPublisher } from '@/hooks/useCustomerDisplayPublisher';
 import {
   Dialog,
   DialogContent,
@@ -106,6 +108,7 @@ export function AppShell() {
   const { unsynced, stats } = useOfflineQueue();
   useBridgeHealth(true);
   useSession();
+  useCustomerDisplayPublisher();
 
   const doLock = useCallback(() => {
     if (!hasPin()) return;
@@ -170,6 +173,17 @@ export function AppShell() {
         </nav>
         <div className="ml-auto flex items-center gap-1">
           <span className="mr-2 hidden text-xs text-muted md:inline">{user?.email}</span>
+          <Button
+            variant="ghost"
+            size="touch"
+            onClick={() => window.open('/display', 'pos-customer-display', 'popup')}
+            title="Ouvrir l’écran client (à placer sur le second écran, F11)"
+            aria-label="Écran client"
+            data-testid="open-customer-display"
+          >
+            <MonitorSmartphone className="h-5 w-5" />
+            <span className="hidden 2xl:inline">Écran client</span>
+          </Button>
           <DrawerButton />
           <Button
             variant="ghost"

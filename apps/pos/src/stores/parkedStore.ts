@@ -1,9 +1,8 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import { computeCart } from '@pos/core';
 import { logEvent } from '@/lib/events';
 import { uuidv4 } from '@/lib/uuid';
-import { useCartStore } from '@/stores/cartStore';
+import { selectTotals, useCartStore } from '@/stores/cartStore';
 import type { CartLine } from '@/stores/cartStore';
 import { useCustomerStore } from '@/stores/customerStore';
 import type { PosCustomer } from '@/types/pos';
@@ -16,6 +15,8 @@ export interface ParkedCart {
   parked_at: string;
   lines: CartLine[];
   quote_id: string | null;
+  /** Remise globale du panier (%), 0 si aucune. Absente des tickets mis en attente avant son ajout. */
+  global_discount_percent?: number;
   account: PosCustomer | null;
   total_ttc_cents: number;
 }
@@ -31,15 +32,16 @@ interface ParkedState {
 }
 
 function snapshotCurrent(): ParkedCart | null {
-  const { lines, quote_id } = useCartStore.getState();
-  if (lines.length === 0) return null;
+  const cart = useCartStore.getState();
+  if (cart.lines.length === 0) return null;
   return {
     id: uuidv4(),
     parked_at: new Date().toISOString(),
-    lines,
-    quote_id,
+    lines: cart.lines,
+    quote_id: cart.quote_id,
+    global_discount_percent: cart.global_discount_percent,
     account: useCustomerStore.getState().account,
-    total_ttc_cents: computeCart(lines).total_ttc_cents,
+    total_ttc_cents: selectTotals(cart).total_ttc_cents,
   };
 }
 
@@ -88,7 +90,9 @@ export const useParkedStore = create<ParkedState>()(
         resetCurrent();
         // Les lignes gardent leurs prix (y compris tarifs pro) : pas de nouvelle résolution.
         useCustomerStore.setState({ account: target.account, pricing: {}, error: null });
-        useCartStore.getState().restore(target.lines, target.quote_id);
+        useCartStore
+          .getState()
+          .restore(target.lines, target.quote_id, target.global_discount_percent ?? 0);
         void logEvent('sale_recalled', {
           parked_id: target.id,
           lines: target.lines.length,

@@ -29,6 +29,7 @@ import { useOfflineQueue } from '@/hooks/useOfflineQueue';
 import { usePrinter } from '@/hooks/usePrinter';
 import { describeApiError, isApiError } from '@/lib/apiError';
 import type { PosCheckoutResult } from '@/lib/edge';
+import { publishDisplay } from '@/lib/customerDisplay';
 import { cachedTicketSettings } from '@/lib/ticketSettings';
 import type { ProvisionalTicketContext } from '@/lib/ticket';
 import { env } from '@/lib/env';
@@ -155,8 +156,10 @@ export function PaymentSheet({
     }
     saveDraft({
       client_txn_id: clientTxnId,
+      session_id: useSessionStore.getState().session?.id ?? null,
       lines: useCartStore.getState().lines,
       quote_id: useCartStore.getState().quote_id,
+      global_discount_percent: useCartStore.getState().global_discount_percent,
       account: useCustomerStore.getState().account,
       payments,
       change_cents: change,
@@ -187,6 +190,26 @@ export function PaymentSheet({
    * Fermeture : interdite tant qu'une CB captée n'est pas enregistrée, sauf après un refus serveur
    * (le brouillon est alors conservé et repris depuis la page de vente).
    */
+  // Écran client : reste à payer pendant l'encaissement, puis total et rendu monnaie.
+  useEffect(() => {
+    if (!open || isRefund) return;
+    if (result) {
+      publishDisplay({
+        type: 'sale_completed',
+        total_ttc_cents: result.ticket.total_ttc_cents,
+        change_cents: result.ticket.change_cents,
+        ticket_code: result.ticket.ticket_code,
+      });
+      return;
+    }
+    publishDisplay({
+      type: 'payment',
+      total_ttc_cents: total,
+      paid_cents: paid - change,
+      remaining_cents: Math.max(0, remaining),
+    });
+  }, [open, isRefund, result, total, paid, change, remaining]);
+
   const close = (): void => {
     if (checkout.isPending || inFlight.current) return;
     if (hasCaptured && !result && !error) {

@@ -42,8 +42,8 @@ function CartLineRow({ line, computed, onQty, onRemove, onDiscount, onEditQty }:
             {line.price_overridden && !line.price_tier_title && (
               <Badge variant="warning">Prix forcé</Badge>
             )}
-            {(line.discount_percent ?? 0) > 0 && (
-              <Badge variant="warning">−{formatPercent(line.discount_percent ?? 0)}</Badge>
+            {(computed?.discount_percent ?? 0) > 0 && (
+              <Badge variant="warning">−{formatPercent(computed?.discount_percent ?? 0)}</Badge>
             )}
             {lowStock && <Badge variant="warning">Stock {line.stock_boutique}</Badge>}
             <span>TVA {formatVatRate(line.vat_rate)}</span>
@@ -121,6 +121,7 @@ export interface CartPanelProps {
   pricingBusy: boolean;
   /** Un dialogue du panier est ouvert (la douchette et les raccourcis sont suspendus). */
   onModalChange: (open: boolean) => void;
+  onGlobalDiscount: () => void;
 }
 
 /** Colonne droite : client, lignes, totaux, bouton Encaisser. */
@@ -133,6 +134,7 @@ export function CartPanel({
   parkedCount,
   pricingBusy,
   onModalChange,
+  onGlobalDiscount,
 }: CartPanelProps) {
   const lines = useCartStore((s) => s.lines);
   const setQty = useCartStore((s) => s.setQty);
@@ -149,7 +151,17 @@ export function CartPanel({
   useEffect(() => {
     onModalChange(modalOpen);
   }, [modalOpen, onModalChange]);
-  const totals = useMemo(() => selectTotals({ lines }), [lines]);
+  const globalDiscount = useCartStore((s) => s.global_discount_percent);
+  const totals = useMemo(
+    () => selectTotals({ lines, global_discount_percent: globalDiscount }),
+    [lines, globalDiscount],
+  );
+  /** Montant réellement retiré par la remise globale (au-delà des remises de ligne). */
+  const globalSavedCents = useMemo(
+    () =>
+      globalDiscount > 0 ? selectTotals({ lines }).total_ttc_cents - totals.total_ttc_cents : 0,
+    [lines, globalDiscount, totals],
+  );
   const computedByKey = useMemo(() => {
     const map = new Map<string, ComputedLine>();
     totals.lines.forEach((c, i) => {
@@ -220,6 +232,27 @@ export function CartPanel({
         ))}
       </ul>
       <div className="border-t border-border px-4 pt-3">
+        {lines.length > 0 && (
+          <button
+            type="button"
+            onClick={onGlobalDiscount}
+            className="mb-1 flex min-h-touch w-full items-center justify-between rounded-lg text-sm text-muted hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            title="Remise globale (F6)"
+            data-testid="global-discount"
+          >
+            <span className="flex items-center gap-1.5">
+              <Percent className="h-4 w-4" />
+              {globalDiscount > 0
+                ? `Remise globale −${formatPercent(globalDiscount)}`
+                : 'Remise globale'}
+            </span>
+            {globalDiscount > 0 && (
+              <span className="tabular text-warning" data-testid="global-discount-amount">
+                −{formatEurCents(globalSavedCents)}
+              </span>
+            )}
+          </button>
+        )}
         <div className="flex justify-between text-sm text-muted">
           <span>Total HT</span>
           <span className="tabular">{formatEurCents(totals.total_ht_cents)}</span>

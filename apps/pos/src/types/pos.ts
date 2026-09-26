@@ -236,6 +236,7 @@ export type PosEventType =
   | 'manual_cb_fallback'
   | 'price_override'
   | 'line_discount'
+  | 'global_discount'
   | 'qty_decreased'
   | 'sale_parked'
   | 'sale_recalled'

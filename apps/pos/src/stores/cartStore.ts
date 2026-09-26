@@ -46,11 +46,17 @@ export type ClearReason = 'sale_completed' | 'abandoned' | 'quote_import' | 'log
 interface CartState {
   lines: CartLine[];
   quote_id: string | null;
+  /**
+   * Remise globale (%) : chaque ligne est vendue avec `max(remise ligne, remise globale)`
+   * (pas de cumul). Appliquée au calcul des totaux, jamais écrite dans les lignes.
+   */
+  global_discount_percent: number;
+  setGlobalDiscount: (percent: number) => void;
   /** Encaissement en cours : les mises à jour tarifaires asynchrones sont ignorées. */
   locked: boolean;
   setLocked: (locked: boolean) => void;
   /** Remplace le panier (reprise d'un encaissement interrompu, rappel d'un ticket en attente). */
-  restore: (lines: CartLine[], quoteId: string | null) => void;
+  restore: (lines: CartLine[], quoteId: string | null, globalDiscountPercent?: number) => void;
   addProduct: (product: PosProduct, opts?: AddProductOptions) => CartLine;
   addFreeLine: (input: FreeLineInput) => CartLine;
   setQty: (key: string, qty: number) => void;
@@ -95,11 +101,33 @@ export const useCartStore = create<CartState>()(
     (set, get) => ({
       lines: [],
       quote_id: null,
+      global_discount_percent: 0,
       locked: false,
 
       setLocked: (locked) => set({ locked }),
 
-      restore: (lines, quoteId) => set({ lines: renumber(lines), quote_id: quoteId }),
+      restore: (lines, quoteId, globalDiscountPercent = 0) =>
+        set({
+          lines: renumber(lines),
+          quote_id: quoteId,
+          global_discount_percent: roundDiscount(globalDiscountPercent),
+        }),
+
+      setGlobalDiscount: (percent) => {
+        if (get().locked) return;
+        const p = roundDiscount(percent);
+        const { lines, global_discount_percent: before } = get();
+        if (p === before) return;
+        const ttcBefore = computeCart(effectiveLines(lines, before)).total_ttc_cents;
+        set({ global_discount_percent: p });
+        void logEvent('global_discount', {
+          from_percent: before,
+          to_percent: p,
+          lines: lines.length,
+          total_ttc_before_cents: ttcBefore,
+          total_ttc_after_cents: computeCart(effectiveLines(lines, p)).total_ttc_cents,
+        });
+      },
 
       addProduct: (product, opts = {}) => {
         const qty = validQty(opts.qty ?? 1);
@@ -272,9 +300,9 @@ export const useCartStore = create<CartState>()(
       },
 
       clear: (reason) => {
-        const { lines, quote_id } = get();
+        const { lines, quote_id, global_discount_percent } = get();
         if (lines.length > 0 && reason !== 'sale_completed') {
-          const totals = computeCart(lines);
+          const totals = computeCart(effectiveLines(lines, global_discount_percent));
           void logEvent('sale_abandoned', {
             reason,
             lines: lines.length,
@@ -282,7 +310,7 @@ export const useCartStore = create<CartState>()(
             quote_id,
           });
         }
-        set({ lines: [], quote_id: null });
+        set({ lines: [], quote_id: null, global_discount_percent: 0 });
       },
 
       setQuoteId: (quoteId) => set({ quote_id: quoteId }),
@@ -326,14 +354,30 @@ export const useCartStore = create<CartState>()(
       name: CART_STORAGE_KEY,
       version: 1,
       storage: createJSONStorage(() => localStorage),
-      partialize: (s) => ({ lines: s.lines, quote_id: s.quote_id }),
+      partialize: (s) => ({
+        lines: s.lines,
+        quote_id: s.quote_id,
+        global_discount_percent: s.global_discount_percent,
+      }),
     },
   ),
 );
 
-/** Totaux (SPEC §2) à partir de l'état courant. */
-export const selectTotals = (state: Pick<CartState, 'lines'>): CartTotals =>
-  computeCart(state.lines);
+/**
+ * Lignes telles que vendues : remise effective = `max(remise ligne, remise globale)`.
+ * Le % effectif part tel quel dans le payload (haché, recalculé à l'identique par le serveur).
+ */
+export function effectiveLines<T extends CartLineInput>(lines: T[], globalPercent = 0): T[] {
+  if (!(globalPercent > 0)) return lines;
+  return lines.map((l) =>
+    (l.discount_percent ?? 0) >= globalPercent ? l : { ...l, discount_percent: globalPercent },
+  );
+}
+
+/** Totaux (SPEC §2) à partir de l'état courant, remise globale comprise. */
+export const selectTotals = (
+  state: Pick<CartState, 'lines'> & { global_discount_percent?: number },
+): CartTotals => computeCart(effectiveLines(state.lines, state.global_discount_percent ?? 0));
 
 export function getCartTotals(): CartTotals {
   return selectTotals(useCartStore.getState());
