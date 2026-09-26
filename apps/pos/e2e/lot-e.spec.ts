@@ -106,3 +106,22 @@ test('écran client : panier, reste à payer, rendu monnaie', async ({ page, con
   await late.goto('/display');
   await expect(late.getByTestId('display-total')).toHaveText(/1,20/);
 });
+
+test('KPI du jour : météo et indicateurs sur l’historique et la clôture', async ({ page }) => {
+  await page.getByTestId('product-search').fill('cahier');
+  await page.getByTestId('product-tile').filter({ hasText: 'Cahier' }).first().click();
+  await page.getByTestId('checkout-button').click();
+  await page.getByTestId('pay-cb').click();
+  await page.getByTestId('validate-payment').click();
+  await expect(page.getByTestId('payment-sheet')).toBeHidden({ timeout: 8000 });
+
+  await navLink(page, 'Historique').click();
+  const strip = page.getByTestId('day-kpi');
+  await expect(strip.getByTestId('kpi-weather')).toContainText('Pluie · 9° / 16°');
+  await expect(strip.getByTestId('kpi-net')).toHaveText(/2,45/);
+  await expect(strip.getByTestId('kpi-tickets')).toHaveText('1');
+  await expect(strip.getByTestId('kpi-basket')).toHaveText(/2,45/);
+
+  await navLink(page, 'Caisse').click();
+  await expect(page.getByTestId('close-session').getByTestId('kpi-tickets')).toHaveText('1');
+});

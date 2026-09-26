@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { NumPad } from '@/components/ui/numpad';
 import { CashCountGrid, cashCountTotal } from '@/components/session/CashCountGrid';
 import type { CashCounts } from '@/components/session/CashCountGrid';
+import { DayKpiStrip } from '@/components/kpi/DayKpiStrip';
 import { ReceiptPreview } from '@/components/ticket/ReceiptPreview';
 import { usePrinter } from '@/hooks/usePrinter';
 import { updateCachedSession, useSession } from '@/hooks/useSession';
@@ -385,6 +386,7 @@ function CloseSession({
           </p>
         </div>
       </div>
+      <DayKpiStrip tickets={todaySales} />
       {draftBlocks && (
         <p
           className="rounded-xl bg-danger/10 px-3 py-2 text-sm text-danger"

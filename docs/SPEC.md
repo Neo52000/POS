@@ -342,3 +342,20 @@ client pro. Jamais de SIRET, de TVA intracommunautaire ni de secret. Sans répon
 1 s, l'écran lit une fois le panier persisté (`pos.cart.v1`). Pour l'ouvrir : bouton
 « Écran client » dans l'en-tête (`window.open`), puis placer la fenêtre sur le second écran et
 appuyer sur F11.
+
+### 12.9 KPI du jour et météo (historique, clôture)
+
+Un encart en tête de l'historique et de l'écran de clôture montre :
+
+- la **météo de la boutique** : type de temps, t° min/max, risque de pluie, tendance du lendemain ;
+- le **CA net du jour** : ventes − remboursements ;
+- le **nombre de tickets de vente** et le **panier moyen**.
+
+La météo vient d'Open-Meteo (gratuit, sans clé), appelé depuis le navigateur. Seules les
+coordonnées fixes de la boutique sont envoyées ; aucune donnée de vente ni personnelle. Le relevé
+est mis en cache 1 h (`pos.weather.v1`). Hors ligne ou en cas d'échec, l'encart affiche le
+dernier relevé ; sans relevé, il indique « Météo indisponible ». La météo n'est jamais bloquante.
+
+Le classement des types de temps est identique au dashboard du site. L'analyse ventes × météo
+(historique, effet à jour de semaine égal, CA attendu à 7 jours) vit sur le dashboard admin de
+ma-papeterie.fr, qui dispose de l'historique.
