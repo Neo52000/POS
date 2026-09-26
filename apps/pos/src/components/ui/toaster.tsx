@@ -49,7 +49,8 @@ export function Toaster() {
           </Toast>
         );
       })}
-      <ToastViewport />
+      {/* F8 est réservé à la mise en attente du ticket (page de vente). */}
+      <ToastViewport hotkey={['altKey', 'KeyN']} />
     </ToastProvider>
   );
 }

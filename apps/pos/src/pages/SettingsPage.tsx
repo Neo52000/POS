@@ -19,6 +19,8 @@ import { useCartStore } from '@/stores/cartStore';
 import { useSessionStore } from '@/stores/sessionStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useUiStore } from '@/stores/uiStore';
+import { useIsAdmin } from '@/hooks/useIsAdmin';
+import { parsePercent } from '@/lib/saleInput';
 
 function testTicket(registerCode: string): TicketPayload {
   return {
@@ -76,6 +78,8 @@ export function SettingsPage() {
   const [url, setUrl] = useState(settings.bridgeUrl);
   const [token, setToken] = useState(settings.bridgeToken);
   const [autoLock, setAutoLock] = useState(String(settings.autoLockMinutes));
+  const [maxDiscount, setMaxDiscount] = useState(String(settings.maxDiscountPercent));
+  const { isAdmin } = useIsAdmin();
   const [pin1, setPin1] = useState('');
   const [pin2, setPin2] = useState('');
   const [pinDefined, setPinDefined] = useState(hasPin());
@@ -87,6 +91,10 @@ export function SettingsPage() {
       bridgeUrl: url.trim().replace(/\/+$/, '') || env.bridgeUrlDefault,
       bridgeToken: token.trim(),
       autoLockMinutes: Math.max(0, Number(autoLock) || 0),
+      // Plafond de remise : modifiable par un administrateur uniquement.
+      ...(isAdmin
+        ? { maxDiscountPercent: Math.min(100, Math.max(0, parsePercent(maxDiscount) ?? 30)) }
+        : {}),
     });
     toast({ title: 'Réglages enregistrés', variant: 'success' });
     void health.refetch();
@@ -191,6 +199,17 @@ export function SettingsPage() {
               value={autoLock}
               onChange={(e) => setAutoLock(e.target.value)}
               inputMode="numeric"
+            />
+          </label>
+          <label className="flex flex-col gap-1.5 text-sm text-muted">
+            Remise ligne maximale sans administrateur (%)
+            <Input
+              value={maxDiscount}
+              onChange={(e) => setMaxDiscount(e.target.value)}
+              inputMode="decimal"
+              disabled={!isAdmin}
+              title={isAdmin ? undefined : 'Réservé à un administrateur'}
+              data-testid="max-discount"
             />
           </label>
           <div className="flex flex-wrap gap-2">
