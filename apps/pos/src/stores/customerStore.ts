@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { createJSONStorage, persist } from 'zustand/middleware';
 import { edge } from '@/lib/edge';
 import { useCartStore } from '@/stores/cartStore';
 import type { CustomerQuote, PosCustomer, ResolvedPrice } from '@/types/pos';
@@ -9,6 +10,8 @@ interface CustomerState {
   pricing: Record<string, ResolvedPrice>;
   quotes: CustomerQuote[];
   resolving: boolean;
+  /** Résolutions de tarif ligne en cours : l'encaissement attend qu'elles aboutissent. */
+  pendingLines: number;
   error: string | null;
   /** Attache un client pro et réapplique ses tarifs sur tout le panier. */
   attach: (account: PosCustomer) => Promise<void>;
@@ -28,54 +31,79 @@ async function resolvePrices(
   return edge.resolvePrices(accountId, lines);
 }
 
-export const useCustomerStore = create<CustomerState>()((set, get) => ({
-  account: null,
-  pricing: {},
-  quotes: [],
-  resolving: false,
-  error: null,
+/** Dernière requête émise par ligne : une réponse plus ancienne est ignorée. */
+const lineSeq = new Map<string, number>();
+let seqCounter = 0;
 
-  attach: async (account) => {
-    set({ account, quotes: [], error: null, resolving: true });
-    const cart = useCartStore.getState();
-    const lines = cart.lines
-      .filter((l) => l.product_id && !l.price_tier_title)
-      .map((l) => ({ product_id: l.product_id as string, qty: l.qty }));
-    try {
-      const results = await resolvePrices(account.id, lines);
-      // Le client a pu être détaché pendant l'appel.
-      if (get().account?.id !== account.id) return;
-      const pricing: Record<string, ResolvedPrice> = {};
-      for (const r of results) pricing[r.product_id] = r;
-      set({ pricing, resolving: false });
-      useCartStore.getState().applyPricing(pricing);
-    } catch (e) {
-      set({ resolving: false, error: e instanceof Error ? e.message : 'Tarifs pro indisponibles' });
-    }
-  },
+export const useCustomerStore = create<CustomerState>()(
+  persist(
+    (set, get) => ({
+      account: null,
+      pricing: {},
+      quotes: [],
+      resolving: false,
+      pendingLines: 0,
+      error: null,
 
-  detach: () => {
-    set({ account: null, pricing: {}, quotes: [], error: null, resolving: false });
-    useCartStore.getState().restorePublicPrices();
-    useCartStore.getState().setQuoteId(null);
-  },
+      attach: async (account) => {
+        set({ account, quotes: [], error: null, resolving: true });
+        const cart = useCartStore.getState();
+        const lines = cart.lines
+          .filter((l) => l.product_id && !l.price_tier_title)
+          .map((l) => ({ product_id: l.product_id as string, qty: l.qty }));
+        try {
+          const results = await resolvePrices(account.id, lines);
+          // Le client a pu être détaché pendant l'appel.
+          if (get().account?.id !== account.id) return;
+          const pricing: Record<string, ResolvedPrice> = {};
+          for (const r of results) pricing[r.product_id] = r;
+          set({ pricing, resolving: false });
+          useCartStore.getState().applyPricing(pricing);
+        } catch (e) {
+          set({
+            resolving: false,
+            error: e instanceof Error ? e.message : 'Tarifs pro indisponibles',
+          });
+        }
+      },
 
-  resolveLine: async (lineKey, productId, qty) => {
-    const account = get().account;
-    if (!account) return null;
-    try {
-      const [r] = await resolvePrices(account.id, [{ product_id: productId, qty }]);
-      if (!r || get().account?.id !== account.id) return null;
-      set((s) => ({ pricing: { ...s.pricing, [productId]: r } }));
-      const cart = useCartStore.getState();
-      const line = cart.lines.find((l) => l.key === lineKey);
-      if (line) cart.applyPricing({ [productId]: r });
-      return r;
-    } catch (e) {
-      set({ error: e instanceof Error ? e.message : 'Tarif pro indisponible' });
-      return null;
-    }
-  },
+      detach: () => {
+        lineSeq.clear();
+        set({ account: null, pricing: {}, quotes: [], error: null, resolving: false });
+        useCartStore.getState().restorePublicPrices();
+        useCartStore.getState().setQuoteId(null);
+      },
 
-  setQuotes: (quotes) => set({ quotes }),
-}));
+      resolveLine: async (lineKey, productId, qty) => {
+        const account = get().account;
+        if (!account) return null;
+        const seq = ++seqCounter;
+        lineSeq.set(lineKey, seq);
+        set((s) => ({ pendingLines: s.pendingLines + 1 }));
+        try {
+          const [r] = await resolvePrices(account.id, [{ product_id: productId, qty }]);
+          if (!r || get().account?.id !== account.id) return null;
+          // Une quantité plus récente a été demandée entre-temps : cette réponse est périmée.
+          if (lineSeq.get(lineKey) !== seq) return null;
+          set((s) => ({ pricing: { ...s.pricing, [productId]: r } }));
+          useCartStore.getState().applyPricing({ [productId]: r }, lineKey);
+          return r;
+        } catch (e) {
+          set({ error: e instanceof Error ? e.message : 'Tarif pro indisponible' });
+          return null;
+        } finally {
+          set((s) => ({ pendingLines: Math.max(0, s.pendingLines - 1) }));
+        }
+      },
+
+      setQuotes: (quotes) => set({ quotes }),
+    }),
+    {
+      // Le client attaché suit le panier persistant (rechargement, reprise d'encaissement).
+      name: 'pos.customer.v1',
+      version: 1,
+      storage: createJSONStorage(() => localStorage),
+      partialize: (s) => ({ account: s.account, pricing: s.pricing }),
+    },
+  ),
+);

@@ -69,8 +69,10 @@ describe('customerStore.attach', () => {
       pricing: {},
       quotes: [],
       resolving: false,
+      pendingLines: 0,
       error: null,
     });
+    useCartStore.getState().setLocked(false);
     vi.mocked(edge.resolvePrices).mockReset();
   });
 
@@ -134,5 +136,42 @@ describe('customerStore.attach', () => {
     expect(useCustomerStore.getState().error).toBe('NETWORK');
     expect(useCustomerStore.getState().account?.id).toBe(MAIRIE.id);
     expect(useCartStore.getState().lines[0]?.unit_price_ttc_cents).toBe(120);
+  });
+
+  it('ignore une réponse tarifaire périmée (quantité modifiée entre-temps)', async () => {
+    await useCustomerStore.getState().attach(MAIRIE); // panier vide : aucun appel
+    let releaseFirst: (v: ResolvedPrice[]) => void = () => undefined;
+    vi.mocked(edge.resolvePrices)
+      .mockImplementationOnce(() => new Promise((r) => (releaseFirst = r)))
+      .mockResolvedValueOnce([resolved(BIC.id, 96, 'rule-qty-10', 10)]);
+    const line = useCartStore.getState().addProduct(BIC); // requête 1 (qty 1)
+    expect(useCustomerStore.getState().pendingLines).toBe(1);
+    useCartStore.getState().setQty(line.key, 10); // requête 2 (qty 10)
+    await vi.waitFor(() => expect(useCartStore.getState().lines[0]?.unit_price_ttc_cents).toBe(96));
+    releaseFirst([resolved(BIC.id, 108, 'rule-qty-1', 1)]);
+    await vi.waitFor(() => expect(useCustomerStore.getState().pendingLines).toBe(0));
+    expect(useCartStore.getState().lines[0]?.unit_price_ttc_cents).toBe(96);
+  });
+
+  it('ne modifie pas les prix pendant un encaissement (panier verrouillé)', async () => {
+    useCartStore.getState().addProduct(BIC);
+    useCartStore.getState().setLocked(true);
+    vi.mocked(edge.resolvePrices).mockResolvedValueOnce([resolved(BIC.id, 108, 'rule')]);
+    await useCustomerStore.getState().attach(MAIRIE);
+    expect(useCartStore.getState().lines[0]?.unit_price_ttc_cents).toBe(120);
+  });
+
+  it('ne remplace jamais un prix forcé à la main', async () => {
+    const line = useCartStore.getState().addProduct(BIC);
+    useCartStore.getState().setUnitPrice(line.key, 100);
+    vi.mocked(edge.resolvePrices).mockResolvedValue([resolved(BIC.id, 108, 'rule')]);
+    await useCustomerStore.getState().attach(MAIRIE);
+    useCartStore.getState().setQty(line.key, 3);
+    await vi.waitFor(() => expect(useCustomerStore.getState().pendingLines).toBe(0));
+    const l = useCartStore.getState().lines[0];
+    expect(l?.unit_price_ttc_cents).toBe(100);
+    expect(l?.price_overridden).toBe(true);
+    // Pas de nouvelle résolution pour une ligne à prix forcé.
+    expect(edge.resolvePrices).toHaveBeenCalledTimes(1);
   });
 });

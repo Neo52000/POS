@@ -99,4 +99,52 @@ describe('attachScanner', () => {
     typeSequence(target, '3086123101227', clock, 5);
     expect(onScan).not.toHaveBeenCalled();
   });
+
+  it('signale une rafale refusée via onReject (sans écrire dans le champ)', () => {
+    const target = new EventTarget();
+    const clock = { t: 1000 };
+    const onScan = vi.fn();
+    const onReject = vi.fn();
+    const detach = attachScanner(onScan, { target, now: () => clock.t, onReject });
+    const events = typeSequence(target, '3086123101228', clock, 5);
+    expect(onScan).not.toHaveBeenCalled();
+    expect(onReject).toHaveBeenCalledWith('3086123101228');
+    expect(events[events.length - 1]?.defaultPrevented).toBe(true);
+    // Frappe humaine + Entrée : jamais signalée comme rejet.
+    typeSequence(target, '12345', clock, 200);
+    expect(onReject).toHaveBeenCalledTimes(1);
+    detach();
+  });
+
+  it('retire du champ actif le 1er caractère d’une rafale', () => {
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+    input.value = 'cah';
+    const clock = { t: 1000 };
+    const onScan = vi.fn();
+    const onInput = vi.fn();
+    input.addEventListener('input', onInput);
+    const detach = attachScanner(onScan, { target: window, now: () => clock.t });
+    const code = '3086123101227';
+    for (const [i, ch] of [...code].entries()) {
+      clock.t += 5;
+      const ev = new KeyboardEvent('keydown', { key: ch, cancelable: true, bubbles: true });
+      input.dispatchEvent(ev);
+      // Le navigateur n'insère que les touches non bloquées (seule la 1re ici).
+      if (!ev.defaultPrevented) {
+        input.value += ch;
+        input.setSelectionRange(input.value.length, input.value.length);
+      }
+      if (i === 0) expect(input.value).toBe('cah3');
+    }
+    clock.t += 5;
+    input.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', cancelable: true, bubbles: true }),
+    );
+    expect(onScan).toHaveBeenCalledWith(code);
+    expect(input.value).toBe('cah');
+    expect(onInput).toHaveBeenCalledTimes(1);
+    detach();
+    input.remove();
+  });
 });

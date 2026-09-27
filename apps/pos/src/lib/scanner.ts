@@ -17,6 +17,24 @@ export interface ScannerOptions {
   now?: () => number;
   /** Si `true` (défaut), seuls les EAN-8/13 valides sont acceptés ; sinon tout code ≥ minLength. */
   eanOnly?: boolean;
+  /** Rafale de douchette terminée par Enter mais code refusé (checksum, format) : signalée. */
+  onReject?: (code: string) => void;
+}
+
+/**
+ * Retire du champ actif le 1er caractère d'une rafale, déjà écrit avant qu'on sache qu'il
+ * s'agissait d'une douchette. Passe par le setter natif + événement `input` (compatible React).
+ */
+function retractFirstChar(target: EventTarget | null, ch: string): void {
+  if (!(target instanceof HTMLInputElement) && !(target instanceof HTMLTextAreaElement)) return;
+  const { value } = target;
+  if (!value.endsWith(ch) || target.selectionStart !== value.length) return;
+  const proto =
+    target instanceof HTMLInputElement ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype;
+  const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+  if (!setter) return;
+  setter.call(target, value.slice(0, -1));
+  target.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
 /** Checksum EAN-8 / EAN-13 (GTIN, pondération 3/1 depuis la droite). */
@@ -52,10 +70,13 @@ export function attachScanner(
   let buffer = '';
   let lastAt = 0;
   let burst = false;
+  /** Élément où le 1er caractère du tampon a été tapé. */
+  let firstTarget: EventTarget | null = null;
 
   const reset = (): void => {
     buffer = '';
     burst = false;
+    firstTarget = null;
   };
 
   const handler = (event: Event): void => {
@@ -77,6 +98,14 @@ export function attachScanner(
         onScan(code);
         return;
       }
+      if (fast && buffer.length >= minLength) {
+        // Rafale de douchette refusée : les caractères ont été bloqués, on le signale.
+        e.preventDefault();
+        e.stopPropagation();
+        reset();
+        options.onReject?.(code);
+        return;
+      }
       reset();
       return;
     }
@@ -87,6 +116,7 @@ export function attachScanner(
     }
 
     if (buffer.length > 0 && delta <= maxInterval) {
+      if (!burst) retractFirstChar(firstTarget, buffer);
       burst = true;
       buffer += e.key;
       if (buffer.length > maxLength) reset();
@@ -98,6 +128,7 @@ export function attachScanner(
     // Frappe isolée ou trop lente : nouveau tampon, non intercepté.
     buffer = e.key;
     burst = false;
+    firstTarget = e.target;
   };
 
   target.addEventListener('keydown', handler, true);

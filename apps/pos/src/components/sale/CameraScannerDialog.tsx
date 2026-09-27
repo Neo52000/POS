@@ -49,6 +49,11 @@ export function CameraScannerDialog({ open, onOpenChange, onScan }: CameraScanne
   const videoRef = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [engine, setEngine] = useState<string>('');
+  // Callbacks par ref : un nouveau rendu du parent ne redémarre pas la caméra.
+  const onScanRef = useRef(onScan);
+  const onOpenChangeRef = useRef(onOpenChange);
+  onScanRef.current = onScan;
+  onOpenChangeRef.current = onOpenChange;
 
   useEffect(() => {
     if (!open) return;
@@ -70,7 +75,11 @@ export function CameraScannerDialog({ open, onOpenChange, onScan }: CameraScanne
           audio: false,
         });
         const video = videoRef.current;
-        if (!video || cancelled) return;
+        if (!video || cancelled) {
+          // Dialogue fermé pendant l'autorisation : le nettoyage est déjà passé.
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
         video.srcObject = stream;
         await video.play();
         const decode = await makeDecoder();
@@ -84,9 +93,9 @@ export function CameraScannerDialog({ open, onOpenChange, onScan }: CameraScanne
               const raw = await decode(video);
               if (raw) {
                 const code = normalizeScannedCode(raw);
-                if (isValidEan(code) || code.length >= 4) {
-                  onScan(code);
-                  onOpenChange(false);
+                if (isValidEan(code)) {
+                  onScanRef.current(code);
+                  onOpenChangeRef.current(false);
                   return;
                 }
               }
@@ -112,7 +121,7 @@ export function CameraScannerDialog({ open, onOpenChange, onScan }: CameraScanne
       const video = videoRef.current;
       if (video) video.srcObject = null;
     };
-  }, [open, onScan, onOpenChange]);
+  }, [open]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

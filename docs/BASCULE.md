@@ -16,7 +16,7 @@ resterait définitivement).
       (lots 1 à 6, dont `…_pos_offline`, `…_pos_closings_tz`, `…_pos_archives`).
 - [ ] Migrations **ma-papeterie** appliquées (dont `pos_set_stock_boutique`) **(P)**.
 - [ ] Edge Functions déployées (`supabase functions deploy`) : `pos-checkout`, `pos-sign-pending`,
-      `pos-stock-sync`, `pos-closing`, `pos-closings-sync`, `pos-customer-search`,
+      `pos-stock-sync`, `pos-sales-sync`, `pos-closing`, `pos-closings-sync`, `pos-customer-search`,
       `pos-customer-quotes`, `pos-resolve-prices`, `pos-export-archive`, `pos-stock-adjust`
       (`verify_jwt = false` pour toutes, `supabase/config.toml`).
 - [ ] Secrets Edge du projet Pos **(P)** : `FISKALY_MODE=mock` (pour l'instant), `MAPAP_SUPABASE_URL`,
@@ -25,7 +25,7 @@ resterait définitivement).
       des Edge Functions (sinon les crons reçoivent 401) :
       `select vault.create_secret('<service_role_key Pos>', 'pos_service_role_key');`
 - [ ] Crons actifs : `select jobname, schedule, active from cron.job order by jobname;` →
-      `pos-sign-pending`, `pos-stock-sync`, `pos-closings-sync`, `pos-closing-monthly`,
+      `pos-sign-pending`, `pos-stock-sync`, `pos-sales-sync`, `pos-closings-sync`, `pos-closing-monthly`,
       `pos-closing-annual`, `pos-export-archive`. Journal : `select * from cron.job_run_details order by start_time desc limit 20;`
 - [ ] Bucket Storage privé `pos-archives` présent.
 - [ ] Comptes utilisateurs (Auth du projet Pos) **(P)** : un compte **admin** (propriétaire) et un
@@ -117,6 +117,9 @@ resterait définitivement).
         supprimer le code** (retour arrière) ;
   - [ ] déconnecter l'application Shopify POS du matériel de la boutique.
 - [ ] Z du soir, comparaison du fond de caisse, contrôle des signatures.
+- [ ] Dashboard ma-papeterie alimenté (pont `pos-sales-sync`, caisse `live` uniquement) : côté
+      ma-papeterie `select business_date, count(*), sum(total_ttc) from pos_nf525_sales group by 1 order by 1 desc limit 3;`
+      = Z du jour ; côté Pos `select status, count(*) from pos_sales_sync group by 1;` sans `failed`.
 
 ## J+1 → J+7 — Stabilisation
 

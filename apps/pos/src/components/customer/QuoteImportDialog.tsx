@@ -32,6 +32,8 @@ export function importQuoteIntoCart(quote: CustomerQuote): void {
   const cart = useCartStore.getState();
   cart.clear('quote_import');
   for (const item of quote.items) {
+    // Ligne de devis sans quantité vendable : rien à encaisser (la quantité doit être > 0).
+    if (!(item.quantity > 0)) continue;
     const cents = quoteItemUnitTtcCents(item);
     const tier = `Devis ${quote.quote_number}`;
     if (item.product_id) {
