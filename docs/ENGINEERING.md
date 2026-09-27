@@ -48,11 +48,12 @@
 - Les Edge Functions n'importent pas `packages/core` (spécificateurs `.js`, déploiement limité à `supabase/functions`) : le code partagé est recopié dans `_shared/` (`ticket.ts`, `archive.ts`). `_shared/archive.ts` est un **miroir exact** sans import de `@pos/core` `archive.ts` : toute modification se fait des deux côtés, `pnpm --filter @pos/core test` (bloc « miroir Deno ») compare les deux sur `archive-vector.json`.
 - Fonctions du lot 4-6 :
 
-  | Fonction             | Auth                             | Appel                                                                                    |
-  | -------------------- | -------------------------------- | ---------------------------------------------------------------------------------------- |
-  | `pos-closing`        | vendeur / admin / service        | `{period_type, period_start?, register_id?}` ; bornes `pos_period_bounds` (Europe/Paris) |
-  | `pos-export-archive` | admin (`is_pos_admin`) / service | `{register_id?, period_start?}` ; cron `0 4 1 * *` UTC ; bucket `pos-archives`           |
-  | `pos-stock-adjust`   | admin / service                  | `{items[1..200], reason, register_id?}` → RPC ma-papeterie `pos_set_stock_boutique`      |
+  | Fonction             | Auth                             | Appel                                                                                                                                                                    |
+  | -------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+  | `pos-closing`        | vendeur / admin / service        | `{period_type, period_start?, register_id?}` ; bornes `pos_period_bounds` (Europe/Paris)                                                                                 |
+  | `pos-export-archive` | admin (`is_pos_admin`) / service | `{register_id?, period_start?}` ; cron `0 4 1 * *` UTC ; bucket `pos-archives`                                                                                           |
+  | `pos-stock-adjust`   | admin / service                  | `{items[1..200], reason, register_id?}` → RPC ma-papeterie `pos_set_stock_boutique`                                                                                      |
+  | `pos-sales-sync`     | service (cron `*/5 * * * *`)     | `{}` → tickets des caisses `live` (`pos_sales_sync_pending`) → RPC ma-papeterie `pos_record_sales` ; journal `pos_sales_sync` (done / pending / failed après 100 essais) |
 
   Relance manuelle d'une archive (idempotente) :
   `curl -X POST "$SUPABASE_URL/functions/v1/pos-export-archive" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" -H 'Content-Type: application/json' -d '{"period_start":"2026-10-15T12:00:00+02:00"}'`

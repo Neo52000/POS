@@ -26,13 +26,14 @@ imprimée sur chaque ticket `compliance.software` / `compliance.version`).
 
 ### 1.2 Hors périmètre fiscal
 
-| Composant                              | Rôle                                                                                                     | Pourquoi hors périmètre                                                                                                                                           |
-| -------------------------------------- | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Pont TPE `services/tpe-bridge` (0.1.0) | pilote de périphériques local : TPE (Caisse-AP), imprimante ESC/POS, tiroir                              | n'enregistre ni ne conserve aucune donnée ; ne décide pas du montant (reçu de la PWA) ; la réponse TPE est stockée par la caisse dans `pos_payments.tpe_response` |
-| Projet Supabase **ma-papeterie**       | catalogue, prix, clients pro, devis, stock boutique (`products.stock_boutique`, `pos_stock_movements`)   | données de gestion ; les prix appliqués et la snapshot client sont **figés** dans la transaction Pos au moment de la vente                                        |
-| Edge Functions non fiscales            | `pos-customer-search`, `pos-customer-quotes`, `pos-resolve-prices`, `pos-stock-sync`, `pos-stock-adjust` | lecture de données métier ou synchronisation de stock (non fiscal, idempotent)                                                                                    |
-| TPE bancaire, imprimante, tiroir       | matériel                                                                                                 | périphériques                                                                                                                                                     |
-| Shopify / site ma-papeterie.fr         | vente en ligne                                                                                           | jamais appelé par la caisse                                                                                                                                       |
+| Composant                              | Rôle                                                                                                     | Pourquoi hors périmètre                                                                                                                                                      |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pont TPE `services/tpe-bridge` (0.1.0) | pilote de périphériques local : TPE (Caisse-AP), imprimante ESC/POS, tiroir                              | n'enregistre ni ne conserve aucune donnée ; ne décide pas du montant (reçu de la PWA) ; la réponse TPE est stockée par la caisse dans `pos_payments.tpe_response`            |
+| Projet Supabase **ma-papeterie**       | catalogue, prix, clients pro, devis, stock boutique (`products.stock_boutique`, `pos_stock_movements`)   | données de gestion ; les prix appliqués et la snapshot client sont **figés** dans la transaction Pos au moment de la vente                                                   |
+| Edge Functions non fiscales            | `pos-customer-search`, `pos-customer-quotes`, `pos-resolve-prices`, `pos-stock-sync`, `pos-stock-adjust` | lecture de données métier ou synchronisation de stock (non fiscal, idempotent)                                                                                               |
+| Pont ventes `pos-sales-sync`           | copie des tickets validés des caisses `live` vers le dashboard ma-papeterie (`pos_record_sales`)         | **lecture seule** des tables fiscales après validation ; journal propre `pos_sales_sync` ; `pos_finalize_sale` / `pos-checkout` inchangés ; une panne n'affecte aucune vente |
+| TPE bancaire, imprimante, tiroir       | matériel                                                                                                 | périphériques                                                                                                                                                                |
+| Shopify / site ma-papeterie.fr         | vente en ligne                                                                                           | jamais appelé par la caisse                                                                                                                                                  |
 
 ## 2. Flux de données
 
@@ -45,6 +46,7 @@ PWA ──(CheckoutPayload, JWT vendeur)──▶ pos-checkout ──▶ pos_fin
  ├──(montant)──▶ pont TPE ──TCP Caisse-AP──▶ TPE   (réponse stockée dans pos_payments.tpe_response)
  └──(TicketPayload)──▶ pont TPE ──ESC/POS──▶ imprimante
 pg_cron ──▶ pos-closing (mensuelle 1er 03:10 UTC, annuelle 1er janvier 03:20 UTC) ──▶ pos_compute_closing
+pg_cron ──▶ pos-sales-sync (5 min) ──lit──▶ pos_sales_sync_pending ──▶ ma-papeterie pos_record_sales (non fiscal)
 pg_cron ──▶ pos-export-archive (1er 04:00 UTC) ──▶ pos_archive_data ──▶ ZIP ──▶ Storage pos-archives ──▶ pos_register_archive
 ```
 

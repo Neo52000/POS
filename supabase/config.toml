@@ -21,3 +21,5 @@ verify_jwt = false
 verify_jwt = false
 [functions.pos-stock-adjust]
 verify_jwt = false
+[functions.pos-sales-sync]
+verify_jwt = false

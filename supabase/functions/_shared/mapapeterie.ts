@@ -55,6 +55,26 @@ export async function applyStockMovements(movements: StockMovementInput[]): Prom
   return (data as StockMovementResult[]) ?? [];
 }
 
+/** Résultat par ticket de `pos_record_sales` (projet ma-papeterie). */
+export interface RecordSaleResult {
+  transaction_id: string;
+  applied: boolean;
+  already_applied?: boolean;
+  error?: string;
+}
+
+/**
+ * Pont ventes : copie de lecture des tickets NF525 vers ma-papeterie pour le dashboard
+ * (`pos_record_sales`, service role, idempotente par transaction_id). Le payload est celui de
+ * `pos_sales_sync_pending` (projet Pos), transmis tel quel.
+ */
+export async function recordSales(sales: unknown[]): Promise<RecordSaleResult[]> {
+  if (sales.length === 0) return [];
+  const { data, error } = await mapapClient().rpc('pos_record_sales', { p_sales: sales });
+  if (error) throw new Error(`pos_record_sales: ${error.message}`);
+  return (data as RecordSaleResult[]) ?? [];
+}
+
 export interface SetStockBoutiqueResult {
   product_id: string;
   applied: boolean;
