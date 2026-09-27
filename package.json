@@ -1,7 +1,7 @@
 {
   "name": "ma-papeterie-pos",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Ma Papeterie POS — caisse NF525 (Reine & Fils SAS, Chaumont)",
   "packageManager": "pnpm@10.33.0",
   "engines": {
