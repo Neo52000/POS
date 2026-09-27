@@ -136,7 +136,7 @@ export function buildTicketPayload(full: Json, opts: { duplicate?: boolean } = {
       signature_status: String(t.signature_status ?? 'pending_signature'),
       ...(t.fiskaly_signature ? { fiskaly_signature_short: String(t.fiskaly_signature).slice(0, 16) } : {}),
       software: 'Ma Papeterie POS',
-      version: String(software.version ?? '0.1.0'),
+      version: String(software.version ?? '0.2.0'),
       ...(t.offline_queued ? { provisional: true } : {}),
     },
     invoice_requested: t.invoice_requested === true,

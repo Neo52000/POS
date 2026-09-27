@@ -5,7 +5,7 @@ et pour un contrôle de l'administration fiscale (art. 286-I-3° bis CGI, BOI-TV
 Il délimite ce qui enregistre, conserve et restitue les données de règlement (périmètre fiscal)
 et ce qui n'est qu'un périphérique ou une source de données non fiscales.
 
-Version du logiciel couverte : **Ma Papeterie POS 0.1.0** (valeur `pos_settings.software`,
+Version du logiciel couverte : **Ma Papeterie POS 0.2.0** (valeur `pos_settings.software`,
 imprimée sur chaque ticket `compliance.software` / `compliance.version`).
 
 ## 1. Composants
@@ -18,11 +18,11 @@ imprimée sur chaque ticket `compliance.software` / `compliance.version`).
 | Tables `pos_*`                       | `pos_transactions`, `pos_transaction_lines`, `pos_payments`, `pos_sessions`, `pos_closings`, `pos_events`, `pos_archives`, `pos_counters`, `pos_registers`, `pos_settings`, `pos_user_roles`                       | —              | données de règlement et de traçabilité ; UPDATE/DELETE interdits par trigger (hors colonnes de signature)                       |
 | RPC `SECURITY DEFINER`               | `pos_finalize_sale`, `pos_open_session`, `pos_close_session`, `pos_compute_closing`, `pos_log_event`, `pos_mark_signature`, `pos_archive_data`, `pos_register_archive`, `pos_period_bounds`, `pos_client_settings` | —              | seules voies d'écriture (REVOKE sur les tables)                                                                                 |
 | Fonctions de preuve                  | `pos_canonical_txn`, `pos_compute_txn_hash`, `pos_event_hash`, `pos_verify_chain`, `pos_verify_events_chain`, `pos_verify_closings_chain`, `pos_verify_archives_chain`                                             | hash `v1`      | recalcul et contrôle d'intégrité                                                                                                |
-| Edge Functions fiscales (Deno)       | `pos-checkout`, `pos-sign-pending`, `pos-closing`, `pos-closings-sync`, `pos-export-archive`                                                                                                                       | 0.1.0          | validation et enregistrement des ventes, signature Fiskaly, clôtures, archivage                                                 |
-| `@pos/core`                          | `packages/core`                                                                                                                                                                                                    | 0.1.0          | calcul panier/TVA et hash canonique `v1` (miroir exact du SQL, vecteurs `hash-vectors.json`), format d'archive `pos-archive/v1` |
-| PWA caisse                           | `apps/pos` (`pos.ma-papeterie.fr`)                                                                                                                                                                                 | 0.1.0          | saisie, affichage, ticket, file hors ligne ; n'attribue ni numéro ni hash (serveur seul)                                        |
+| Edge Functions fiscales (Deno)       | `pos-checkout`, `pos-sign-pending`, `pos-closing`, `pos-closings-sync`, `pos-export-archive`                                                                                                                       | 0.2.0          | validation et enregistrement des ventes, signature Fiskaly, clôtures, archivage                                                 |
+| `@pos/core`                          | `packages/core`                                                                                                                                                                                                    | 0.2.0          | calcul panier/TVA et hash canonique `v1` (miroir exact du SQL, vecteurs `hash-vectors.json`), format d'archive `pos-archive/v1` |
+| PWA caisse                           | `apps/pos` (`pos.ma-papeterie.fr`)                                                                                                                                                                                 | 0.2.0          | saisie, affichage, ticket, file hors ligne ; n'attribue ni numéro ni hash (serveur seul)                                        |
 | Service de signature Fiskaly SIGN FR | API Fiskaly (TEST puis LIVE)                                                                                                                                                                                       | —              | signature des transactions et clôtures, archive SAFE                                                                            |
-| Scripts d'audit                      | `scripts/verify-chain.ts`, `scripts/verify-archive.ts`                                                                                                                                                             | 0.1.0          | vérification indépendante (auditeur)                                                                                            |
+| Scripts d'audit                      | `scripts/verify-chain.ts`, `scripts/verify-archive.ts`                                                                                                                                                             | 0.2.0          | vérification indépendante (auditeur)                                                                                            |
 
 ### 1.2 Hors périmètre fiscal
 
@@ -88,6 +88,14 @@ version majeure, et les anciens formats restent vérifiables.
 
 - Chaque ticket porte `compliance.version` ; chaque transaction `app_version` (version de la PWA
   qui l'a saisie) ; chaque archive `software.name/version` dans son manifeste.
-- Le dépôt Git (`Neo52000/POS`, branche `main`) est la référence du code ; les migrations SQL sont
+- Le dépôt Git (`Neo52000/POS`, branche par défaut `claude/pos-nf525-papeterie-lkcvsl` depuis le
+  27/09/2026, qui a remplacé `main`) est la référence du code ; les migrations SQL sont
   appliquées par l'intégration GitHub Supabase à la fusion et leur historique est consultable dans
   `supabase_migrations.schema_migrations`.
+
+## 6. Journal des versions
+
+| Version | Date       | Type    | Contenu                                                                                                                                                                                                                                     | Effet fiscal                                                                                             |
+| ------- | ---------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| 0.1.0   | 23/09/2026 | —       | Lots 1 à 6 : enregistrement, chaînage `v1`, clôtures, JET, archives, hors ligne.                                                                                                                                                            | Base du périmètre.                                                                                       |
+| 0.2.0   | 27/09/2026 | MINEURE | PWA : remise globale (répartie sur les lignes), garde-fous de clôture Z, écran client, tickets en attente, favoris, encaissement sans perte de CB, KPI du jour avec météo. Pont non fiscal `pos-sales-sync` vers le dashboard ma-papeterie. | Aucun : hash `v1`, numérotation, clôtures, JET et archives inchangés ; totaux recalculés par le serveur. |
