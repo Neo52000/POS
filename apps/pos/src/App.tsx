@@ -3,6 +3,8 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { ErrorBoundary } from '@/components/layout/ErrorBoundary';
 import { AppShell } from '@/components/layout/AppShell';
+import { VirtualKeyboard } from '@/components/layout/VirtualKeyboard';
+import { useAppearance } from '@/hooks/useAppearance';
 import { Toaster } from '@/components/ui/toaster';
 import { startOfflineRuntime } from '@/lib/offlineRuntime';
 import { queryClient } from '@/lib/queryClient';
@@ -15,6 +17,7 @@ import { InventoryPage } from '@/pages/InventoryPage';
 import { LockPage } from '@/pages/LockPage';
 import { LoginPage } from '@/pages/LoginPage';
 import { OfflinePage } from '@/pages/OfflinePage';
+import { ReportsPage } from '@/pages/ReportsPage';
 import { SalePage } from '@/pages/SalePage';
 import { SettingsPage } from '@/pages/SettingsPage';
 
@@ -81,6 +84,7 @@ function Router() {
           <Route index element={<SalePage />} />
           <Route path="/history" element={<HistoryPage />} />
           <Route path="/closing" element={<ClosingPage />} />
+          <Route path="/reports" element={<ReportsPage />} />
           <Route path="/offline" element={<OfflinePage />} />
           <Route path="/inventory" element={<InventoryPage />} />
           <Route path="/settings" element={<SettingsPage />} />
@@ -94,6 +98,7 @@ function Router() {
 }
 
 export function App() {
+  useAppearance();
   return (
     <QueryClientProvider client={queryClient}>
       <ErrorBoundary>
@@ -102,6 +107,7 @@ export function App() {
         </BrowserRouter>
       </ErrorBoundary>
       <Toaster />
+      <VirtualKeyboard />
     </QueryClientProvider>
   );
 }

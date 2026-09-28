@@ -1,4 +1,10 @@
-import type { PosArchive, PosSession, StockAdjustLineResult, TransactionFull } from '@/types/pos';
+import type {
+  PosArchive,
+  PosClosing,
+  PosSession,
+  StockAdjustLineResult,
+  TransactionFull,
+} from '@/types/pos';
 
 /** État partagé des mocks (persisté en localStorage pour survivre aux rechargements). */
 export interface MockState {
@@ -10,6 +16,8 @@ export interface MockState {
   events: Array<{ type: string; payload: unknown; at: string; client_at?: string | null }>;
   /** Archives NF525 simulées (lot 5). */
   archives: PosArchive[];
+  /** Clôtures Z1 / Z2 / Z3 simulées (numérotation continue par caisse). */
+  closings: PosClosing[];
   /** Stock boutique modifié par l'inventaire (product_id → stock). */
   stock: Record<string, number>;
   /** Résultats par clé d'idempotence de `pos-stock-adjust`. */
@@ -27,6 +35,7 @@ function initial(): MockState {
     transactions: [],
     events: [],
     archives: [],
+    closings: [],
     stock: {},
     stockKeys: {},
   };

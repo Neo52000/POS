@@ -7,6 +7,8 @@ import { edge } from '@/lib/edge';
 import type { PosCheckoutResult } from '@/lib/edge';
 import { enqueueSale, queueOfflineSale } from '@/lib/offlineQueue';
 import type { ProvisionalTicketContext } from '@/lib/ticket';
+import { buildTrainingTicket } from '@/lib/training';
+import { isTrainingActive } from '@/stores/trainingStore';
 import { TODAY_TICKETS_KEY } from './useTodayTickets';
 
 function hasCapturedCb(payload: CheckoutPayload): boolean {
@@ -27,7 +29,9 @@ export type CheckoutOutcome =
       provisionalRef: string;
       /** `offline` : caisse déjà hors ligne ; `network` : échec réseau pendant l'envoi. */
       reason: 'offline' | 'network';
-    };
+    }
+  /** Mode formation : ticket local « FORMATION », rien n'est envoyé au serveur. */
+  | { status: 'training'; ticket: TicketPayload };
 
 /**
  * Envoi d'une vente / d'un remboursement à `pos-checkout`.
@@ -44,6 +48,9 @@ export async function submitCheckout({
   payload,
   context,
 }: CheckoutRequest): Promise<CheckoutOutcome> {
+  if (isTrainingActive()) {
+    return { status: 'training', ticket: buildTrainingTicket(payload, context) };
+  }
   const captured = hasCapturedCb(payload);
   const deferred: CheckoutPayload = captured ? { ...payload, deferred_capture: true } : payload;
   if (isOffline()) {

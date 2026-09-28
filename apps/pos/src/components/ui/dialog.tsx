@@ -3,6 +3,16 @@ import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
+/** Un appui sur le clavier virtuel (hors du contenu) ne ferme jamais le dialogue. */
+function keepOpenOnVirtualKeyboard<
+  E extends { target: EventTarget | null; preventDefault(): void },
+>(handler: ((e: E) => void) | undefined): (e: E) => void {
+  return (e) => {
+    if ((e.target as Element | null)?.closest?.('[data-vk]')) e.preventDefault();
+    else handler?.(e);
+  };
+}
+
 const Dialog = DialogPrimitive.Root;
 const DialogTrigger = DialogPrimitive.Trigger;
 const DialogPortal = DialogPrimitive.Portal;
@@ -32,11 +42,13 @@ interface DialogContentProps extends React.ComponentPropsWithoutRef<
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   DialogContentProps
->(({ className, children, hideClose, ...props }, ref) => (
+>(({ className, children, hideClose, onPointerDownOutside, onInteractOutside, ...props }, ref) => (
   <DialogPortal>
     <DialogOverlay />
     <DialogPrimitive.Content
       ref={ref}
+      onPointerDownOutside={keepOpenOnVirtualKeyboard(onPointerDownOutside)}
+      onInteractOutside={keepOpenOnVirtualKeyboard(onInteractOutside)}
       className={cn(
         'fixed left-1/2 top-1/2 z-50 flex w-full max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col gap-4 rounded-2xl border border-border bg-surface p-6 text-text shadow-2xl data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
         className,

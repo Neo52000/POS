@@ -4,7 +4,20 @@ import { db } from '@/lib/db';
 import type { QueuedEvent } from '@/lib/db';
 import { supabase } from '@/lib/supabase';
 import { useSessionStore } from '@/stores/sessionStore';
+import { isTrainingActive } from '@/stores/trainingStore';
 import type { PosEventType } from '@/types/pos';
+
+/**
+ * Mode formation (SPEC §13.3) : rien n'est journalisé, sauf l'entrée / la sortie du mode et les
+ * actes réels qui restent possibles (ouverture physique du tiroir, duplicata d'un vrai ticket ou
+ * d'une clôture), marqués `training: true`.
+ */
+const JOURNALED_IN_TRAINING: ReadonlySet<PosEventType> = new Set<PosEventType>([
+  'training_mode_start',
+  'training_mode_end',
+  'drawer_opened',
+  'reprint',
+]);
 
 type SendOutcome = { kind: 'ok' } | { kind: 'network' } | { kind: 'error'; message: string };
 
@@ -35,6 +48,7 @@ export async function logEventNow(
   type: PosEventType,
   payload: Record<string, unknown>,
 ): Promise<void> {
+  if (isTrainingActive() && !JOURNALED_IN_TRAINING.has(type)) return;
   const { register, session } = useSessionStore.getState();
   const now = new Date().toISOString();
   const outcome = await sendEvent({
@@ -71,11 +85,13 @@ export async function logEvent(
   payload: Record<string, unknown> = {},
   opts: { clientAt?: string } = {},
 ): Promise<void> {
+  const training = isTrainingActive();
+  if (training && !JOURNALED_IN_TRAINING.has(type)) return;
   const { register, session } = useSessionStore.getState();
   const now = new Date().toISOString();
   const ev: QueuedEvent = {
     event_type: type,
-    payload,
+    payload: training ? { ...payload, training: true } : payload,
     client_at: opts.clientAt ?? now,
     register_id: register?.id ?? null,
     session_id: session?.id ?? null,

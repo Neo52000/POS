@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CreditCard, KeyRound, LogOut, Printer, RefreshCw } from 'lucide-react';
 import type { TicketPayload } from '@pos/core';
+import { AppearanceSection } from '@/components/settings/AppearanceSection';
 import { ArchivesSection } from '@/components/settings/ArchivesSection';
+import { TrainingSection } from '@/components/settings/TrainingSection';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -320,6 +322,8 @@ export function SettingsPage() {
             <LogOut className="h-5 w-5" /> Se déconnecter
           </Button>
         </section>
+        <AppearanceSection />
+        <TrainingSection />
         <ArchivesSection />
       </div>
     </div>

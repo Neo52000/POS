@@ -173,10 +173,12 @@ export function displayWidth(text: string): number {
 export class EscPosBuilder {
   private readonly chunks: Buffer[] = [];
 
-  /** `ESC @` + page de codes CP858. */
+  constructor(private readonly codepageNumber: number = CODEPAGE_CP858) {}
+
+  /** `ESC @` + page de codes (CP858 par défaut). */
   init(): this {
     this.raw(ESC, 0x40);
-    return this.codepage(CODEPAGE_CP858);
+    return this.codepage(this.codepageNumber);
   }
 
   raw(...bytes: number[]): this {

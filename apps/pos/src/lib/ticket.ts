@@ -125,7 +125,8 @@ export interface ProvisionalTicketContext {
   quote_number?: string | null;
 }
 
-function headerFrom(settings: PosSettingsMap | null): TicketPayload['header'] {
+/** En-tête légal (`pos_settings.legal`) des tickets et rapports. */
+export function headerFrom(settings: PosSettingsMap | null): TicketPayload['header'] {
   const legal = settings?.legal ?? {};
   return {
     company_name: legal.company_name ?? 'Reine & Fils SAS',
@@ -267,6 +268,10 @@ export function renderTicketText(ticket: TicketPayload, width = WIDTH): string[]
   if (ticket.duplicate) out.push(center('*** DUPLICATA ***', width));
   if (ticket.kind === 'refund') out.push(center('*** REMBOURSEMENT ***', width));
   if (ticket.compliance.provisional) out.push(center('*** TICKET PROVISOIRE ***', width));
+  if (ticket.compliance.training) {
+    out.push(center('*** FORMATION ***', width));
+    out.push(center('Ticket sans valeur - non enregistré', width));
+  }
   out.push(lr(`Ticket ${ticket.ticket_code}`, ticket.register_code, width));
   out.push(
     lr(
@@ -324,6 +329,10 @@ export function renderTicketText(ticket: TicketPayload, width = WIDTH): string[]
   for (const l of ticket.footer.lines) out.push(center(l, width));
   if (ticket.footer.lines.length) out.push('');
   out.push(center(`${ticket.compliance.software} v${ticket.compliance.version}`, width));
+  if (ticket.compliance.training) {
+    out.push(center('MODE FORMATION - SANS VALEUR', width));
+    return out;
+  }
   if (ticket.compliance.provisional) {
     out.push(center('Vente hors ligne - signature en attente', width));
     out.push(center('N° définitif attribué à la synchronisation', width));

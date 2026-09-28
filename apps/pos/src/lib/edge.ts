@@ -8,6 +8,7 @@ import { reportNetworkFailure } from '@/lib/connectivity';
 export { ApiError, describeApiError, isApiError, isNetworkError } from '@/lib/apiError';
 export type { ApiErrorCode } from '@/lib/apiError';
 import type {
+  ClosePeriodResult,
   CustomerQuote,
   ExportArchiveResult,
   PosCustomer,
@@ -39,6 +40,15 @@ export interface EdgeClient {
   }): Promise<ExportArchiveResult>;
   /** Inventaire (`pos-stock-adjust`, admin) : ≤ 200 lignes par appel, idempotent par ligne. */
   stockAdjust(input: StockAdjustInput): Promise<StockAdjustResult>;
+  /**
+   * Clôture Z2 / Z3 (`pos-closing`) de la caisse : sans `period_start`, période précédente
+   * (mois ou année écoulés, Europe/Paris). Idempotent (`already_exists`).
+   */
+  closePeriod(input: {
+    register_id: string;
+    period_type: 'monthly' | 'annual';
+    period_start?: string;
+  }): Promise<ClosePeriodResult>;
 }
 
 const EDGE_TIMEOUT_MS = 30_000;
@@ -113,6 +123,7 @@ function createRealEdge(): EdgeClient {
     },
     exportArchive: (input) => callEdge<ExportArchiveResult>('pos-export-archive', input, 120_000),
     stockAdjust: (input) => callEdge<StockAdjustResult>('pos-stock-adjust', input),
+    closePeriod: (input) => callEdge<ClosePeriodResult>('pos-closing', input, 60_000),
   };
 }
 

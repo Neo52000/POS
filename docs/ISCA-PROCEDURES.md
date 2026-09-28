@@ -61,9 +61,15 @@ archivage (automatique, voir §4).
 - Signature électronique Fiskaly SIGN FR de chaque ticket et de chaque clôture
   (`pos_transactions.fiskaly_signature`, `pos_closings.fiskaly_closing_id`). Un échec de signature
   n'empêche pas la vente : statut `pending_signature`, rejoué toutes les 2 min (`pos-sign-pending`).
-- Clôtures : Z à chaque fermeture de session (`daily`), mensuelle le 1er à 03:10 UTC, annuelle le
-  1er janvier à 03:20 UTC, bornes en heure de Paris (`pos_period_bounds`) ; grand total perpétuel
-  cumulé depuis l'origine.
+- Clôtures : Z1 à chaque fermeture de session (`daily`), Z2 mensuelle et Z3 annuelle établies
+  par cron dès la fin de la période (tentative quotidienne à 03:10 UTC, et 03:20 UTC en janvier,
+  idempotente) ou à la demande (écran Rapports, `pos_close_period`), jamais sur une période non
+  terminée ni avant le Z1 d'une session encore ouverte ; bornes en heure de Paris
+  (`pos_period_bounds`) ; grand total perpétuel cumulé depuis l'origine. Lecture X intermédiaire
+  sans remise à zéro, tracée au JET (`x_report`).
+- Mode formation : aucune donnée envoyée au serveur (ni ticket, ni JET, ni stock), TPE simulé,
+  tickets imprimés « FORMATION — sans valeur » ; entrée et sortie du mode tracées au JET
+  (`training_mode_start` / `training_mode_end`).
 - JET (`pos_events`) : connexions, ouvertures/fermetures, abandons, suppressions de ligne,
   modifications de prix, ouvertures de tiroir, réimpressions, passages hors ligne
   (`offline_enter`/`offline_exit`/`offline_reattached`/`offline_replay_failed`), abandons tracés

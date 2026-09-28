@@ -65,30 +65,75 @@ export const TpeConfigSchema = z
   })
   .strict();
 
-export const PrinterConfigSchema = z
-  .object({
-    type: z.enum(['network', 'none']).default('none'),
-    host: z.string().min(1).optional(),
-    port: port.default(9100),
-    timeoutMs: z.number().int().min(200).max(60_000).default(5_000),
-    codepage: z.literal('CP858').default('CP858'),
-    /** Largeur en caractères (police A, 80 mm → 42 ou 48 selon l'imprimante). */
-    width: z.number().int().min(24).max(64).default(42),
-  })
-  .strict()
-  .superRefine((printer, ctx) => {
-    if (printer.type === 'network' && !printer.host) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['host'],
-        message: 'printer.host est requis quand printer.type = "network"',
-      });
-    }
-  });
+/**
+ * Profils matériels : valeurs par défaut appliquées aux clés absentes de `printer`.
+ * - `generic-80mm` : ESC/POS Epson-compatible, 80 mm, 42 colonnes, massicot.
+ * - `star-mpop` : Star mPOP (POP10), StarPRNT / Star Line Mode, 58 mm (32 colonnes), barre de
+ *   découpe manuelle (pas de massicot), tiroir intégré (périphérique 1), USB ou Bluetooth.
+ */
+export const PRINTER_PROFILES = {
+  'generic-80mm': { commandSet: 'escpos', width: 42, cutter: true },
+  'star-mpop': { commandSet: 'star', width: 32, cutter: false },
+} as const;
+
+export type PrinterProfile = keyof typeof PRINTER_PROFILES;
+
+function applyPrinterProfile(input: unknown): unknown {
+  if (input === null || typeof input !== 'object' || Array.isArray(input)) return input;
+  const raw = input as Record<string, unknown>;
+  const profile = raw['profile'];
+  if (typeof profile !== 'string' || !(profile in PRINTER_PROFILES)) return input;
+  return { ...PRINTER_PROFILES[profile as PrinterProfile], ...raw };
+}
+
+export const PrinterConfigSchema = z.preprocess(
+  applyPrinterProfile,
+  z
+    .object({
+      profile: z.enum(['generic-80mm', 'star-mpop']).optional(),
+      /**
+       * `network` : RAW TCP (port 9100) ; `device` : écriture directe dans un périphérique ou une
+       * file partagée (Linux `/dev/usb/lp0`, Windows `\\localhost\mPOP`, port série
+       * Bluetooth `\\.\COM5`) ; `none` : journal uniquement.
+       */
+      type: z.enum(['network', 'device', 'none']).default('none'),
+      host: z.string().min(1).optional(),
+      port: port.default(9100),
+      /** Chemin du périphérique (`type: "device"`). */
+      path: z.string().min(1).optional(),
+      timeoutMs: z.number().int().min(200).max(60_000).default(5_000),
+      codepage: z.literal('CP858').default('CP858'),
+      /** Numéro de page de codes forcé (défaut : CP858 = 19 en ESC/POS, 4 en Star). */
+      codepageNumber: z.number().int().min(0).max(255).optional(),
+      /** Jeu de commandes : ESC/POS (Epson et compatibles) ou Star (mPOP, mC-Print, TSP). */
+      commandSet: z.enum(['escpos', 'star']).default('escpos'),
+      /** Massicot : coupe en fin de ticket. `false` : avance pour la barre de découpe. */
+      cutter: z.boolean().default(true),
+      /** Largeur en caractères (police A : 80 mm → 42 ou 48, 58 mm → 32). */
+      width: z.number().int().min(24).max(64).default(42),
+    })
+    .strict()
+    .superRefine((printer, ctx) => {
+      if (printer.type === 'network' && !printer.host) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['host'],
+          message: 'printer.host est requis quand printer.type = "network"',
+        });
+      }
+      if (printer.type === 'device' && !printer.path) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['path'],
+          message: 'printer.path est requis quand printer.type = "device"',
+        });
+      }
+    }),
+);
 
 export const DrawerConfigSchema = z
   .object({
-    /** Broche du tiroir sur l'imprimante (`ESC p m`) : 0 ou 1. */
+    /** Broche du tiroir : ESC/POS `ESC p m` (0 ou 1) ; Star : 0 = `BEL` (périph. 1), 1 = `SUB`. */
     pin: z.union([z.literal(0), z.literal(1)]).default(0),
   })
   .strict();

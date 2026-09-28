@@ -1,135 +1,57 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { Loader2, LockKeyhole, Printer, Unlock, WifiOff } from 'lucide-react';
+import {
+  FileText,
+  GraduationCap,
+  Loader2,
+  LockKeyhole,
+  Printer,
+  Unlock,
+  WifiOff,
+} from 'lucide-react';
+import { normalizePaymentFigures, PAYMENT_METHOD_LABELS, isPaymentMethod } from '@pos/core';
 import { parseEuroToCents } from '@pos/core';
-import type { TicketPayload } from '@pos/core';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { NumPad } from '@/components/ui/numpad';
 import { CashCountGrid, cashCountTotal } from '@/components/session/CashCountGrid';
 import type { CashCounts } from '@/components/session/CashCountGrid';
 import { DayKpiStrip } from '@/components/kpi/DayKpiStrip';
-import { ReceiptPreview } from '@/components/ticket/ReceiptPreview';
+import { ReportPreview } from '@/components/ticket/ReportPreview';
 import { usePrinter } from '@/hooks/usePrinter';
 import { updateCachedSession, useSession } from '@/hooks/useSession';
 import { useOfflineQueue } from '@/hooks/useOfflineQueue';
 import { useTodayTickets } from '@/hooks/useTodayTickets';
 import { describeApiError } from '@/lib/edge';
-import { env } from '@/lib/env';
 import { formatDateTime, formatEurCents, formatVatRate } from '@/lib/format';
 import { replayQueue } from '@/lib/offlineQueue';
+import { closingReport } from '@/lib/reports';
 import { rpc } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import { useCartStore } from '@/stores/cartStore';
 import { draftCapturedCents, useCheckoutDraftStore } from '@/stores/checkoutDraftStore';
 import { useParkedStore } from '@/stores/parkedStore';
 import { useSessionStore } from '@/stores/sessionStore';
+import { useTrainingStore } from '@/stores/trainingStore';
 import { useUiStore } from '@/stores/uiStore';
-import type { CloseSessionResult, PosClosing, PosRegister, PosSession } from '@/types/pos';
+import type { CloseSessionResult, PosRegister, PosSession } from '@/types/pos';
 
-const PAYMENT_LABELS: Record<string, string> = {
-  cb: 'Carte bancaire',
-  cash: 'Espèces',
-  cheque: 'Chèque',
-  gift_ucia: 'Bon cadeau UCIA',
-  transfer: 'Virement',
-};
+const paymentLabel = (method: string): string =>
+  isPaymentMethod(method) ? PAYMENT_METHOD_LABELS[method] : method;
 
-/** Normalise `payments_breakdown` (objet `{method: cents}` ou tableau `[{method, amount_cents}]`). */
-export function normalizePaymentsBreakdown(
-  raw: unknown,
-): Array<{ method: string; amount_cents: number }> {
-  if (Array.isArray(raw)) {
-    return raw
-      .filter((r): r is Record<string, unknown> => !!r && typeof r === 'object')
-      .map((r) => ({
-        method: String(r['method'] ?? r['key'] ?? '?'),
-        amount_cents: Number(r['amount_cents'] ?? r['total_cents'] ?? r['amount'] ?? 0),
-      }));
-  }
-  if (raw && typeof raw === 'object') {
-    return Object.entries(raw as Record<string, unknown>).map(([method, v]) => ({
-      method,
-      amount_cents:
-        typeof v === 'number'
-          ? v
-          : Number((v as { amount_cents?: unknown })?.amount_cents ?? v ?? 0),
-    }));
-  }
-  return [];
-}
-
-/** Ticket « Z » imprimable via le pont (mêmes 42 colonnes que le ticket de vente). */
-export function buildClosingTicket(
-  closing: PosClosing,
-  session: PosSession,
-  register: PosRegister | null,
-): TicketPayload {
-  const payments = normalizePaymentsBreakdown(closing.payments_breakdown);
-  const lines: TicketPayload['lines'] = [
-    {
-      label: `Tickets ${closing.first_ticket_number ?? '-'} à ${closing.last_ticket_number ?? '-'} (${closing.txn_count})`,
-      qty: 1,
-      unit_price_ttc_cents: closing.total_ttc_cents,
-      discount_percent: 0,
-      line_ttc_cents: closing.total_ttc_cents,
-      vat_rate: '0.00',
-    },
-    {
-      label: 'Remboursements',
-      qty: 1,
-      unit_price_ttc_cents: closing.refunds_ttc_cents,
-      discount_percent: 0,
-      line_ttc_cents: closing.refunds_ttc_cents,
-      vat_rate: '0.00',
-    },
-    {
-      label: `Fond de caisse ${formatEurCents(session.opening_float_cents)} · compté ${formatEurCents(session.counted_cash_cents ?? 0)}`,
-      qty: 1,
-      unit_price_ttc_cents: session.variance_cents ?? 0,
-      discount_percent: 0,
-      line_ttc_cents: session.variance_cents ?? 0,
-      vat_rate: '0.00',
-    },
-  ];
-  return {
-    version: 1,
-    register_code: register?.code ?? '',
-    ticket_number: null,
-    ticket_code: `Z-${closing.closing_number}`,
-    duplicate: false,
-    kind: 'sale',
-    business_at: closing.period_end || new Date().toISOString(),
-    cashier_name: '',
-    header: {
-      company_name: 'CLÔTURE DE CAISSE (Z)',
-      address_lines: [`Session n°${session.session_number}`],
-      siret: '',
-      vat_number: '',
-    },
-    lines,
-    vat_breakdown: closing.vat_breakdown ?? [],
-    total_ht_cents: closing.total_ht_cents,
-    total_vat_cents: closing.total_vat_cents,
-    total_ttc_cents: closing.total_ttc_cents,
-    payments: payments.map((p) => ({
-      method: (p.method in PAYMENT_LABELS
-        ? p.method
-        : 'cash') as TicketPayload['payments'][number]['method'],
-      label: PAYMENT_LABELS[p.method] ?? p.method,
-      amount_cents: p.amount_cents,
-    })),
-    change_cents: 0,
-    footer: { lines: [`Total perpétuel ${formatEurCents(closing.grand_total_perpetual_cents)}`] },
-    compliance: {
-      hash_short: String(closing.hash ?? '').slice(0, 8),
-      signature_status: 'pending_signature',
-      software: 'Ma Papeterie POS',
-      version: env.appVersion,
-    },
-    invoice_requested: false,
-  };
+/** Mode formation : ouverture et clôture de session (actes fiscaux réels) indisponibles. */
+function TrainingNotice() {
+  return (
+    <p
+      className="flex items-center gap-2 rounded-xl bg-warning/10 px-3 py-2 text-sm text-warning"
+      data-testid="closing-training-blocked"
+    >
+      <GraduationCap className="h-4 w-4 shrink-0" /> Mode formation : ouverture et clôture de caisse
+      sont désactivées (aucune vente de formation n’est enregistrée). Quittez la formation pour
+      clôturer.
+    </p>
+  );
 }
 
 function OfflineNotice({ action }: { action: string }) {
@@ -152,6 +74,7 @@ function OpenSession({ register }: { register: PosRegister }) {
   const [input, setInput] = useState('');
   const [pending, setPending] = useState(false);
   const offline = useUiStore((s) => s.connectivity === 'offline');
+  const training = useTrainingStore((s) => s.active);
   const cents = input === '' ? 0 : parseEuroToCents(input);
 
   const open = async (): Promise<void> => {
@@ -198,6 +121,7 @@ function OpenSession({ register }: { register: PosRegister }) {
         value={input}
         onChange={(e) => setInput(e.target.value)}
         inputMode="decimal"
+        data-no-vk=""
         placeholder="0,00"
         className="text-center text-2xl"
         aria-label="Fond de caisse en euros"
@@ -209,9 +133,10 @@ function OpenSession({ register }: { register: PosRegister }) {
         onBackspace={() => setInput((p) => p.slice(0, -1))}
       />
       {offline && <OfflineNotice action="L’ouverture de session" />}
+      {training && <TrainingNotice />}
       <Button
         size="pay"
-        disabled={cents === null || pending || offline}
+        disabled={cents === null || pending || offline || training}
         onClick={() => void open()}
         data-testid="open-session-button"
       >
@@ -222,23 +147,134 @@ function OpenSession({ register }: { register: PosRegister }) {
   );
 }
 
+/** Résultat de la clôture : récapitulatif, rapport Z1 imprimé automatiquement une fois. */
+function ClosingResult({
+  result,
+  register,
+  onPrint,
+}: {
+  result: CloseSessionResult;
+  register: PosRegister | null;
+  onPrint: (report: ReturnType<typeof closingReport>) => Promise<boolean>;
+}) {
+  const closed = result.session;
+  const closing = result.closing;
+  const report = useMemo(
+    () =>
+      closing
+        ? closingReport(closing, { registerCode: register?.code ?? '', session: closed })
+        : null,
+    [closing, closed, register],
+  );
+  const printed = useRef(false);
+  useEffect(() => {
+    if (!report || printed.current) return;
+    printed.current = true;
+    void onPrint(report);
+  }, [report, onPrint]);
+  const variance = closed.variance_cents ?? 0;
+  return (
+    <div
+      className="mx-auto grid w-full max-w-5xl grid-cols-[1fr_400px] gap-6"
+      data-testid="closing-result"
+    >
+      <div className="flex flex-col gap-4 rounded-3xl border border-border bg-surface p-6">
+        <h2 className="text-2xl font-semibold">Clôture Z1 · session n°{closed.session_number}</h2>
+        <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-base">
+          <dt className="text-muted">Ouverte le</dt>
+          <dd>{formatDateTime(closed.opened_at)}</dd>
+          <dt className="text-muted">Fermée le</dt>
+          <dd>{closed.closed_at ? formatDateTime(closed.closed_at) : '—'}</dd>
+          <dt className="text-muted">Fond de caisse</dt>
+          <dd className="tabular">{formatEurCents(closed.opening_float_cents)}</dd>
+          <dt className="text-muted">Espèces attendues</dt>
+          <dd className="tabular">{formatEurCents(closed.expected_cash_cents ?? 0)}</dd>
+          <dt className="text-muted">Espèces comptées</dt>
+          <dd className="tabular">{formatEurCents(closed.counted_cash_cents ?? 0)}</dd>
+          <dt className="text-muted">Écart</dt>
+          <dd
+            className={cn(
+              'font-semibold tabular',
+              variance === 0 ? 'text-success' : 'text-warning',
+            )}
+            data-testid="variance"
+          >
+            {formatEurCents(variance)}
+          </dd>
+        </dl>
+        {closing && (
+          <>
+            <div className="border-t border-border pt-3">
+              <p className="mb-2 text-xs uppercase tracking-wide text-muted">Ventes</p>
+              <dl className="grid grid-cols-2 gap-x-6 gap-y-1 text-base">
+                <dt className="text-muted">Tickets</dt>
+                <dd>
+                  {closing.txn_count} ({closing.first_ticket_number ?? '-'} →{' '}
+                  {closing.last_ticket_number ?? '-'})
+                </dd>
+                <dt className="text-muted">Total HT</dt>
+                <dd className="tabular">{formatEurCents(closing.total_ht_cents)}</dd>
+                {(closing.vat_breakdown ?? []).map((v) => (
+                  <div key={v.rate} className="contents">
+                    <dt className="text-muted">TVA {formatVatRate(v.rate)}</dt>
+                    <dd className="tabular">{formatEurCents(v.vat_cents)}</dd>
+                  </div>
+                ))}
+                <dt className="text-muted">Total TTC</dt>
+                <dd className="text-xl font-semibold tabular">
+                  {formatEurCents(closing.total_ttc_cents)}
+                </dd>
+                <dt className="text-muted">Remboursements</dt>
+                <dd className="tabular">{formatEurCents(closing.refunds_ttc_cents)}</dd>
+                <dt className="text-muted">Total perpétuel</dt>
+                <dd className="tabular">{formatEurCents(closing.grand_total_perpetual_cents)}</dd>
+              </dl>
+            </div>
+            <div className="border-t border-border pt-3">
+              <p className="mb-2 text-xs uppercase tracking-wide text-muted">Moyens de paiement</p>
+              <dl className="grid grid-cols-2 gap-x-6 gap-y-1 text-base">
+                {normalizePaymentFigures(closing.payments_breakdown).map((p) => (
+                  <div key={p.method} className="contents">
+                    <dt className="text-muted">{paymentLabel(p.method)}</dt>
+                    <dd className="tabular">{formatEurCents(p.amount_cents)}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          </>
+        )}
+        <div className="mt-auto flex gap-3">
+          {report && (
+            <Button size="touch" onClick={() => void onPrint(report)} data-testid="print-z">
+              <Printer className="h-5 w-5" /> Réimprimer le Z1
+            </Button>
+          )}
+          <Button asChild variant="secondary" size="touch">
+            <Link to="/reports?tab=z1">Voir les rapports</Link>
+          </Button>
+        </div>
+      </div>
+      <div className="overflow-y-auto">{report && <ReportPreview report={report} />}</div>
+    </div>
+  );
+}
+
 function CloseSession({
   session,
-  register,
+  onClosed,
 }: {
   session: PosSession;
-  register: PosRegister | null;
+  onClosed: (result: CloseSessionResult) => void;
 }) {
   const qc = useQueryClient();
   const setSession = useSessionStore((s) => s.setSession);
   const toast = useUiStore((s) => s.toast);
-  const { print } = usePrinter();
+  const training = useTrainingStore((s) => s.active);
   const tickets = useTodayTickets();
   const cartLines = useCartStore((s) => s.lines.length);
   const [counts, setCounts] = useState<CashCounts>({});
   const [notes, setNotes] = useState('');
   const [pending, setPending] = useState(false);
-  const [result, setResult] = useState<CloseSessionResult | null>(null);
   const counted = useMemo(() => cashCountTotal(counts), [counts]);
   const offline = useUiStore((s) => s.connectivity === 'offline');
   const { stats } = useOfflineQueue();
@@ -263,10 +299,12 @@ function CloseSession({
         p_counted_cash_cents: counted,
         p_notes: notes.trim() || null,
       });
-      setResult(r);
+      // Résultat remonté à la page avant `setSession(null)` : ce composant est alors démonté.
+      onClosed(r);
       setSession(null);
       updateCachedSession(null);
       await qc.invalidateQueries({ queryKey: ['session'] });
+      void qc.invalidateQueries({ queryKey: ['closings'] });
       toast({ title: 'Session clôturée', variant: 'success' });
     } catch (e) {
       toast({ title: 'Clôture impossible', description: describeApiError(e), variant: 'danger' });
@@ -274,96 +312,6 @@ function CloseSession({
       setPending(false);
     }
   };
-
-  if (result) {
-    const closed = result.session;
-    const closing = result.closing;
-    const zTicket = closing ? buildClosingTicket(closing, closed, register) : null;
-    const variance = closed.variance_cents ?? 0;
-    return (
-      <div
-        className="mx-auto grid w-full max-w-5xl grid-cols-[1fr_400px] gap-6"
-        data-testid="closing-result"
-      >
-        <div className="flex flex-col gap-4 rounded-3xl border border-border bg-surface p-6">
-          <h2 className="text-2xl font-semibold">Clôture Z · session n°{closed.session_number}</h2>
-          <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-base">
-            <dt className="text-muted">Ouverte le</dt>
-            <dd>{formatDateTime(closed.opened_at)}</dd>
-            <dt className="text-muted">Fermée le</dt>
-            <dd>{closed.closed_at ? formatDateTime(closed.closed_at) : '—'}</dd>
-            <dt className="text-muted">Fond de caisse</dt>
-            <dd className="tabular">{formatEurCents(closed.opening_float_cents)}</dd>
-            <dt className="text-muted">Espèces attendues</dt>
-            <dd className="tabular">{formatEurCents(closed.expected_cash_cents ?? 0)}</dd>
-            <dt className="text-muted">Espèces comptées</dt>
-            <dd className="tabular">{formatEurCents(closed.counted_cash_cents ?? 0)}</dd>
-            <dt className="text-muted">Écart</dt>
-            <dd
-              className={cn(
-                'font-semibold tabular',
-                variance === 0 ? 'text-success' : 'text-warning',
-              )}
-              data-testid="variance"
-            >
-              {formatEurCents(variance)}
-            </dd>
-          </dl>
-          {closing && (
-            <>
-              <div className="border-t border-border pt-3">
-                <p className="mb-2 text-xs uppercase tracking-wide text-muted">Ventes</p>
-                <dl className="grid grid-cols-2 gap-x-6 gap-y-1 text-base">
-                  <dt className="text-muted">Tickets</dt>
-                  <dd>
-                    {closing.txn_count} ({closing.first_ticket_number ?? '-'} →{' '}
-                    {closing.last_ticket_number ?? '-'})
-                  </dd>
-                  <dt className="text-muted">Total HT</dt>
-                  <dd className="tabular">{formatEurCents(closing.total_ht_cents)}</dd>
-                  {(closing.vat_breakdown ?? []).map((v) => (
-                    <div key={v.rate} className="contents">
-                      <dt className="text-muted">TVA {formatVatRate(v.rate)}</dt>
-                      <dd className="tabular">{formatEurCents(v.vat_cents)}</dd>
-                    </div>
-                  ))}
-                  <dt className="text-muted">Total TTC</dt>
-                  <dd className="text-xl font-semibold tabular">
-                    {formatEurCents(closing.total_ttc_cents)}
-                  </dd>
-                  <dt className="text-muted">Remboursements</dt>
-                  <dd className="tabular">{formatEurCents(closing.refunds_ttc_cents)}</dd>
-                  <dt className="text-muted">Total perpétuel</dt>
-                  <dd className="tabular">{formatEurCents(closing.grand_total_perpetual_cents)}</dd>
-                </dl>
-              </div>
-              <div className="border-t border-border pt-3">
-                <p className="mb-2 text-xs uppercase tracking-wide text-muted">
-                  Moyens de paiement
-                </p>
-                <dl className="grid grid-cols-2 gap-x-6 gap-y-1 text-base">
-                  {normalizePaymentsBreakdown(closing.payments_breakdown).map((p) => (
-                    <div key={p.method} className="contents">
-                      <dt className="text-muted">{PAYMENT_LABELS[p.method] ?? p.method}</dt>
-                      <dd className="tabular">{formatEurCents(p.amount_cents)}</dd>
-                    </div>
-                  ))}
-                </dl>
-              </div>
-            </>
-          )}
-          <div className="mt-auto flex gap-3">
-            {zTicket && (
-              <Button size="touch" onClick={() => void print(zTicket)}>
-                <Printer className="h-5 w-5" /> Imprimer le Z
-              </Button>
-            )}
-          </div>
-        </div>
-        <div className="overflow-y-auto">{zTicket && <ReceiptPreview ticket={zTicket} />}</div>
-      </div>
-    );
-  }
 
   return (
     <div
@@ -379,6 +327,11 @@ function CloseSession({
             aujourd’hui ({formatEurCents(todayTotal)})
           </p>
         </div>
+        <Button asChild variant="secondary" size="touch">
+          <Link to="/reports?tab=x" data-testid="closing-x-link">
+            <FileText className="h-5 w-5" /> Lecture X
+          </Link>
+        </Button>
         <div className="rounded-2xl border border-border bg-bg px-5 py-3 text-right">
           <p className="text-xs uppercase tracking-wide text-muted">Espèces comptées</p>
           <p className="text-4xl font-bold tabular" data-testid="counted-cash">
@@ -423,6 +376,7 @@ function CloseSession({
         </p>
       )}
       {offline && <OfflineNotice action="La clôture (Z)" />}
+      {training && <TrainingNotice />}
       {queueBlocks && (
         <p
           className="rounded-xl bg-warning/10 px-3 py-2 text-sm text-warning"
@@ -450,7 +404,7 @@ function CloseSession({
       <Button
         variant="danger"
         size="pay"
-        disabled={pending || cartLines > 0 || offline || queueBlocks || draftBlocks}
+        disabled={pending || cartLines > 0 || offline || queueBlocks || draftBlocks || training}
         onClick={() => void close()}
         data-testid="close-session-button"
       >
@@ -467,6 +421,8 @@ function CloseSession({
 
 /** Ouverture (fond de caisse) ou fermeture (comptage, Z) de la session. */
 export function ClosingPage() {
+  const { printReport } = usePrinter();
+  const [closed, setClosed] = useState<CloseSessionResult | null>(null);
   const sessionQuery = useSession();
   const session = useSessionStore((s) => s.session);
   const register = useSessionStore((s) => s.register);
@@ -486,8 +442,26 @@ export function ClosingPage() {
           Aucune caisse active (`pos_registers`). Contactez l’administrateur.
         </p>
       )}
-      {register && !session && <OpenSession register={register} />}
-      {register && session && <CloseSession session={session} register={register} />}
+      {closed ? (
+        <div className="flex flex-col gap-4">
+          <ClosingResult result={closed} register={register} onPrint={printReport} />
+          <div className="mx-auto">
+            <Button
+              variant="secondary"
+              size="touch"
+              onClick={() => setClosed(null)}
+              data-testid="closing-result-done"
+            >
+              <Unlock className="h-5 w-5" /> Ouvrir une nouvelle session
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <>
+          {register && !session && <OpenSession register={register} />}
+          {register && session && <CloseSession session={session} onClosed={setClosed} />}
+        </>
+      )}
     </div>
   );
 }

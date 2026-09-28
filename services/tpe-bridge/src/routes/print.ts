@@ -1,11 +1,26 @@
 import type { FastifyInstance } from 'fastify';
+import { buildDrawerCommand, type OutputOptions } from '../printer/builder.js';
+import { renderReport } from '../printer/reportRenderer.js';
 import { renderTicket } from '../printer/ticketRenderer.js';
-import { buildDrawerPulse } from '../printer/escpos.js';
 import { PrinterError } from '../printer/transport.js';
-import { DrawerOpenBodySchema, PrintRawBodySchema, TicketPayloadSchema } from '../schemas.js';
+import {
+  DrawerOpenBodySchema,
+  PrintRawBodySchema,
+  ReportPayloadSchema,
+  TicketPayloadSchema,
+} from '../schemas.js';
 import { errorBody, type BridgeContext } from './context.js';
 
 export function registerPrintRoutes(app: FastifyInstance, ctx: BridgeContext): void {
+  const { printer: printerConfig } = ctx.config;
+  const output: OutputOptions = {
+    commandSet: printerConfig.commandSet,
+    cutter: printerConfig.cutter,
+    ...(printerConfig.codepageNumber !== undefined
+      ? { codepageNumber: printerConfig.codepageNumber }
+      : {}),
+  };
+
   const send = async (buffer: Buffer): Promise<{ ok: true } | { code: number; body: unknown }> => {
     try {
       await ctx.printer.print(buffer);
@@ -29,14 +44,33 @@ export function registerPrintRoutes(app: FastifyInstance, ctx: BridgeContext): v
         .code(400)
         .send(errorBody('VALIDATION', 'TicketPayload invalide', parsed.error.flatten()));
     }
-    const buffer = renderTicket(parsed.data, ctx.config.printer.width);
+    const buffer = renderTicket(parsed.data, printerConfig.width, output);
     ctx.log.info(
       {
         ticket_code: parsed.data.ticket_code,
         duplicate: parsed.data.duplicate,
+        training: parsed.data.compliance.training === true,
         bytes: buffer.length,
       },
       'print: ticket',
+    );
+    const outcome = await send(buffer);
+    return 'ok' in outcome
+      ? reply.code(200).send(outcome)
+      : reply.code(outcome.code).send(outcome.body);
+  });
+
+  app.post('/print/report', async (request, reply) => {
+    const parsed = ReportPayloadSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply
+        .code(400)
+        .send(errorBody('VALIDATION', 'ReportPayload invalide', parsed.error.flatten()));
+    }
+    const buffer = renderReport(parsed.data, printerConfig.width, output);
+    ctx.log.info(
+      { kind: parsed.data.kind, training: parsed.data.training === true, bytes: buffer.length },
+      'print: rapport',
     );
     const outcome = await send(buffer);
     return 'ok' in outcome
@@ -67,7 +101,7 @@ export function registerPrintRoutes(app: FastifyInstance, ctx: BridgeContext): v
         .send(errorBody('VALIDATION', 'Corps de requête invalide', parsed.error.flatten()));
     }
     ctx.log.info({ reason: parsed.data.reason, pin: ctx.config.drawer.pin }, 'drawer: ouverture');
-    const outcome = await send(buildDrawerPulse(ctx.config.drawer.pin));
+    const outcome = await send(buildDrawerCommand(ctx.config.drawer.pin, output));
     return 'ok' in outcome
       ? reply.code(200).send(outcome)
       : reply.code(outcome.code).send(outcome.body);

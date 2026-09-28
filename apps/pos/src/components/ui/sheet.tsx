@@ -5,6 +5,16 @@ import type { VariantProps } from 'class-variance-authority';
 import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
+/** Un appui sur le clavier virtuel (hors du contenu) ne ferme jamais le dialogue. */
+function keepOpenOnVirtualKeyboard<
+  E extends { target: EventTarget | null; preventDefault(): void },
+>(handler: ((e: E) => void) | undefined): (e: E) => void {
+  return (e) => {
+    if ((e.target as Element | null)?.closest?.('[data-vk]')) e.preventDefault();
+    else handler?.(e);
+  };
+}
+
 const Sheet = SheetPrimitive.Root;
 const SheetTrigger = SheetPrimitive.Trigger;
 const SheetClose = SheetPrimitive.Close;
@@ -54,22 +64,41 @@ interface SheetContentProps
 const SheetContent = React.forwardRef<
   React.ElementRef<typeof SheetPrimitive.Content>,
   SheetContentProps
->(({ side = 'right', className, children, hideClose, ...props }, ref) => (
-  <SheetPortal>
-    <SheetOverlay />
-    <SheetPrimitive.Content ref={ref} className={cn(sheetVariants({ side }), className)} {...props}>
-      {children}
-      {!hideClose && (
-        <SheetPrimitive.Close
-          className="absolute right-4 top-4 flex h-14 w-14 items-center justify-center rounded-xl text-muted hover:bg-border hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          aria-label="Fermer"
-        >
-          <X className="h-7 w-7" />
-        </SheetPrimitive.Close>
-      )}
-    </SheetPrimitive.Content>
-  </SheetPortal>
-));
+>(
+  (
+    {
+      side = 'right',
+      className,
+      children,
+      hideClose,
+      onPointerDownOutside,
+      onInteractOutside,
+      ...props
+    },
+    ref,
+  ) => (
+    <SheetPortal>
+      <SheetOverlay />
+      <SheetPrimitive.Content
+        ref={ref}
+        onPointerDownOutside={keepOpenOnVirtualKeyboard(onPointerDownOutside)}
+        onInteractOutside={keepOpenOnVirtualKeyboard(onInteractOutside)}
+        className={cn(sheetVariants({ side }), className)}
+        {...props}
+      >
+        {children}
+        {!hideClose && (
+          <SheetPrimitive.Close
+            className="absolute right-4 top-4 flex h-14 w-14 items-center justify-center rounded-xl text-muted hover:bg-border hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            aria-label="Fermer"
+          >
+            <X className="h-7 w-7" />
+          </SheetPrimitive.Close>
+        )}
+      </SheetPrimitive.Content>
+    </SheetPortal>
+  ),
+);
 SheetContent.displayName = SheetPrimitive.Content.displayName;
 
 const SheetHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (

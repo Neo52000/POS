@@ -13,7 +13,10 @@ export type ApiErrorCode =
   | 'CHAIN_INCONSISTENT'
   | 'PRODUCT_NOT_FOUND'
   | 'OFFLINE_LIMIT_REACHED'
-  | 'OFFLINE_FORBIDDEN';
+  | 'OFFLINE_FORBIDDEN'
+  | 'PERIOD_NOT_ENDED'
+  | 'SESSION_OPEN_IN_PERIOD'
+  | 'NOTHING_TO_CLOSE';
 
 export class ApiError extends Error {
   constructor(
@@ -83,6 +86,11 @@ export const ERROR_MESSAGES: Record<ApiErrorCode, string> = {
   OFFLINE_LIMIT_REACHED:
     'Limite hors ligne atteinte : rétablissez la connexion et synchronisez avant de nouvelles ventes.',
   OFFLINE_FORBIDDEN: 'Opération impossible hors ligne.',
+  PERIOD_NOT_ENDED:
+    'Période non terminée : une clôture ne peut porter que sur une période achevée.',
+  SESSION_OPEN_IN_PERIOD:
+    'Une session ouverte pendant cette période n’est pas clôturée : faites d’abord son Z1.',
+  NOTHING_TO_CLOSE: 'Aucune activité avant la fin de cette période : rien à clôturer.',
 };
 
 /** Message en clair pour l'UI (SPEC §5). */

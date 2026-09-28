@@ -1,4 +1,4 @@
-import type { TicketPayload } from '@pos/core';
+import type { ReportPayload, TicketPayload } from '@pos/core';
 import { env } from '@/lib/env';
 import { useSettingsStore } from '@/stores/settingsStore';
 
@@ -7,7 +7,8 @@ export interface BridgeHealth {
   ok: boolean;
   version: string;
   tpe: { host?: string; port?: number; reachable: boolean };
-  printer: { type: string; reachable: boolean };
+  /** `command_set` / `width` : pont ≥ 0.2 (Star mPOP 58 mm = 32 colonnes). */
+  printer: { type: string; reachable: boolean; command_set?: 'escpos' | 'star'; width?: number };
   simulate: boolean;
 }
 
@@ -53,6 +54,8 @@ export interface BridgeClient {
   pay(req: BridgePaymentRequest): Promise<BridgePaymentResult>;
   cancelPayment(txnId: string): Promise<{ ok: boolean }>;
   print(ticket: TicketPayload): Promise<{ ok: boolean }>;
+  /** Lecture X / clôtures Z (SPEC §13), `POST /print/report`. */
+  printReport(report: ReportPayload): Promise<{ ok: boolean }>;
   openDrawer(reason: string): Promise<{ ok: boolean }>;
   /** Abonnement au flux WS `/events` (reconnexion automatique). Retourne la fonction de désabonnement. */
   subscribeEvents(cb: (event: BridgeEvent) => void): () => void;
@@ -192,6 +195,8 @@ export function createBridgeClient(getConfig: () => BridgeConfig): BridgeClient 
       request<BridgePaymentResult>('/payment', { body: req, timeoutMs: PAYMENT_TIMEOUT_MS }),
     cancelPayment: (txn_id) => request<{ ok: boolean }>('/payment/cancel', { body: { txn_id } }),
     print: (ticket) => request<{ ok: boolean }>('/print', { body: ticket, timeoutMs: 15_000 }),
+    printReport: (report) =>
+      request<{ ok: boolean }>('/print/report', { body: report, timeoutMs: 15_000 }),
     openDrawer: (reason) => request<{ ok: boolean }>('/drawer/open', { body: { reason } }),
     subscribeEvents: (cb) => {
       listeners.add(cb);

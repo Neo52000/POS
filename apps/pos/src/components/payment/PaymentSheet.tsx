@@ -38,6 +38,7 @@ import { uuidv4 } from '@/lib/uuid';
 import { cn } from '@/lib/utils';
 import { useCartStore } from '@/stores/cartStore';
 import { useCheckoutDraftStore } from '@/stores/checkoutDraftStore';
+import { TRAINING_SESSION_ID, useTrainingStore } from '@/stores/trainingStore';
 import type { DraftPayment } from '@/stores/checkoutDraftStore';
 import { useCustomerStore } from '@/stores/customerStore';
 import { useSessionStore } from '@/stores/sessionStore';
@@ -88,7 +89,9 @@ export function PaymentSheet({
 
   const navigate = useNavigate();
   const checkout = useCheckout();
-  const offline = useUiStore((s) => s.connectivity === 'offline');
+  const training = useTrainingStore((s) => s.active);
+  // Mode formation : rien ne part au serveur, la connectivité est sans effet.
+  const offline = useUiStore((s) => s.connectivity === 'offline') && !training;
   const { limitState } = useOfflineQueue();
   const user = useSessionStore((s) => s.user);
   const quotes = useCustomerStore((s) => s.quotes);
@@ -126,7 +129,7 @@ export function PaymentSheet({
     validation.ok &&
     totals.lines.length > 0 &&
     !checkout.isPending &&
-    !!session &&
+    (!!session || training) &&
     !!register &&
     !refundBlockedOffline;
 
@@ -248,13 +251,14 @@ export function PaymentSheet({
   };
 
   const submit = async (): Promise<void> => {
-    if (!canSubmit || !session || !register || inFlight.current) return;
+    const sessionId = session?.id ?? (training ? TRAINING_SESSION_ID : null);
+    if (!canSubmit || !sessionId || !register || inFlight.current) return;
     inFlight.current = true;
     setError(null);
     const payload: CheckoutPayload = {
       client_txn_id: clientTxnId,
       register_id: register.id,
-      session_id: session.id,
+      session_id: sessionId,
       kind: refund ? 'refund' : 'sale',
       ...(refund
         ? { refund_of_transaction_id: refund.transaction_id, refund_reason: refund.reason }
@@ -331,7 +335,7 @@ export function PaymentSheet({
       if (payments.some((p) => p.method === 'cash')) void openDrawer('Encaissement espèces', false);
       if (refund) {
         toast({
-          title: `Remboursement ${outcome.ticket.ticket_code} enregistré`,
+          title: `Remboursement ${outcome.ticket.ticket_code} ${outcome.status === 'training' ? 'de formation (non enregistré)' : 'enregistré'}`,
           variant: 'success',
         });
       } else {
@@ -407,11 +411,15 @@ export function PaymentSheet({
           >
             <CheckCircle2 className="h-20 w-20 text-success" />
             <p className="text-3xl font-semibold">
-              {refund
-                ? 'Remboursement enregistré'
-                : result.status === 'queued'
-                  ? 'Vente enregistrée hors ligne'
-                  : 'Vente enregistrée'}
+              {result.status === 'training'
+                ? refund
+                  ? 'Remboursement de formation (non enregistré)'
+                  : 'Vente de formation (non enregistrée)'
+                : refund
+                  ? 'Remboursement enregistré'
+                  : result.status === 'queued'
+                    ? 'Vente enregistrée hors ligne'
+                    : 'Vente enregistrée'}
             </p>
             <p className="text-5xl font-bold tabular" data-testid="ticket-code">
               {result.ticket.ticket_code}

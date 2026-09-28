@@ -66,6 +66,10 @@ export function createMockBridge(): BridgeClient {
       printed.push(ticket);
       return { ok: true };
     },
+    async printReport(report) {
+      printed.push(report);
+      return { ok: true };
+    },
     async openDrawer() {
       return { ok: true };
     },

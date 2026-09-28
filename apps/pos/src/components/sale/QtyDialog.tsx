@@ -45,6 +45,7 @@ export function QtyDialog({ line, onClose, onQty }: QtyDialogProps) {
           value={value}
           onChange={(e) => setValue(e.target.value)}
           inputMode="decimal"
+          data-no-vk=""
           aria-label="Nouvelle quantité"
           placeholder={line ? formatQty(line.qty) : ''}
           className="text-center text-3xl"

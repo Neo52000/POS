@@ -1,22 +1,31 @@
 import type { Config } from 'tailwindcss';
 import animate from 'tailwindcss-animate';
 
-/** Palette « Data Noir » (SPEC §10). */
+/** Couleur pilotée par une variable CSS `--c-<nom>` (canaux RGB) : thèmes sombre et clair. */
+const token = (name: string): string => `rgb(var(--c-${name}) / <alpha-value>)`;
+
+/** Palette « Data Noir » (SPEC §10) et son pendant clair (SPEC §13.4), voir `index.css`. */
 const config: Config = {
   darkMode: ['class'],
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   theme: {
     extend: {
       colors: {
-        bg: '#0a0a0f',
-        surface: '#111118',
-        border: '#1e1e2e',
-        text: '#e2e8f0',
-        muted: '#64748b',
-        accent: { DEFAULT: '#6366f1', hover: '#4f52d9', soft: '#6366f11a' },
-        success: '#22c55e',
-        warning: '#f59e0b',
-        danger: '#ef4444',
+        bg: token('bg'),
+        surface: token('surface'),
+        border: token('border'),
+        text: token('text'),
+        muted: token('muted'),
+        accent: {
+          DEFAULT: token('accent'),
+          hover: token('accent-hover'),
+          soft: 'rgb(var(--c-accent) / 0.1)',
+        },
+        success: token('success'),
+        warning: token('warning'),
+        danger: token('danger'),
+        /** Texte posé sur un aplat accent / danger / succès. */
+        'on-accent': token('on-accent'),
       },
       fontFamily: {
         sans: ['Poppins', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif'],

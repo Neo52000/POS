@@ -27,14 +27,15 @@ Le dossier obtenu se lance avec `node dist/index.js` sans pnpm.
 Copiez `bridge.config.example.json` vers `bridge.config.json` à côté de `dist/` (ou pointez
 `BRIDGE_CONFIG=<chemin>`), puis renseignez :
 
-| Clé              | Valeur                                                                      |
-| ---------------- | --------------------------------------------------------------------------- |
-| `token`          | Jeton aléatoire ≥ 16 caractères, identique dans la PWA (`X-Bridge-Token`)   |
-| `allowedOrigins` | Origines de la PWA (`https://pos.ma-papeterie.fr`, `http://localhost:5173`) |
-| `tpe.host`       | IP fixe du TPE (réservation DHCP sur la box) — `simulate: true` pour tester |
-| `printer.host`   | IP fixe de l'imprimante ; `type: "none"` pour tester sans imprimante        |
-| `drawer.pin`     | `0` (connecteur RJ11 standard) ou `1`                                       |
-| `tls`            | iPad uniquement : `{ certPath, keyPath }` (PEM) → HTTPS natif, voir TPE §9  |
+| Clé              | Valeur                                                                                   |
+| ---------------- | ---------------------------------------------------------------------------------------- |
+| `token`          | Jeton aléatoire ≥ 16 caractères, identique dans la PWA (`X-Bridge-Token`)                |
+| `allowedOrigins` | Origines de la PWA (`https://pos.ma-papeterie.fr`, `http://localhost:5173`)              |
+| `tpe.host`       | IP fixe du TPE (réservation DHCP sur la box) — `simulate: true` pour tester              |
+| `printer.host`   | IP fixe de l'imprimante ; `type: "none"` pour tester sans imprimante                     |
+| `printer` (mPOP) | `{"profile": "star-mpop", "type": "device", "path": …}` — `docs/IMPRIMANTE-STAR-MPOP.md` |
+| `drawer.pin`     | `0` (connecteur RJ11 standard) ou `1`                                                    |
+| `tls`            | iPad uniquement : `{ certPath, keyPath }` (PEM) → HTTPS natif, voir TPE §9               |
 
 `BRIDGE_TOKEN` (variable d'environnement) remplace `token` si défini. Le fichier contient le
 jeton : restreignez-en la lecture (`chmod 600` / ACL Windows).

@@ -85,6 +85,10 @@ Détail opérationnel : `docs/HORS-LIGNE.md`.
 
 - Bornes de période calculées en SQL en heure de Paris (`pos_period_bounds`) ; `pos-closing`
   (crons mensuel / annuel) n'effectue plus aucun calcul de fuseau.
+- v0.3.0 : lecture X (`pos_x_report`), Z2 / Z3 à la demande avec garde-fous
+  (`pos_close_period`), écran Rapports, document imprimable commun `ReportPayload` (`@pos/core`),
+  mode formation 100 % local, thème clair / sombre, mode tactile avec clavier virtuel, pont Star
+  mPOP (SPEC §13).
 - `pos-export-archive` (cron le 1er à 04:00 UTC) : pour chaque caisse, partition contiguë depuis
   l'archive précédente (`pos_archive_data`) → fichiers `pos-archive/v1` (`@pos/core`
   `buildArchiveFiles`, miroir Deno) → ZIP fflate → bucket privé `pos-archives/<caisse>/<AAAA-MM>.zip`

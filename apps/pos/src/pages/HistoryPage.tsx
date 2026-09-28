@@ -20,6 +20,7 @@ import { logEvent } from '@/lib/events';
 import { formatEurCents, formatTime } from '@/lib/format';
 import { buildTicketPayload, ticketCode } from '@/lib/ticket';
 import { cn, errorMessage } from '@/lib/utils';
+import { useTrainingStore } from '@/stores/trainingStore';
 import { useUiStore } from '@/stores/uiStore';
 import type { PosTransaction, TransactionFull } from '@/types/pos';
 
@@ -47,6 +48,7 @@ export function HistoryPage() {
   const full = useTransactionFull(selectedId);
   const { print } = usePrinter();
   const toast = useUiStore((s) => s.toast);
+  const training = useTrainingStore((s) => s.active);
   const offline = useUiStore((s) => s.connectivity === 'offline');
 
   const ticket = useMemo(
@@ -70,6 +72,16 @@ export function HistoryPage() {
   return (
     <div className="grid h-full grid-cols-[1fr_440px]" data-testid="history-page">
       <section className="flex min-h-0 flex-col p-4">
+        {training && (
+          <p
+            className="mb-3 rounded-xl bg-warning/10 px-3 py-2 text-sm text-warning"
+            data-testid="history-training"
+          >
+            Mode formation : cet historique ne contient que les ventes réelles. Les ventes de
+            formation figurent dans la lecture X de formation (Rapports). Un duplicata d’un ticket
+            réel reste tracé au journal.
+          </p>
+        )}
         <DayKpiStrip tickets={tickets.data} />
         <div className="mb-3 mt-4 flex items-center justify-between">
           <h2 className="text-xl font-semibold">Tickets du jour</h2>

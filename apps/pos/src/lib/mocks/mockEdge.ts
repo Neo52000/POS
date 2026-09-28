@@ -5,7 +5,9 @@ import type { EdgeClient, PosCheckoutResult } from '@/lib/edge';
 import { buildTicketPayload } from '@/lib/ticket';
 import { businessDate } from '@/lib/format';
 import type {
+  ClosePeriodResult,
   ExportArchiveResult,
+  PosClosing,
   PosArchive,
   PosPayment,
   PosTransaction,
@@ -33,6 +35,17 @@ function previousMonthBounds(now = new Date()): { start: Date; end: Date } {
   const end = new Date(now.getFullYear(), now.getMonth(), 1);
   const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   return { start, end };
+}
+
+/** Période (mois / année, heure locale du poste) contenant `ref`, ou la précédente si absente. */
+function periodBounds(type: 'monthly' | 'annual', ref?: string): { start: Date; end: Date } {
+  const r = ref ? new Date(ref) : new Date();
+  if (type === 'monthly') {
+    const m = ref ? r.getMonth() : r.getMonth() - 1;
+    return { start: new Date(r.getFullYear(), m, 1), end: new Date(r.getFullYear(), m + 1, 1) };
+  }
+  const y = ref ? r.getFullYear() : r.getFullYear() - 1;
+  return { start: new Date(y, 0, 1), end: new Date(y + 1, 0, 1) };
 }
 
 function fakeHash(seed: string): string {
@@ -317,6 +330,89 @@ export function createMockEdge(): EdgeClient {
           },
         ],
       };
+    },
+    async closePeriod(input): Promise<ClosePeriodResult> {
+      assertMockOnline();
+      const st = mockState();
+      const { start, end } = periodBounds(input.period_type, input.period_start);
+      const period_start = start.toISOString();
+      const period_end = end.toISOString();
+      const base = { period_type: input.period_type, period_start, period_end, skipped: [] };
+      const existing = st.closings.find(
+        (c) => c.period_type === input.period_type && c.period_start === period_start,
+      );
+      if (existing) return { ...base, closings: [{ ...existing, already_exists: true }] };
+      if (end.getTime() > Date.now()) {
+        throw new ApiError('PERIOD_NOT_ENDED', undefined, null, 409);
+      }
+      if (st.session?.status === 'open' && new Date(st.session.opened_at) < end) {
+        throw new ApiError('SESSION_OPEN_IN_PERIOD', undefined, null, 409);
+      }
+      const dailies = st.closings.filter((c) => c.period_type === 'daily');
+      if (!dailies.some((c) => new Date(c.period_start) < end)) {
+        throw new ApiError('NOTHING_TO_CLOSE', undefined, null, 409);
+      }
+      const inPeriod = dailies.filter((c) => {
+        const t = new Date(c.period_start).getTime();
+        return t >= start.getTime() && t < end.getTime();
+      });
+      const sum = (f: (c: PosClosing) => number): number => inPeriod.reduce((s, c) => s + f(c), 0);
+      const vat = new Map<string, PosClosing['vat_breakdown'][number]>();
+      const pay = new Map<string, { method: string; amount_cents: number; count: number }>();
+      for (const c of inPeriod) {
+        for (const v of c.vat_breakdown) {
+          const acc = vat.get(v.rate) ?? {
+            rate: v.rate,
+            base_ht_cents: 0,
+            vat_cents: 0,
+            ttc_cents: 0,
+          };
+          acc.base_ht_cents += v.base_ht_cents;
+          acc.vat_cents += v.vat_cents;
+          acc.ttc_cents += v.ttc_cents;
+          vat.set(v.rate, acc);
+        }
+        for (const p of c.payments_breakdown as Array<{
+          method: string;
+          amount_cents: number;
+          count?: number;
+        }>) {
+          const acc = pay.get(p.method) ?? { method: p.method, amount_cents: 0, count: 0 };
+          acc.amount_cents += p.amount_cents;
+          acc.count += p.count ?? 0;
+          pay.set(p.method, acc);
+        }
+      }
+      const before = dailies.filter((c) => new Date(c.period_start) < end);
+      const number = st.closings.length + 1;
+      const firsts = inPeriod
+        .map((c) => c.first_ticket_number)
+        .filter((n): n is number => n != null);
+      const lasts = inPeriod.map((c) => c.last_ticket_number).filter((n): n is number => n != null);
+      const closing: PosClosing = {
+        id: `77777777-7777-4777-8777-${String(number).padStart(12, '0')}`,
+        register_id: input.register_id,
+        closing_number: number,
+        period_type: input.period_type,
+        period_start,
+        period_end,
+        session_id: null,
+        txn_count: sum((c) => c.txn_count),
+        first_ticket_number: firsts.length ? Math.min(...firsts) : null,
+        last_ticket_number: lasts.length ? Math.max(...lasts) : null,
+        total_ht_cents: sum((c) => c.total_ht_cents),
+        total_vat_cents: sum((c) => c.total_vat_cents),
+        total_ttc_cents: sum((c) => c.total_ttc_cents),
+        vat_breakdown: [...vat.values()].sort((a, b) => Number(a.rate) - Number(b.rate)),
+        payments_breakdown: [...pay.values()].sort((a, b) => a.method.localeCompare(b.method)),
+        refunds_ttc_cents: sum((c) => c.refunds_ttc_cents),
+        grand_total_perpetual_cents: before.at(-1)?.grand_total_perpetual_cents ?? 0,
+        hash: fakeHash(`closing|${number}|${period_start}`),
+        created_at: new Date().toISOString(),
+      };
+      st.closings.push(closing);
+      mockSave();
+      return { ...base, closings: [{ ...closing, already_exists: false }] };
     },
     async stockAdjust(input) {
       assertMockOnline();
