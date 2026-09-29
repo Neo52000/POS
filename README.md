@@ -5,6 +5,7 @@ Caisse NF525 (PWA + pont TPE + Supabase + Fiskaly SIGN FR) pour la boutique Ma P
 - Architecture : [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 - Spécification partagée (calculs, hash, payloads, API) : [`docs/SPEC.md`](docs/SPEC.md)
 - Runbook : [`docs/ENGINEERING.md`](docs/ENGINEERING.md)
+- Import des anciennes ventes (dashboard) : [`docs/IMPORT-ANCIENNES-VENTES.md`](docs/IMPORT-ANCIENNES-VENTES.md)
 - Imprimante Star mPOP : [`docs/IMPRIMANTE-STAR-MPOP.md`](docs/IMPRIMANTE-STAR-MPOP.md)
 
 ```bash

@@ -1,0 +1,6 @@
+Date;Heure;N° ticket;Caisse;Désignation;EAN;Qté;Total TTC;TVA;Règlement
+02/07/2026;09:41;1;1;Cahier 96 pages Clairefontaine;3329680633002;2;5,00;20;Espèces
+02/07/2026;09:41;1;1;Livre « Le Petit Prince »;9782070612758;1;7,90;5,5%;Espèces
+02/07/2026;10:12;2;1;Stylo plume Lamy Safari;4014519064042;1;26,91;20;CB
+03/07/2026;16:05;1;1;Retour cahier;3329680633002;-1;-2,50;20;Espèces
+31/07/2026;18:59;57;1;Classeur A4;;1;1 234,56;20;Carte bancaire
