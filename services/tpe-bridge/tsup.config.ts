@@ -1,7 +1,7 @@
 import { defineConfig } from 'tsup';
 
 export default defineConfig({
-  entry: { index: 'src/index.ts', 'tpe-sim': 'simulator/tpe-sim.ts' },
+  entry: { index: 'src/index.ts', 'tpe-sim': 'simulator/tpe-sim.ts', recette: 'src/recette.ts' },
   format: ['esm'],
   target: 'node20',
   platform: 'node',
