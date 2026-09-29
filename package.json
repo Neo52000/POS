@@ -12,7 +12,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "pnpm -r --if-present typecheck",
-    "test": "pnpm -r --if-present test",
+    "test": "pnpm -r --if-present test && vitest run --dir scripts",
     "build": "pnpm -r --if-present build",
     "e2e": "pnpm --filter @pos/app e2e",
     "dev:pos": "pnpm --filter @pos/app dev",
@@ -20,7 +20,8 @@
     "dev:tpe-sim": "pnpm --filter @pos/tpe-bridge sim",
     "verify-chain": "tsx scripts/verify-chain.ts",
     "verify-archive": "tsx scripts/verify-archive.ts",
-    "smoke:fiskaly": "tsx scripts/fiskaly-sandbox-smoke.ts"
+    "smoke:fiskaly": "tsx scripts/fiskaly-sandbox-smoke.ts",
+    "import-legacy-sales": "tsx scripts/import-legacy-sales.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.0",
