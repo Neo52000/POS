@@ -58,6 +58,10 @@ réserver au dépannage.
 
 ## 4. Recette
 
+Procédure complète et fiche à remplir : `docs/RECETTE-MPOP.md`, avec l'outil
+`node dist/recette.js` (page de codes, ticket, formation, rapport, tiroir) qui imprime sans la caisse.
+Résumé :
+
 | Étape                                    | Attendu                                                   |
 | ---------------------------------------- | --------------------------------------------------------- |
 | PWA › Réglages › « Tester la connexion » | `imprimante device joignable`                             |

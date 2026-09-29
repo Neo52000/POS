@@ -58,6 +58,8 @@ Le script :
    **Tâche planifiée** au démarrage (`-UseTask`) ; `-UseSc` n'est utilisable qu'avec un wrapper
    de service (WinSW), `sc.exe` ne sachant pas lancer `node.exe` directement.
 
+Recette imprimante : `node dist\recette.js` (voir `docs/RECETTE-MPOP.md`).
+
 Commandes utiles : `nssm restart MaPapeterieTpeBridge`, `nssm edit MaPapeterieTpeBridge`,
 `Get-Content C:\ProgramData\MaPapeterie\tpe-bridge\logs\bridge.log -Wait`.
 
