@@ -1,9 +1,9 @@
 {
   "name": "@pos/tpe-bridge",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "Pont local HTTP ↔ TPE Caisse-AP (TCP) + impression ESC/POS pour Ma Papeterie POS",
+  "description": "Pont local HTTP ↔ TPE Caisse-AP (TCP) + impression ESC/POS et Star (mPOP) pour Ma Papeterie POS",
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",

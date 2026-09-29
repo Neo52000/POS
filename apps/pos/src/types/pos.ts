@@ -1,4 +1,4 @@
-import type { PaymentMethod, TransactionKind, VatBreakdownEntry } from '@pos/core';
+import type { PaymentMethod, ReportFigures, TransactionKind, VatBreakdownEntry } from '@pos/core';
 
 /** Palier de prix manuel (`products.pos_price_tiers`) : prix en euros. */
 export interface PriceTier {
@@ -171,6 +171,25 @@ export interface PosClosing {
   created_at: string;
 }
 
+/** `pos_x_report(session)` : lecture X (SPEC §13.1). */
+export interface XReportResult {
+  /** Id de l'événement JET `x_report` : numéro de lecture. */
+  x_number: number;
+  generated_at: string;
+  register_code: string;
+  session: PosSession;
+  figures: ReportFigures;
+}
+
+/** `pos-closing` (Z2 / Z3 à la demande, SPEC §13.2). */
+export interface ClosePeriodResult {
+  period_type: PosClosing['period_type'];
+  period_start: string;
+  period_end: string;
+  closings: Array<PosClosing & { already_exists: boolean }>;
+  skipped: Array<{ register_id: string; reason: string }>;
+}
+
 export interface CloseSessionResult {
   session: PosSession;
   closing: PosClosing | null;
@@ -245,7 +264,9 @@ export type PosEventType =
   | 'offline_enter'
   | 'offline_exit'
   | 'offline_replay_failed'
-  | 'offline_sale_abandoned';
+  | 'offline_sale_abandoned'
+  | 'training_mode_start'
+  | 'training_mode_end';
 
 /** `pos_client_settings()` (lot 4). */
 export interface PosClientSettings {

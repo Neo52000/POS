@@ -3,12 +3,45 @@
 @tailwind utilities;
 
 @layer base {
+  /* Thème sombre « Data Noir » (SPEC §10) : défaut. Canaux RGB pour l'opacité Tailwind. */
+  :root,
+  :root[data-theme='dark'] {
+    color-scheme: dark;
+    --c-bg: 10 10 15;
+    --c-surface: 17 17 24;
+    --c-border: 30 30 46;
+    --c-text: 226 232 240;
+    --c-muted: 100 116 139;
+    --c-accent: 99 102 241;
+    --c-accent-hover: 79 82 217;
+    --c-success: 34 197 94;
+    --c-warning: 245 158 11;
+    --c-danger: 239 68 68;
+    --c-on-accent: 255 255 255;
+  }
+
+  /* Thème clair (SPEC §13.4) : contrastes AA sur fond blanc, mêmes rôles. */
+  :root[data-theme='light'] {
+    color-scheme: light;
+    --c-bg: 241 243 247;
+    --c-surface: 255 255 255;
+    --c-border: 214 219 228;
+    --c-text: 15 23 42;
+    --c-muted: 84 96 115;
+    --c-accent: 79 70 229;
+    --c-accent-hover: 67 56 202;
+    --c-success: 21 128 61;
+    --c-warning: 180 83 9;
+    --c-danger: 200 30 30;
+    --c-on-accent: 255 255 255;
+  }
+
   html,
   body,
   #root {
     height: 100%;
-    background: #0a0a0f;
-    color: #e2e8f0;
+    background: rgb(var(--c-bg));
+    color: rgb(var(--c-text));
   }
 
   body {
@@ -39,14 +72,14 @@
   }
 
   *:focus-visible {
-    outline: 2px solid #6366f1;
+    outline: 2px solid rgb(var(--c-accent));
     outline-offset: 2px;
   }
 
   /* Scrollbars discrètes. */
   * {
     scrollbar-width: thin;
-    scrollbar-color: #1e1e2e transparent;
+    scrollbar-color: rgb(var(--c-border)) transparent;
   }
 
   *::-webkit-scrollbar {
@@ -55,13 +88,71 @@
   }
 
   *::-webkit-scrollbar-thumb {
-    background: #1e1e2e;
+    background: rgb(var(--c-border));
     border-radius: 8px;
   }
 
   *::-webkit-scrollbar-track {
     background: transparent;
   }
+}
+
+/*
+ * Mode tactile (SPEC §13.5) : comportement de terminal de caisse. Aucun zoom, aucune sélection,
+ * aucun menu contextuel ni « callout » iOS, retour visuel à l'appui, barres de défilement larges
+ * pour le doigt, curseur masqué en option.
+ */
+html[data-touch='on'] {
+  touch-action: manipulation;
+  -webkit-touch-callout: none;
+}
+
+html[data-touch='on'] body {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+html[data-touch='on'] img {
+  -webkit-user-drag: none;
+  pointer-events: none;
+}
+
+html[data-touch='on'] button:not(:disabled):active,
+html[data-touch='on'] [role='button']:active,
+html[data-touch='on'] a:active {
+  transform: scale(0.97);
+  filter: brightness(1.12);
+}
+
+html[data-touch='on'] *::-webkit-scrollbar {
+  width: 16px;
+  height: 16px;
+}
+
+html[data-touch='on'] * {
+  scrollbar-width: auto;
+}
+
+html[data-touch='on'][data-cursor='hidden'],
+html[data-touch='on'][data-cursor='hidden'] * {
+  cursor: none !important;
+}
+
+/* Clavier virtuel ouvert : le contenu remonte au-dessus du clavier (hauteur --vk-h). */
+html[data-vk-open] #root main {
+  padding-bottom: var(--vk-h, 0px);
+}
+
+html[data-vk-open] [role='dialog'].top-1\/2 {
+  top: 1rem;
+  --tw-translate-y: 0px;
+  max-height: calc(100dvh - var(--vk-h, 0px) - 2rem);
+  overflow-y: auto;
+}
+
+html[data-vk-open] [role='dialog'].inset-0,
+html[data-vk-open] [role='dialog'].bottom-0 {
+  padding-bottom: var(--vk-h, 0px);
 }
 
 @layer utilities {

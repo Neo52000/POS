@@ -41,7 +41,8 @@ export interface FreeLineInput {
   ean?: string | null;
 }
 
-export type ClearReason = 'sale_completed' | 'abandoned' | 'quote_import' | 'logout' | 'manual';
+export type ClearReason =
+  'sale_completed' | 'abandoned' | 'quote_import' | 'logout' | 'manual' | 'training_exit';
 
 interface CartState {
   lines: CartLine[];

@@ -4,6 +4,7 @@ import { subscribeDisplay } from '@/lib/customerDisplay';
 import type { DisplayMessage } from '@/lib/customerDisplay';
 import { formatEurCents, formatPercent, formatQty } from '@/lib/format';
 import { selectTotals, useCartStore } from '@/stores/cartStore';
+import { useTrainingStore } from '@/stores/trainingStore';
 
 /** Durée d'affichage de l'écran « Merci » avant le retour à l'accueil. */
 const THANKS_MS = 8000;
@@ -41,6 +42,16 @@ export function CustomerDisplayPage() {
   const [shown, setShown] = useState<Shown>({ type: 'idle' });
   const thanksUntil = useRef(0);
   const received = useRef(false);
+  const training = useTrainingStore((s) => s.active);
+
+  // Même origine que la caisse : le mode formation (localStorage) est suivi en direct.
+  useEffect(() => {
+    const onStorage = (e: StorageEvent): void => {
+      if (e.key === 'pos.training.v1') void useTrainingStore.persist.rehydrate();
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
 
   useEffect(() => {
     const unsubscribe = subscribeDisplay((msg) => {
@@ -74,6 +85,14 @@ export function CustomerDisplayPage() {
       data-testid="customer-display"
       data-state={shown.type}
     >
+      {training && (
+        <p
+          className="bg-warning py-3 text-center text-2xl font-semibold text-bg"
+          data-testid="display-training"
+        >
+          Caisse en formation — démonstration, aucune vente
+        </p>
+      )}
       <header className="flex items-baseline justify-between px-10 py-6">
         <p className="text-3xl font-semibold">
           Ma Papeterie <span className="text-accent">·</span>{' '}

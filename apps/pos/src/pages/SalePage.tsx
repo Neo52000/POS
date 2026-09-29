@@ -32,6 +32,7 @@ import { draftCapturedCents, useCheckoutDraftStore } from '@/stores/checkoutDraf
 import { useCustomerStore } from '@/stores/customerStore';
 import { MAX_PARKED, useParkedStore } from '@/stores/parkedStore';
 import { useSessionStore } from '@/stores/sessionStore';
+import { useTrainingStore } from '@/stores/trainingStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useUiStore } from '@/stores/uiStore';
 import type { PosProduct } from '@/types/pos';
@@ -58,6 +59,7 @@ export function SalePage() {
   const search = useProductSearch(term);
   const sessionQuery = useSession();
   const session = useSessionStore((s) => s.session);
+  const training = useTrainingStore((s) => s.active);
   const addProduct = useCartStore((s) => s.addProduct);
   const addFreeLine = useCartStore((s) => s.addFreeLine);
   const removeLine = useCartStore((s) => s.remove);
@@ -298,7 +300,8 @@ export function SalePage() {
     return () => window.removeEventListener('keydown', onKey);
   }, [anyDialogOpen, park, checkout, removeLine]);
 
-  if (sessionQuery.isSuccess && !session) {
+  // Mode formation : ventes fictives sans session de caisse.
+  if (sessionQuery.isSuccess && !session && !training) {
     return <Navigate to="/closing" replace />;
   }
 
@@ -372,7 +375,7 @@ export function SalePage() {
             />
             {multiplier !== null && (
               <span
-                className="absolute right-16 top-1/2 -translate-y-1/2 rounded-lg bg-accent px-2 py-1 text-sm font-semibold text-white"
+                className="absolute right-16 top-1/2 -translate-y-1/2 rounded-lg bg-accent px-2 py-1 text-sm font-semibold text-on-accent"
                 data-testid="qty-multiplier"
               >
                 × {formatQty(multiplier)}

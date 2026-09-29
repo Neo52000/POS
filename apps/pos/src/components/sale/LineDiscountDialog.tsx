@@ -108,6 +108,7 @@ export function LineDiscountDialog({
               value={percent}
               onChange={(e) => setPercent(e.target.value)}
               inputMode="decimal"
+              data-no-vk=""
               aria-label="Remise en pourcentage"
               placeholder="0"
               className="text-center text-2xl"
@@ -142,6 +143,7 @@ export function LineDiscountDialog({
               value={price}
               onChange={(e) => setPrice(e.target.value)}
               inputMode="decimal"
+              data-no-vk=""
               aria-label="Prix unitaire TTC"
               className="text-center text-2xl"
               onKeyDown={(e) => e.key === 'Enter' && applyPrice()}

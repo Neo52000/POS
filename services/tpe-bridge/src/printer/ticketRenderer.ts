@@ -1,25 +1,26 @@
 /**
- * Rendu ESC/POS d'un `TicketPayload` (SPEC §6) pour une imprimante 80 mm (42 colonnes par défaut).
+ * Rendu d'un `TicketPayload` (SPEC §6) : 80 mm (42 colonnes par défaut) ou 58 mm (32 colonnes,
+ * Star mPOP).
  *
- * `renderTicketLines()` produit la mise en page texte (testable), `renderTicket()` l'encode
- * avec les attributs ESC/POS (gras, taille, alignement) et termine par avance papier + coupe.
+ * `renderTicketLines()` produit la mise en page texte (testable), `renderTicket()` l'encode dans
+ * le jeu de commandes de l'imprimante (ESC/POS ou Star) et termine par avance papier + coupe.
  */
 import { formatEurCents, SOFTWARE_NAME, type TicketLine, type TicketPayload } from '@pos/core';
-import { displayWidth, EscPosBuilder } from './escpos.js';
+import { displayWidth } from './escpos.js';
+import {
+  DEFAULT_OUTPUT,
+  encodeLines,
+  type OutputOptions,
+  type RenderedLine,
+  type RenderedStyle,
+} from './builder.js';
+
+export type { RenderedLine, RenderedStyle } from './builder.js';
 
 export const DEFAULT_TICKET_WIDTH = 42;
 
-export type RenderedStyle = {
-  align?: 'left' | 'center' | 'right';
-  bold?: boolean;
-  /** `[largeur, hauteur]` (1 = normal). Une largeur 2 divise le nombre de colonnes par deux. */
-  size?: [number, number];
-};
-
-export interface RenderedLine {
-  text: string;
-  style?: RenderedStyle;
-}
+/** En dessous, le tableau TVA à 4 colonnes tronquerait les montants : une ligne par valeur. */
+export const NARROW_WIDTH = 40;
 
 const money = (cents: number): string => formatEurCents(cents);
 
@@ -144,6 +145,10 @@ export function renderTicketLines(
   push(rule(width));
 
   // Mentions spéciales
+  if (payload.compliance.training) {
+    push(center('FORMATION', half), { align: 'center', bold: true, size: [2, 2] });
+    push(center('Ticket sans valeur - non enregistré', width), { align: 'center', bold: true });
+  }
   if (payload.duplicate) {
     push(center('DUPLICATA', half), { align: 'center', bold: true, size: [2, 2] });
   }
@@ -185,26 +190,36 @@ export function renderTicketLines(
   push(rule(width));
 
   // Ventilation TVA
-  const [wRate, wBase, wVat, wTtc] = vatColumns(width);
-  push(
-    row([
-      ['Taux', wRate, 'left'],
-      ['Base HT', wBase, 'right'],
-      ['TVA', wVat, 'right'],
-      ['TTC', wTtc, 'right'],
-    ]),
-  );
-  for (const entry of payload.vat_breakdown) {
+  if (width < NARROW_WIDTH) {
+    for (const entry of payload.vat_breakdown) {
+      push(
+        columns(`TVA ${entry.rate.replace('.', ',')} %`, `TTC ${money(entry.ttc_cents)}`, width),
+      );
+      push(columns(`  HT ${money(entry.base_ht_cents)}`, `TVA ${money(entry.vat_cents)}`, width));
+    }
+    push(rule(width));
+  } else {
+    const [wRate, wBase, wVat, wTtc] = vatColumns(width);
     push(
       row([
-        [`${entry.rate.replace('.', ',')} %`, wRate, 'left'],
-        [money(entry.base_ht_cents), wBase, 'right'],
-        [money(entry.vat_cents), wVat, 'right'],
-        [money(entry.ttc_cents), wTtc, 'right'],
+        ['Taux', wRate, 'left'],
+        ['Base HT', wBase, 'right'],
+        ['TVA', wVat, 'right'],
+        ['TTC', wTtc, 'right'],
       ]),
     );
+    for (const entry of payload.vat_breakdown) {
+      push(
+        row([
+          [`${entry.rate.replace('.', ',')} %`, wRate, 'left'],
+          [money(entry.base_ht_cents), wBase, 'right'],
+          [money(entry.vat_cents), wVat, 'right'],
+          [money(entry.ttc_cents), wTtc, 'right'],
+        ]),
+      );
+    }
+    push(rule(width));
   }
-  push(rule(width));
 
   // Paiements
   for (const payment of payload.payments) {
@@ -221,12 +236,18 @@ export function renderTicketLines(
   // Conformité
   push(center(`Ticket ${payload.ticket_code}`, width), { align: 'center' });
   // Ticket provisoire (hors ligne) : l'empreinte chaînée n'existe qu'après l'enregistrement serveur.
-  const hashLine =
-    payload.compliance.provisional || !payload.compliance.hash_short
+  const hashLine = payload.compliance.training
+    ? 'Formation : aucune empreinte'
+    : payload.compliance.provisional || !payload.compliance.hash_short
       ? "Empreinte attribuée à l'enregistrement"
       : `Hash ${payload.compliance.hash_short}`;
   push(center(hashLine, width), { align: 'center' });
-  push(center(signatureLine(payload), width), { align: 'center' });
+  if (!payload.compliance.training) {
+    push(center(signatureLine(payload), width), { align: 'center' });
+  }
+  if (payload.compliance.training) {
+    push(center('FORMATION - SANS VALEUR', width), { align: 'center', bold: true });
+  }
   if (payload.compliance.provisional) {
     push(center('TICKET PROVISOIRE - signature différée', width), { align: 'center' });
   }
@@ -241,34 +262,11 @@ export function renderTicketLines(
   return lines;
 }
 
-/** Ticket complet en ESC/POS : init, lignes stylées, avance papier, coupe. */
-export function renderTicket(payload: TicketPayload, width: number = DEFAULT_TICKET_WIDTH): Buffer {
-  const builder = new EscPosBuilder().init();
-  let align: RenderedStyle['align'] = 'left';
-  let bold = false;
-  let size: [number, number] = [1, 1];
-  for (const line of renderTicketLines(payload, width)) {
-    const style = line.style ?? {};
-    const wantAlign = style.align ?? 'left';
-    const wantBold = style.bold ?? false;
-    const wantSize = style.size ?? [1, 1];
-    if (wantAlign !== align) {
-      builder.align(wantAlign);
-      align = wantAlign;
-    }
-    if (wantBold !== bold) {
-      builder.bold(wantBold);
-      bold = wantBold;
-    }
-    if (wantSize[0] !== size[0] || wantSize[1] !== size[1]) {
-      builder.size(wantSize[0], wantSize[1]);
-      size = wantSize;
-    }
-    // Les lignes centrées via ESC a n n'ont pas besoin du padding gauche.
-    builder.line(wantAlign === 'center' ? line.text.trimStart() : line.text);
-  }
-  if (bold) builder.bold(false);
-  if (size[0] !== 1 || size[1] !== 1) builder.size(1, 1);
-  builder.align('left').feed(4).cut();
-  return builder.build();
+/** Ticket complet dans le jeu de commandes de l'imprimante : init, lignes stylées, fin de papier. */
+export function renderTicket(
+  payload: TicketPayload,
+  width: number = DEFAULT_TICKET_WIDTH,
+  output: OutputOptions = DEFAULT_OUTPUT,
+): Buffer {
+  return encodeLines(renderTicketLines(payload, width), output);
 }

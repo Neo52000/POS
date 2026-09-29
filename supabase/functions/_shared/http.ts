@@ -16,6 +16,8 @@ export type ErrorCode =
   | 'BUSINESS_AT_OUT_OF_RANGE'
   | 'CHAIN_INCONSISTENT'
   | 'PERIOD_NOT_ENDED'
+  | 'SESSION_OPEN_IN_PERIOD'
+  | 'NOTHING_TO_CLOSE'
   | 'DB_ERROR'
   | 'FISKALY_ERROR'
   | 'INTERNAL';
@@ -39,6 +41,10 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
   CHAIN_INCONSISTENT: 409,
   // Archive / clôture demandée pour une période non terminée (period_end > maintenant).
   PERIOD_NOT_ENDED: 409,
+  // Z2 / Z3 : une session ouverte avant la fin de période n'a pas encore son Z1.
+  SESSION_OPEN_IN_PERIOD: 409,
+  // Z2 / Z3 : aucune clôture journalière avant la fin de période (avant mise en service).
+  NOTHING_TO_CLOSE: 409,
   DB_ERROR: 500,
   FISKALY_ERROR: 502,
   INTERNAL: 500,

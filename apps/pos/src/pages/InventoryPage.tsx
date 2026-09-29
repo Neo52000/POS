@@ -16,6 +16,7 @@ import { removeInventoryLine, sendInventory, upsertInventoryLine } from '@/lib/i
 import type { ConfirmedInventoryLine } from '@/lib/inventory';
 import { cn, errorMessage } from '@/lib/utils';
 import { useSessionStore } from '@/stores/sessionStore';
+import { useTrainingStore } from '@/stores/trainingStore';
 import { useUiStore } from '@/stores/uiStore';
 import type { PosProduct } from '@/types/pos';
 
@@ -28,6 +29,8 @@ export function InventoryPage() {
   const { isAdmin, isLoading } = useIsAdmin();
   const qc = useQueryClient();
   const offline = useUiStore((s) => s.connectivity === 'offline');
+  // Stock réel : jamais modifié depuis le mode formation.
+  const training = useTrainingStore((s) => s.active);
   const toast = useUiStore((s) => s.toast);
   const registerId = useSessionStore((s) => s.register?.id ?? null);
   const lines = useLiveQuery(() => db.inventory.orderBy('added_at').toArray(), [], []);
@@ -319,8 +322,14 @@ export function InventoryPage() {
           <Button
             size="pay"
             className="w-full"
-            disabled={lines.length === 0 || sending || offline || !reasonValid}
-            title={offline ? 'Envoi impossible hors ligne' : undefined}
+            disabled={lines.length === 0 || sending || offline || !reasonValid || training}
+            title={
+              training
+                ? 'Indisponible en mode formation (stock réel)'
+                : offline
+                  ? 'Envoi impossible hors ligne'
+                  : undefined
+            }
             onClick={() => void send()}
             data-testid="inventory-send"
           >

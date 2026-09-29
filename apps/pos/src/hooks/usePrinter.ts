@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import type { TicketPayload } from '@pos/core';
+import type { ReportPayload, TicketPayload } from '@pos/core';
 import { bridge } from '@/lib/bridge';
 import { logEvent } from '@/lib/events';
 import { useUiStore } from '@/stores/uiStore';
@@ -30,6 +30,25 @@ export function usePrinter() {
     [showReceiptFallback, toast],
   );
 
+  /** Rapport X / Z : déjà affiché à l'écran, un échec d'impression est seulement signalé. */
+  const printReport = useCallback(
+    async (report: ReportPayload): Promise<boolean> => {
+      try {
+        const r = await bridge.printReport(report);
+        if (!r.ok) throw new Error('Impression refusée par le pont');
+        return true;
+      } catch (e) {
+        toast({
+          title: 'Imprimante indisponible',
+          description: `${e instanceof Error ? e.message : 'Pont injoignable'} : rapport consultable à l’écran.`,
+          variant: 'warning',
+        });
+        return false;
+      }
+    },
+    [toast],
+  );
+
   const openDrawer = useCallback(
     async (reason: string, log = true): Promise<boolean> => {
       try {
@@ -48,5 +67,5 @@ export function usePrinter() {
     [toast],
   );
 
-  return { print, openDrawer };
+  return { print, printReport, openDrawer };
 }

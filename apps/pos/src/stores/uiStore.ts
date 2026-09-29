@@ -35,6 +35,8 @@ interface UiState {
   tpeReachable: boolean | null;
   printerReachable: boolean | null;
   bridgeSimulate: boolean;
+  /** Colonnes de l'imprimante déclarées par le pont (58 mm = 32, 80 mm = 42). */
+  printerWidth: number | null;
   toasts: ToastItem[];
   /** Ticket affiché plein écran quand l'impression via le pont échoue. */
   receiptFallback: TicketPayload | null;
@@ -48,6 +50,7 @@ interface UiState {
       tpe?: boolean;
       printer?: boolean;
       simulate?: boolean;
+      printerWidth?: number;
     } | null,
   ) => void;
   toast: (t: ToastInput) => number;
@@ -71,6 +74,7 @@ export const useUiStore = create<UiState>()((set) => ({
   tpeReachable: null,
   printerReachable: null,
   bridgeSimulate: false,
+  printerWidth: null,
   toasts: [],
   receiptFallback: null,
   setOnline: (online) =>
@@ -102,6 +106,7 @@ export const useUiStore = create<UiState>()((set) => ({
             tpeReachable: h.tpe ?? null,
             printerReachable: h.printer ?? null,
             bridgeSimulate: h.simulate === true,
+            printerWidth: h.printerWidth ?? null,
           }
         : { bridgeStatus: 'ko', tpeReachable: false, printerReachable: false },
     ),

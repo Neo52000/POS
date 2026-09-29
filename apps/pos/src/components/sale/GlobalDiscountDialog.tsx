@@ -80,6 +80,7 @@ export function GlobalDiscountDialog({
           value={value}
           onChange={(e) => setValue(e.target.value)}
           inputMode="decimal"
+          data-no-vk=""
           aria-label="Remise globale en pourcentage"
           placeholder="0"
           className="text-center text-2xl"

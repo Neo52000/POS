@@ -27,6 +27,7 @@ export function useBridgeHealth(enabled = true) {
         tpe: query.data.tpe?.reachable,
         printer: query.data.printer?.reachable,
         simulate: query.data.simulate,
+        ...(query.data.printer?.width ? { printerWidth: query.data.printer.width } : {}),
       });
     } else if (query.isError) {
       setBridgeHealth(null);

@@ -2,6 +2,34 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { bridge } from '@/lib/bridge';
 import type { BridgePaymentPhase, BridgePaymentResult } from '@/lib/bridge';
 import { uuidv4 } from '@/lib/uuid';
+import { isTrainingActive } from '@/stores/trainingStore';
+
+const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+/** Mode formation : TPE simulé (jamais de débit réel), mêmes phases que le pont. */
+async function simulateTrainingPayment(
+  amountCents: number,
+  kind: 'debit' | 'credit',
+  onPhase: (phase: BridgePaymentPhase) => void,
+): Promise<BridgePaymentResult> {
+  const started = Date.now();
+  for (const phase of ['sent', 'waiting'] as const) {
+    await wait(300);
+    onPhase(phase);
+  }
+  await wait(600);
+  return {
+    status: 'approved',
+    code: '10',
+    tpe_raw: {
+      AE: '10',
+      CB: String(Math.abs(amountCents)),
+      CD: kind === 'credit' ? '1' : '0',
+      TRAINING: '1',
+    },
+    duration_ms: Date.now() - started,
+  };
+}
 
 export type TpePhase = 'idle' | BridgePaymentPhase;
 
@@ -31,6 +59,13 @@ export function useTpePayment() {
     const txnId = uuidv4();
     txnRef.current = txnId;
     setState({ phase: 'connecting', txnId, result: null, error: null });
+    if (isTrainingActive()) {
+      const result = await simulateTrainingPayment(amountCents, kind, (phase) => {
+        if (mounted.current && txnRef.current === txnId) setState((s) => ({ ...s, phase }));
+      });
+      if (mounted.current) setState({ phase: 'done', txnId, result, error: null });
+      return result;
+    }
     const unsubscribe = bridge.subscribeEvents((ev) => {
       if (ev.txn_id !== txnId || !mounted.current) return;
       setState((s) => (s.phase === 'done' ? s : { ...s, phase: ev.phase }));
@@ -52,6 +87,7 @@ export function useTpePayment() {
   const cancel = useCallback(async () => {
     const txnId = txnRef.current;
     if (!txnId) return false;
+    if (isTrainingActive()) return true;
     try {
       const r = await bridge.cancelPayment(txnId);
       return r.ok;

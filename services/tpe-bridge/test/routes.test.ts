@@ -40,7 +40,14 @@ afterAll(async () => {
 
 describe('authentification', () => {
   it('401 sans jeton sur /payment, /print, /drawer/open', async () => {
-    for (const url of ['/payment', '/print', '/print/raw', '/drawer/open', '/payment/cancel']) {
+    for (const url of [
+      '/payment',
+      '/print',
+      '/print/raw',
+      '/print/report',
+      '/drawer/open',
+      '/payment/cancel',
+    ]) {
       const res = await server.app.inject({ method: 'POST', url, payload: {} });
       expect(res.statusCode, url).toBe(401);
       expect(res.json()).toEqual({
@@ -66,7 +73,7 @@ describe('authentification', () => {
       ok: true,
       version: '0.1.0-test',
       tpe: { host: sim.host, port: sim.port, reachable: true },
-      printer: { type: 'none', reachable: true },
+      printer: { type: 'none', reachable: true, command_set: 'escpos', width: 42 },
       simulate: true,
       busy: false,
     });

@@ -1,6 +1,6 @@
 /** Schémas zod des corps de requête (SPEC §6, §8). */
 import { z } from 'zod';
-import type { TicketPayload } from '@pos/core';
+import type { ReportPayload, TicketPayload } from '@pos/core';
 
 export const PaymentBodySchema = z
   .object({
@@ -86,16 +86,60 @@ export const TicketPayloadSchema = z.object({
   change_cents: cents.min(0),
   footer: z.object({ lines: z.array(z.string()) }),
   compliance: z.object({
-    hash_short: z.string().regex(/^[0-9a-f]{8}$/i),
+    // Vide : ticket provisoire (hors ligne) ou de formation, sans empreinte chaînée.
+    hash_short: z.string().regex(/^([0-9a-f]{8})?$/i),
     signature_status: z.enum(['signed', 'pending_signature', 'failed', 'mock']),
     fiskaly_signature_short: z.string().optional(),
     software: z.literal('Ma Papeterie POS'),
     version: z.string(),
     provisional: z.boolean().optional(),
+    training: z.boolean().optional(),
   }),
   quote_number: z.string().optional(),
   invoice_requested: z.boolean(),
 });
+
+const header = z.object({
+  company_name: nonEmpty,
+  address_lines: z.array(z.string()),
+  siret: z.string(),
+  vat_number: z.string(),
+  phone: z.string().optional(),
+});
+
+/** SPEC §13 — lecture X et clôtures Z1 / Z2 / Z3. */
+export const ReportPayloadSchema = z.object({
+  version: z.literal(1),
+  kind: z.enum(['X', 'Z1', 'Z2', 'Z3']),
+  title: nonEmpty,
+  subtitle: z.string().optional(),
+  register_code: z.string(),
+  header,
+  printed_at: nonEmpty,
+  sections: z
+    .array(
+      z.object({
+        title: z.string().optional(),
+        rows: z.array(
+          z.object({
+            label: z.string(),
+            value: z.string().optional(),
+            bold: z.boolean().optional(),
+          }),
+        ),
+      }),
+    )
+    .min(1)
+    .max(40),
+  footer: z.array(z.string()),
+  training: z.boolean().optional(),
+  duplicate: z.boolean().optional(),
+  software: z.literal('Ma Papeterie POS'),
+  app_version: z.string(),
+});
+
+export const parseReportPayload = (input: unknown): ReportPayload =>
+  ReportPayloadSchema.parse(input) satisfies ReportPayload;
 
 /** Garantit l'alignement du schéma sur le type `TicketPayload` de `@pos/core`. */
 export const parseTicketPayload = (input: unknown): TicketPayload =>

@@ -359,3 +359,105 @@ dernier relevé ; sans relevé, il indique « Météo indisponible ». La mété
 Le classement des types de temps est identique au dashboard du site. L'analyse ventes × météo
 (historique, effet à jour de semaine égal, CA attendu à 7 jours) vit sur le dashboard admin de
 ma-papeterie.fr, qui dispose de l'historique.
+
+## 13. Rapports X / Z, mode formation, affichage, imprimante Star (v0.3.0)
+
+### 13.1 Lecture X (`pos_x_report`)
+
+- `pos_x_report(p_session_id) → {x_number, generated_at, register_code, session, figures}` :
+  session **ouverte** uniquement (`SESSION_NOT_OPEN` sinon). Aucune écriture fiscale, aucune
+  remise à zéro : ni clôture, ni compteur `closing` modifié.
+- `figures` ≡ agrégats du Z1 de la même session (`pos_compute_closing` daily) : `txn_count`,
+  `sales_count`, `refunds_count`, `first/last_ticket_number`, `total_ht/vat/ttc_cents`,
+  `refunds_ttc_cents`, `change_cents`, `vat_breakdown`, `payments` `[{method, amount_cents, count}]`,
+  `cash {opening_float_cents, expected_cash_cents}` (même formule que `pos_close_session`) et
+  `grand_total_perpetual_cents` projeté (dernier GTP journalier + TTC de la session).
+- Chaque lecture est tracée au JET (`x_report`) ; l'id de l'événement est le numéro de lecture.
+- Test SQL : `scripts/sql-tests/pos/10_reports.sql` (X ≡ Z1, aucune clôture créée).
+
+### 13.2 Clôtures Z1 / Z2 / Z3
+
+| Rapport | `period_type` | Établi par                                                         |
+| ------- | ------------- | ------------------------------------------------------------------ |
+| Z1      | `daily`       | `pos_close_session` (fermeture de session, écran Caisse)           |
+| Z2      | `monthly`     | cron quotidien 03:10 UTC ou bouton « Clôturer <mois> » (Rapports)  |
+| Z3      | `annual`      | cron quotidien de janvier 03:20 UTC ou bouton « Clôturer <année> » |
+
+`pos_close_period(p_register_id, 'monthly'|'annual', p_ref, p_created_by)` → `{closing,
+already_exists}` : période contenant `p_ref` (Europe/Paris), puis `pos_compute_closing` **inchangé**
+(calcul, numérotation, hash). Garde-fous préalables :
+
+| Code                     | HTTP | Cas                                                                    |
+| ------------------------ | ---- | ---------------------------------------------------------------------- |
+| `PERIOD_NOT_ENDED`       | 409  | période non terminée (une clôture est définitive)                      |
+| `SESSION_OPEN_IN_PERIOD` | 409  | session ouverte avant la fin de période : son Z1 manquerait au Z2 / Z3 |
+| `NOTHING_TO_CLOSE`       | 409  | aucun Z1 avant la fin de période (antérieure à la mise en service)     |
+| `VALIDATION`             | 400  | `daily` (le Z1 passe par la fermeture de session)                      |
+
+`pos-closing` : `monthly` / `annual` → `pos_close_period` par caisse ; sans `register_id` (cron),
+une caisse refusée est listée dans `skipped` sans bloquer les autres et le cron du lendemain la
+rattrape (idempotent). Réponse `{period_type, period_start, period_end, closings: [closing +
+already_exists], skipped: [{register_id, reason}]}`.
+
+Écran **Rapports** (`/reports?tab=x|z1|z2|z3`) : lecture X (éditer, imprimer), listes des Z1 / Z2 /
+Z3 de la caisse (60 derniers), aperçu et **réimpression en duplicata** (JET `reprint`,
+`document: 'closing'`). Le Z1 est imprimé automatiquement une fois à la clôture.
+
+Document imprimable commun `ReportPayload` (`@pos/core` `report.ts`, `buildReport`) : sections
+`libellé … valeur` déjà formatées (identification, activité, chiffre d'affaires, TVA par taux,
+règlements, tiroir espèces, grand total perpétuel, empreinte). Pont : `POST /print/report`
+(zod `ReportPayloadSchema`). Une valeur trop longue passe à la ligne, alignée à droite : un montant
+n'est jamais tronqué.
+
+### 13.3 Mode formation
+
+- Activation : Réglages → « Démarrer le mode formation » (panier vide et aucun encaissement
+  interrompu). État `pos.training.v1` (localStorage), bandeau permanent, écran client signalé.
+- Aucun appel à `pos-checkout` : `submitCheckout` renvoie `{status: 'training', ticket}` construit
+  localement (`computeCart`), numéroté `FORM-0001`…, `compliance.training = true`,
+  `hash_short = ''`, `signature_status = 'mock'`. Aucune file hors ligne, aucun stock.
+- TPE simulé (`useTpePayment`) : jamais d'appel `/payment` au pont, donc jamais de débit réel.
+- Session de caisse non requise (`session_id` fictif `00000000-0000-4000-8000-000000000000`) ;
+  ouverture / clôture de session, Z2 / Z3 et inventaire sont désactivés.
+- JET : rien n'est journalisé **sauf** `training_mode_start`, `training_mode_end` (nombre et total
+  des tickets de formation) et les actes réels toujours possibles, marqués `training: true` :
+  `drawer_opened`, `reprint` (duplicata d'un vrai ticket ou d'une clôture).
+- Ticket et rapport imprimés : « FORMATION — Ticket sans valeur - non enregistré », pas d'empreinte
+  ni de signature. Lecture X de formation calculée sur les tickets locaux (`summarizeTickets`).
+- Sortie : panier, encaissement interrompu et tickets de formation effacés ; tickets en attente
+  réels (mis de côté à l'entrée) restaurés.
+
+### 13.4 Thème clair / sombre
+
+Réglage local `theme: 'dark' | 'light' | 'system'` (défaut `dark`). Couleurs portées par des
+variables CSS `--c-*` (canaux RGB) consommées par Tailwind (`rgb(var(--c-x) / <alpha>)`) :
+`:root[data-theme='dark']` = palette Data Noir (§10), `:root[data-theme='light']` = même rôles,
+contrastes AA sur fond blanc. Appliqué avant le premier rendu (script en tête de `index.html`),
+`system` suit `prefers-color-scheme` en direct. L'aperçu ticket / rapport reste blanc (papier).
+
+### 13.5 Mode tactile (terminal de caisse)
+
+Réglages `touchMode`, `virtualKeyboard` (défaut actif), `hideCursor` → `html[data-touch='on']`,
+`[data-cursor='hidden']` :
+
+- aucun zoom (double tap), aucune sélection de texte, aucun menu contextuel ni « callout »,
+  retour visuel à l'appui, barres de défilement larges, curseur masqué en option ;
+- bouton plein écran (kiosque) dans l'en-tête ;
+- clavier du système masqué (`inputmode="none"` posé avant le focus) ;
+- **clavier virtuel AZERTY** (accents, symboles, pavé numérique pour `inputMode` decimal /
+  numeric) : s'ouvre à l'**appui** sur un champ (jamais sur un focus programmatique, ex. retour au
+  champ de recherche après un scan), écrit par un vrai événement `input` (champs React contrôlés,
+  filtres et validations inchangés), Entrée = `keydown` + soumission du formulaire. Le contenu et
+  les dialogues remontent au-dessus du clavier (`--vk-h`). Les champs déjà servis par un pavé à
+  l'écran portent `data-no-vk`.
+
+### 13.6 Imprimante Star mPOP (pont 0.2.0)
+
+`printer.commandSet: 'escpos' | 'star'`, `printer.cutter`, `printer.codepageNumber?`,
+`printer.type: 'network' | 'device' | 'none'` (+ `path`), profil `printer.profile: 'star-mpop'`
+= `{commandSet: 'star', width: 32, cutter: false}` (valeurs explicites prioritaires). Jeu Star :
+`ESC @`, `ESC GS t 4` (CP858), `ESC GS a n`, `ESC E`/`ESC F`, `ESC i h w`, `LF`, `ESC d 3` (si
+massicot), tiroir `BEL` (périphérique 1) / `SUB`. Sans massicot : 5 sauts de ligne pour la barre de
+découpe. En dessous de 40 colonnes, la ventilation TVA du ticket passe sur deux lignes par taux.
+`GET /health` expose `printer.command_set` et `printer.width` : l'aperçu PWA adopte la largeur de
+l'imprimante. Mise en service : `docs/IMPRIMANTE-STAR-MPOP.md`.

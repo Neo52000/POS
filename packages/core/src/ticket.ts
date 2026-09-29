@@ -48,6 +48,8 @@ export interface TicketCompliance {
   software: typeof SOFTWARE_NAME;
   version: string;
   provisional?: boolean;
+  /** Mode formation (SPEC §13.3) : ticket sans valeur, jamais enregistré. */
+  training?: boolean;
 }
 
 /** SPEC §6 — rendu ESC/POS par le bridge, aperçu HTML par la PWA. */

@@ -19,6 +19,24 @@
       rel="stylesheet"
     />
     <title>Ma Papeterie POS</title>
+    <script>
+      // Thème et mode tactile appliqués avant le premier rendu (pas de flash sombre → clair).
+      (function () {
+        var s = {};
+        try {
+          s = (JSON.parse(localStorage.getItem('pos.settings.v1') || '{}') || {}).state || {};
+        } catch (e) {}
+        var t = s.theme || 'dark';
+        if (t === 'system') {
+          t =
+            window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches
+              ? 'dark'
+              : 'light';
+        }
+        document.documentElement.setAttribute('data-theme', t);
+        document.documentElement.setAttribute('data-touch', s.touchMode ? 'on' : 'off');
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
