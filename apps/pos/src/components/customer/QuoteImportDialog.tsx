@@ -1,6 +1,5 @@
 import { useEffect } from 'react';
 import { Loader2 } from 'lucide-react';
-import { htToTtcCents } from '@pos/core';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -11,6 +10,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { useCustomerQuotes } from '@/hooks/useCustomerQuotes';
+import { documentItemUnitTtcCents, importDocumentIntoCart } from '@/lib/documentImport';
 import { formatEurCents } from '@/lib/format';
 import { errorMessage } from '@/lib/utils';
 import { useCartStore } from '@/stores/cartStore';
@@ -23,55 +23,15 @@ export interface QuoteImportDialogProps {
 }
 
 /** `unit_price_ttc_cents = round(unit_price_ht × 100 × (1 + vat_rate / 100))`. */
-export function quoteItemUnitTtcCents(item: { unit_price_ht: number; vat_rate: number }): number {
-  return htToTtcCents(Math.round(item.unit_price_ht * 100), item.vat_rate);
-}
+export const quoteItemUnitTtcCents = documentItemUnitTtcCents;
 
 /** Importe un devis dans le panier (remplace le panier courant). */
 export function importQuoteIntoCart(quote: CustomerQuote): void {
-  const cart = useCartStore.getState();
-  cart.clear('quote_import');
-  for (const item of quote.items) {
-    // Ligne de devis sans quantité vendable : rien à encaisser (la quantité doit être > 0).
-    if (!(item.quantity > 0)) continue;
-    const cents = quoteItemUnitTtcCents(item);
-    const tier = `Devis ${quote.quote_number}`;
-    if (item.product_id) {
-      cart.addProduct(
-        {
-          id: item.product_id,
-          name: item.label,
-          brand: null,
-          ean: null,
-          image_url: null,
-          price_ttc_cents: cents,
-          price_ht_cents: Math.round(item.unit_price_ht * 100),
-          vat_rate: item.vat_rate,
-          eco_tax_cents: 0,
-          stock_boutique: 0,
-          pos_price_tiers: null,
-        },
-        {
-          qty: item.quantity,
-          unit_price_ttc_cents: cents,
-          price_tier_title: tier,
-          discount_percent: item.discount_percent ?? 0,
-          public_price_ttc_cents: null,
-          resolvePricing: false,
-        },
-      );
-    } else {
-      const line = cart.addFreeLine({
-        label: item.label,
-        unit_price_ttc_cents: cents,
-        vat_rate: item.vat_rate,
-        qty: item.quantity,
-      });
-      cart.setUnitPrice(line.key, cents, { price_tier_title: tier });
-      if (item.discount_percent) cart.setDiscount(line.key, item.discount_percent);
-    }
-  }
-  useCartStore.getState().setQuoteId(quote.id);
+  importDocumentIntoCart(quote.items, {
+    tag: `Devis ${quote.quote_number}`,
+    reason: 'quote_import',
+    quoteId: quote.id,
+  });
 }
 
 export function QuoteImportDialog({ open, onOpenChange }: QuoteImportDialogProps) {

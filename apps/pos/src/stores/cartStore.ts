@@ -42,7 +42,13 @@ export interface FreeLineInput {
 }
 
 export type ClearReason =
-  'sale_completed' | 'abandoned' | 'quote_import' | 'logout' | 'manual' | 'training_exit';
+  | 'sale_completed'
+  | 'abandoned'
+  | 'quote_import'
+  | 'order_import'
+  | 'logout'
+  | 'manual'
+  | 'training_exit';
 
 interface CartState {
   lines: CartLine[];

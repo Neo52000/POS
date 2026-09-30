@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Input } from '@/components/ui/input';
 import { CustomerSearchDialog } from '@/components/customer/CustomerSearchDialog';
+import { OrderImportDialog } from '@/components/customer/OrderImportDialog';
 import { QuoteImportDialog } from '@/components/customer/QuoteImportDialog';
 import { PaymentSheet } from '@/components/payment/PaymentSheet';
 import { CameraScannerDialog } from '@/components/sale/CameraScannerDialog';
@@ -47,6 +48,7 @@ export function SalePage() {
   const [unknownEan, setUnknownEan] = useState<string | null>(null);
   const [customerDialog, setCustomerDialog] = useState(false);
   const [quoteDialog, setQuoteDialog] = useState(false);
+  const [orderDialog, setOrderDialog] = useState(false);
   const [parkedOpen, setParkedOpen] = useState(false);
   const [cartModal, setCartModal] = useState(false);
   const [globalDialog, setGlobalDialog] = useState(false);
@@ -89,6 +91,7 @@ export function SalePage() {
     freeLine ||
     customerDialog ||
     quoteDialog ||
+    orderDialog ||
     paying ||
     parkedOpen ||
     cartModal ||
@@ -457,6 +460,7 @@ export function SalePage() {
         onCheckout={checkout}
         onCustomer={() => setCustomerDialog(true)}
         onQuotes={() => setQuoteDialog(true)}
+        onOrders={() => setOrderDialog(true)}
         onPark={park}
         onShowParked={() => setParkedOpen(true)}
         parkedCount={parkedCount}
@@ -517,6 +521,7 @@ export function SalePage() {
         }}
       />
       <QuoteImportDialog open={quoteDialog} onOpenChange={setQuoteDialog} />
+      <OrderImportDialog open={orderDialog} onOpenChange={setOrderDialog} />
       <ParkedSheet open={parkedOpen} onOpenChange={setParkedOpen} currentLines={lines.length} />
       <ConfirmDialog
         open={confirmAbandon}

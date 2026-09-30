@@ -18,6 +18,7 @@ import type {
 } from '@/types/pos';
 import {
   MOCK_CUSTOMERS,
+  MOCK_ORDERS,
   MOCK_QUOTES,
   MOCK_REGISTER,
   MOCK_SETTINGS,
@@ -477,6 +478,10 @@ export function createMockEdge(): EdgeClient {
     async customerQuotes(accountId) {
       assertMockOnline();
       return MOCK_QUOTES[accountId] ?? [];
+    },
+    async customerOrders(accountId) {
+      assertMockOnline();
+      return MOCK_ORDERS[accountId] ?? [];
     },
     async resolvePrices(accountId, lines) {
       assertMockOnline();

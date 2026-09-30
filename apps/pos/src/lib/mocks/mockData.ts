@@ -1,4 +1,5 @@
 import type {
+  CustomerOrder,
   CustomerQuote,
   PosCustomer,
   PosProduct,
@@ -173,6 +174,41 @@ export const MOCK_QUOTES: Record<string, CustomerQuote[]> = {
           quantity: 3,
           unit_price_ht: 1.8,
           unit_price_ttc: 2.16,
+          discount_percent: 0,
+          vat_rate: 20,
+        },
+      ],
+    },
+  ],
+};
+
+export const MOCK_ORDERS: Record<string, CustomerOrder[]> = {
+  'c0000000-0000-4000-8000-000000000001': [
+    {
+      id: 'e0000000-0000-4000-8000-000000000001',
+      order_number: 'CO-2026-00529',
+      status: 'confirmed',
+      origin: 'shopify',
+      financial_status: 'pending',
+      created_at: '2026-09-28T09:12:00Z',
+      shipping_ttc: 8.99,
+      total_ttc: 35.99,
+      items: [
+        {
+          product_id: 'a0000000-0000-4000-8000-000000000004',
+          label: 'Cahier Clairefontaine 96p grands carreaux',
+          quantity: 10,
+          unit_price_ht: 1.8,
+          unit_price_ttc: null,
+          discount_percent: 0,
+          vat_rate: 20,
+        },
+        {
+          product_id: null,
+          label: 'Reliure spirale A4 (atelier)',
+          quantity: 2,
+          unit_price_ht: 2.25,
+          unit_price_ttc: null,
           discount_percent: 0,
           vat_rate: 20,
         },

@@ -1,21 +1,25 @@
-import { Building2, FileText, Loader2, UserPlus, X } from 'lucide-react';
+import { Building2, FileText, Loader2, PackageOpen, UserPlus, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { useCustomerOrders } from '@/hooks/useCustomerOrders';
 import { useCustomerStore } from '@/stores/customerStore';
 import { useUiStore } from '@/stores/uiStore';
 
 export interface CustomerBadgeProps {
   onSearch: () => void;
   onQuotes: () => void;
+  onOrders: () => void;
 }
 
 /** Client pro attaché (ou bouton « Client pro »). */
-export function CustomerBadge({ onSearch, onQuotes }: CustomerBadgeProps) {
+export function CustomerBadge({ onSearch, onQuotes, onOrders }: CustomerBadgeProps) {
   const account = useCustomerStore((s) => s.account);
   const resolving = useCustomerStore((s) => s.resolving);
   const error = useCustomerStore((s) => s.error);
   const detach = useCustomerStore((s) => s.detach);
   const offline = useUiStore((s) => s.connectivity === 'offline');
+  const orders = useCustomerOrders(account && !offline ? account.id : null);
+  const ordersCount = orders.data?.length ?? 0;
 
   if (!account) {
     return (
@@ -71,6 +75,18 @@ export function CustomerBadge({ onSearch, onQuotes }: CustomerBadgeProps) {
         >
           <FileText className="h-5 w-5" /> {account.open_quotes_count} devis ouvert
           {account.open_quotes_count > 1 ? 's' : ''}
+        </Button>
+      )}
+      {ordersCount > 0 && (
+        <Button
+          variant="outline"
+          size="touch"
+          className="justify-start"
+          onClick={onOrders}
+          disabled={offline}
+          data-testid="orders-button"
+        >
+          <PackageOpen className="h-5 w-5" /> Transférer une commande ({ordersCount})
         </Button>
       )}
     </div>

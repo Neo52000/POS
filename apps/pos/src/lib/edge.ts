@@ -9,6 +9,7 @@ export { ApiError, describeApiError, isApiError, isNetworkError } from '@/lib/ap
 export type { ApiErrorCode } from '@/lib/apiError';
 import type {
   ClosePeriodResult,
+  CustomerOrder,
   CustomerQuote,
   ExportArchiveResult,
   PosCustomer,
@@ -31,6 +32,8 @@ export interface EdgeClient {
   checkout(payload: CheckoutPayload): Promise<PosCheckoutResult>;
   customerSearch(q: string, limit?: number): Promise<PosCustomer[]>;
   customerQuotes(accountId: string): Promise<CustomerQuote[]>;
+  /** Commandes non réglées du client (`pos-customer-orders`), transférables en caisse. */
+  customerOrders(accountId: string): Promise<CustomerOrder[]>;
   /** Tarifs pro (`pos-resolve-prices`) : `{account_id, lines}` → `{prices}`. */
   resolvePrices(accountId: string, lines: PriceLineInput[]): Promise<ResolvedPrice[]>;
   /** Archive NF525 (`pos-export-archive`, admin) : défaut = mois précédent, toutes caisses. */
@@ -112,6 +115,10 @@ function createRealEdge(): EdgeClient {
     customerQuotes: async (account_id) => {
       const r = await callEdge<{ quotes: CustomerQuote[] }>('pos-customer-quotes', { account_id });
       return r.quotes ?? [];
+    },
+    customerOrders: async (account_id) => {
+      const r = await callEdge<{ orders: CustomerOrder[] }>('pos-customer-orders', { account_id });
+      return r.orders ?? [];
     },
     resolvePrices: async (account_id, lines) => {
       if (lines.length === 0) return [];
