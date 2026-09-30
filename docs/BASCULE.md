@@ -17,7 +17,7 @@ resterait définitivement).
 - [ ] Migrations **ma-papeterie** appliquées (dont `pos_set_stock_boutique`) **(P)**.
 - [ ] Edge Functions déployées (`supabase functions deploy`) : `pos-checkout`, `pos-sign-pending`,
       `pos-stock-sync`, `pos-sales-sync`, `pos-closing`, `pos-closings-sync`, `pos-customer-search`,
-      `pos-customer-quotes`, `pos-resolve-prices`, `pos-export-archive`, `pos-stock-adjust`
+      `pos-customer-quotes`, `pos-customer-orders`, `pos-resolve-prices`, `pos-export-archive`, `pos-stock-adjust`
       (`verify_jwt = false` pour toutes, `supabase/config.toml`).
 - [ ] Secrets Edge du projet Pos **(P)** : `FISKALY_MODE=mock` (pour l'instant), `MAPAP_SUPABASE_URL`,
       `MAPAP_SERVICE_ROLE_KEY`. Vérifier `SUPABASE_SERVICE_ROLE_KEY` (fourni par la plateforme).

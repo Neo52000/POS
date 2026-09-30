@@ -1,4 +1,5 @@
-// Devis ouverts d'un client pro — RPC ma-papeterie pos_customer_open_quotes (client_quotes + items).
+// Commandes non réglées d'un client pro — RPC ma-papeterie pos_customer_open_orders
+// (sales_orders + sales_order_lines), transférables dans le panier pour encaissement.
 import { z } from 'npm:zod@3';
 import { requirePos } from '../_shared/auth.ts';
 import { ApiError, errorResponse, handleOptions, json, readJson } from '../_shared/http.ts';
@@ -13,16 +14,11 @@ Deno.serve(async (req) => {
     await requirePos(req);
     const parsed = Schema.safeParse(await readJson(req));
     if (!parsed.success) throw new ApiError('VALIDATION', 'Payload invalide', parsed.error.flatten());
-    const { data, error } = await mapapClient().rpc('pos_customer_open_quotes', {
+    const { data, error } = await mapapClient().rpc('pos_customer_open_orders', {
       p_account_id: parsed.data.account_id,
     });
-    if (error) throw new ApiError('DB_ERROR', `pos_customer_open_quotes: ${error.message}`);
-    // La RPC expose `quote_id` ; la caisse attend `id` (CustomerQuote) pour rattacher la vente au devis.
-    const quotes = ((data ?? []) as Array<Record<string, unknown>>).map((q) => ({
-      ...q,
-      id: q.id ?? q.quote_id,
-    }));
-    return json(200, { quotes });
+    if (error) throw new ApiError('DB_ERROR', `pos_customer_open_orders: ${error.message}`);
+    return json(200, { orders: data ?? [] });
   } catch (e) {
     return errorResponse(e);
   }

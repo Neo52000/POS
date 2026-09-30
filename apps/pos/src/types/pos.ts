@@ -231,6 +231,20 @@ export interface CustomerQuote {
   items: CustomerQuoteItem[];
 }
 
+/** Commande non réglée (`pos-customer-orders`) transférable dans le panier. */
+export interface CustomerOrder {
+  id: string;
+  order_number: string;
+  status: string;
+  origin: string | null;
+  financial_status: string | null;
+  created_at: string;
+  /** Frais de port TTC (TVA 20 %), 0 si aucun. */
+  shipping_ttc: number | null;
+  total_ttc: number | null;
+  items: CustomerQuoteItem[];
+}
+
 /** Ligne de `pos_resolve_cart_prices`. */
 export interface ResolvedPrice {
   product_id: string;
