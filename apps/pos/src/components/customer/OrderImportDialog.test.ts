@@ -19,6 +19,7 @@ describe('importOrderIntoCart', () => {
     useCartStore.setState({
       lines: [],
       quote_id: 'stale',
+      order_id: null,
       global_discount_percent: 0,
       locked: false,
     });
@@ -43,6 +44,13 @@ describe('importOrderIntoCart', () => {
     const total = selectTotals(useCartStore.getState()).total_ttc_cents;
     expect(orderCartTotalCents(ORDER)).toBe(total);
     expect(total).toBe(3599);
+  });
+
+  it('rattache la commande au panier (réglée après encaissement), effacée au vidage', () => {
+    importOrderIntoCart(ORDER);
+    expect(useCartStore.getState().order_id).toBe(ORDER.id);
+    useCartStore.getState().clear('manual');
+    expect(useCartStore.getState().order_id).toBeNull();
   });
 
   it('ignore les lignes soldées et l’absence de port', () => {

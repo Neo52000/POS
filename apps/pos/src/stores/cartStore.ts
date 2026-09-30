@@ -53,6 +53,8 @@ export type ClearReason =
 interface CartState {
   lines: CartLine[];
   quote_id: string | null;
+  /** Commande ma-papeterie transférée (`sales_orders.id`) : marquée réglée après encaissement. */
+  order_id: string | null;
   /**
    * Remise globale (%) : chaque ligne est vendue avec `max(remise ligne, remise globale)`
    * (pas de cumul). Appliquée au calcul des totaux, jamais écrite dans les lignes.
@@ -63,7 +65,12 @@ interface CartState {
   locked: boolean;
   setLocked: (locked: boolean) => void;
   /** Remplace le panier (reprise d'un encaissement interrompu, rappel d'un ticket en attente). */
-  restore: (lines: CartLine[], quoteId: string | null, globalDiscountPercent?: number) => void;
+  restore: (
+    lines: CartLine[],
+    quoteId: string | null,
+    globalDiscountPercent?: number,
+    orderId?: string | null,
+  ) => void;
   addProduct: (product: PosProduct, opts?: AddProductOptions) => CartLine;
   addFreeLine: (input: FreeLineInput) => CartLine;
   setQty: (key: string, qty: number) => void;
@@ -72,6 +79,7 @@ interface CartState {
   remove: (key: string) => void;
   clear: (reason: ClearReason) => void;
   setQuoteId: (quoteId: string | null) => void;
+  setOrderId: (orderId: string | null) => void;
   /**
    * Applique les prix pro résolus (product_id → résultat). Les lignes absentes, à palier ou à prix
    * forcé restent inchangées ; `lineKey` restreint l'application à une seule ligne.
@@ -108,15 +116,17 @@ export const useCartStore = create<CartState>()(
     (set, get) => ({
       lines: [],
       quote_id: null,
+      order_id: null,
       global_discount_percent: 0,
       locked: false,
 
       setLocked: (locked) => set({ locked }),
 
-      restore: (lines, quoteId, globalDiscountPercent = 0) =>
+      restore: (lines, quoteId, globalDiscountPercent = 0, orderId = null) =>
         set({
           lines: renumber(lines),
           quote_id: quoteId,
+          order_id: orderId,
           global_discount_percent: roundDiscount(globalDiscountPercent),
         }),
 
@@ -307,7 +317,7 @@ export const useCartStore = create<CartState>()(
       },
 
       clear: (reason) => {
-        const { lines, quote_id, global_discount_percent } = get();
+        const { lines, quote_id, order_id, global_discount_percent } = get();
         if (lines.length > 0 && reason !== 'sale_completed') {
           const totals = computeCart(effectiveLines(lines, global_discount_percent));
           void logEvent('sale_abandoned', {
@@ -315,12 +325,14 @@ export const useCartStore = create<CartState>()(
             lines: lines.length,
             total_ttc_cents: totals.total_ttc_cents,
             quote_id,
+            order_id,
           });
         }
-        set({ lines: [], quote_id: null, global_discount_percent: 0 });
+        set({ lines: [], quote_id: null, order_id: null, global_discount_percent: 0 });
       },
 
       setQuoteId: (quoteId) => set({ quote_id: quoteId }),
+      setOrderId: (orderId) => set({ order_id: orderId }),
 
       applyPricing: (pricing, lineKey) => {
         if (get().locked) return;
@@ -364,6 +376,7 @@ export const useCartStore = create<CartState>()(
       partialize: (s) => ({
         lines: s.lines,
         quote_id: s.quote_id,
+        order_id: s.order_id,
         global_discount_percent: s.global_discount_percent,
       }),
     },

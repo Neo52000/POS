@@ -15,6 +15,8 @@ export interface ParkedCart {
   parked_at: string;
   lines: CartLine[];
   quote_id: string | null;
+  /** Commande transférée ; absente des tickets mis en attente avant son ajout. */
+  order_id?: string | null;
   /** Remise globale du panier (%), 0 si aucune. Absente des tickets mis en attente avant son ajout. */
   global_discount_percent?: number;
   account: PosCustomer | null;
@@ -39,6 +41,7 @@ function snapshotCurrent(): ParkedCart | null {
     parked_at: new Date().toISOString(),
     lines: cart.lines,
     quote_id: cart.quote_id,
+    order_id: cart.order_id,
     global_discount_percent: cart.global_discount_percent,
     account: useCustomerStore.getState().account,
     total_ttc_cents: selectTotals(cart).total_ttc_cents,
@@ -92,7 +95,12 @@ export const useParkedStore = create<ParkedState>()(
         useCustomerStore.setState({ account: target.account, pricing: {}, error: null });
         useCartStore
           .getState()
-          .restore(target.lines, target.quote_id, target.global_discount_percent ?? 0);
+          .restore(
+            target.lines,
+            target.quote_id,
+            target.global_discount_percent ?? 0,
+            target.order_id ?? null,
+          );
         void logEvent('sale_recalled', {
           parked_id: target.id,
           lines: target.lines.length,

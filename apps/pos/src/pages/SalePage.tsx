@@ -248,7 +248,12 @@ export function SalePage() {
     if (!draft) return;
     useCartStore
       .getState()
-      .restore(draft.lines, draft.quote_id, draft.global_discount_percent ?? 0);
+      .restore(
+        draft.lines,
+        draft.quote_id,
+        draft.global_discount_percent ?? 0,
+        draft.order_id ?? null,
+      );
     useCustomerStore.setState({ account: draft.account, pricing: {}, error: null });
     setPaying(true);
   };

@@ -34,6 +34,7 @@ import { cachedTicketSettings } from '@/lib/ticketSettings';
 import type { ProvisionalTicketContext } from '@/lib/ticket';
 import { env } from '@/lib/env';
 import { formatEurCents } from '@/lib/format';
+import { queryClient } from '@/lib/queryClient';
 import { uuidv4 } from '@/lib/uuid';
 import { cn } from '@/lib/utils';
 import { useCartStore } from '@/stores/cartStore';
@@ -101,6 +102,7 @@ export function PaymentSheet({
   const session = useSessionStore((s) => s.session);
   const account = useCustomerStore((s) => s.account);
   const quoteId = useCartStore((s) => s.quote_id);
+  const orderId = useCartStore((s) => s.order_id);
   const clearCart = useCartStore((s) => s.clear);
   const detachCustomer = useCustomerStore((s) => s.detach);
   const saveDraft = useCheckoutDraftStore((s) => s.save);
@@ -162,6 +164,7 @@ export function PaymentSheet({
       session_id: useSessionStore.getState().session?.id ?? null,
       lines: useCartStore.getState().lines,
       quote_id: useCartStore.getState().quote_id,
+      order_id: useCartStore.getState().order_id,
       global_discount_percent: useCartStore.getState().global_discount_percent,
       account: useCustomerStore.getState().account,
       payments,
@@ -267,6 +270,7 @@ export function PaymentSheet({
       offline_queued: false,
       ...(account && !refund ? { customer_account_id: account.id } : {}),
       ...(quoteId && !refund ? { quote_id: quoteId } : {}),
+      ...(orderId && !refund ? { order_id: orderId } : {}),
       invoice_requested: !!account && invoiceRequested && !refund,
       lines: totals.lines.map((l) => ({
         line_no: l.line_no,
@@ -339,6 +343,8 @@ export function PaymentSheet({
           variant: 'success',
         });
       } else {
+        // Commande transférée : réglée côté serveur, la liste « à encaisser » doit se rafraîchir.
+        if (orderId) void queryClient.invalidateQueries({ queryKey: ['customers', 'orders'] });
         clearCart('sale_completed');
         detachCustomer();
       }

@@ -75,6 +75,27 @@ export async function recordSales(sales: unknown[]): Promise<RecordSaleResult[]>
   return (data as RecordSaleResult[]) ?? [];
 }
 
+/** Résultat par ticket de `pos_settle_orders` (projet ma-papeterie). */
+export interface SettleOrderResult {
+  transaction_id: string;
+  applied: boolean;
+  already_applied?: boolean;
+  /** Refus métier définitif : ORDER_NOT_FOUND, ACCOUNT_MISMATCH, VALIDATION. */
+  error?: string;
+}
+
+/**
+ * Pont commandes : marque réglées en caisse les commandes sales_orders transférées dans le panier
+ * (`pos_settle_orders`, service role, idempotente par transaction_id). Payload tel que renvoyé par
+ * `pos_order_settlement_pending` (projet Pos).
+ */
+export async function settleOrders(settlements: unknown[]): Promise<SettleOrderResult[]> {
+  if (settlements.length === 0) return [];
+  const { data, error } = await mapapClient().rpc('pos_settle_orders', { p_settlements: settlements });
+  if (error) throw new Error(`pos_settle_orders: ${error.message}`);
+  return (data as SettleOrderResult[]) ?? [];
+}
+
 export interface SetStockBoutiqueResult {
   product_id: string;
   applied: boolean;

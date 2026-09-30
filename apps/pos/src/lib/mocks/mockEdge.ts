@@ -271,6 +271,12 @@ export function createMockEdge(): EdgeClient {
       };
       st.transactions.push(full);
       mockSave();
+      // Commande transférée : réglée, retirée des commandes à encaisser (pos_settle_orders).
+      if (payload.order_id && payload.kind === 'sale') {
+        for (const [accountId, orders] of Object.entries(MOCK_ORDERS)) {
+          MOCK_ORDERS[accountId] = orders.filter((o) => o.id !== payload.order_id);
+        }
+      }
       return {
         transaction,
         lines,

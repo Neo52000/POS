@@ -72,6 +72,7 @@ export const useCustomerStore = create<CustomerState>()(
         set({ account: null, pricing: {}, quotes: [], error: null, resolving: false });
         useCartStore.getState().restorePublicPrices();
         useCartStore.getState().setQuoteId(null);
+        useCartStore.getState().setOrderId(null);
       },
 
       resolveLine: async (lineKey, productId, qty) => {
