@@ -16,6 +16,8 @@ export interface ImportDocumentOptions {
   tag: string;
   reason: ClearReason;
   quoteId?: string | null;
+  /** Commande ma-papeterie transférée : marquée réglée après encaissement. */
+  orderId?: string | null;
   /** Ligne libre additionnelle (frais de port…), TTC en euros, TVA 20 %. */
   extraFreeLine?: { label: string; ttc: number } | null;
 }
@@ -78,4 +80,5 @@ export function importDocumentIntoCart(
     cart.setUnitPrice(line.key, cents, { price_tier_title: opts.tag });
   }
   useCartStore.getState().setQuoteId(opts.quoteId ?? null);
+  useCartStore.getState().setOrderId(opts.orderId ?? null);
 }

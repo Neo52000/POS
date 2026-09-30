@@ -43,6 +43,7 @@ vi.mock('@/lib/offlineQueue', () => ({
 
 import { PaymentSheet } from './PaymentSheet';
 import { edge } from '@/lib/edge';
+import { useCartStore } from '@/stores/cartStore';
 import { useCheckoutDraftStore } from '@/stores/checkoutDraftStore';
 import type { CheckoutDraft } from '@/stores/checkoutDraftStore';
 import { useSessionStore } from '@/stores/sessionStore';
@@ -219,6 +220,27 @@ describe('PaymentSheet', () => {
       payments: [{ method: 'cash', amount_cents: 0 }],
       change_cents: 0,
     });
+  });
+
+  it('transmet la commande transférée (order_id) avec la vente', async () => {
+    const orderId = 'e0000000-0000-4000-8000-000000000001';
+    useCartStore.setState({ order_id: orderId });
+    const free = computeCart([
+      {
+        line_no: 1,
+        label: 'Cadeau',
+        qty: 1,
+        unit_price_ttc_cents: 500,
+        vat_rate: 20,
+        discount_percent: 100,
+      },
+    ]);
+    vi.mocked(edge.checkout).mockImplementation(() => new Promise(() => undefined));
+    renderSheet(free);
+    fireEvent.click(screen.getByTestId('validate-payment'));
+    await waitFor(() => expect(edge.checkout).toHaveBeenCalled());
+    expect(vi.mocked(edge.checkout).mock.calls[0]?.[0]).toMatchObject({ order_id: orderId });
+    useCartStore.setState({ order_id: null });
   });
 
   it('conserve les paiements d’un remboursement quand le parent se re-rend', () => {

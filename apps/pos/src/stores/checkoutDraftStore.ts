@@ -22,6 +22,8 @@ export interface CheckoutDraft {
   session_id: string | null;
   lines: CartLine[];
   quote_id: string | null;
+  /** Absent des brouillons écrits avant le transfert de commande. */
+  order_id?: string | null;
   global_discount_percent: number;
   account: PosCustomer | null;
   payments: DraftPayment[];

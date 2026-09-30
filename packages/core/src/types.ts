@@ -29,6 +29,11 @@ export interface CheckoutPayload {
   deferred_capture?: boolean;
   customer_account_id?: string;
   quote_id?: string;
+  /**
+   * Commande ma-papeterie (`sales_orders.id`) transférée dans le panier. Hors périmètre fiscal :
+   * retirée du payload avant `pos_finalize_sale`, sert à marquer la commande réglée.
+   */
+  order_id?: string;
   invoice_requested: boolean;
   lines: CartLineInput[];
   payments: CheckoutPayment[];
@@ -276,6 +281,7 @@ export function validateCheckoutPayload(payload: unknown): CheckoutValidation {
   c.boolean(p, 'deferred_capture', root, false);
   c.uuid(p, 'customer_account_id', root, false);
   c.uuid(p, 'quote_id', root, false);
+  c.uuid(p, 'order_id', root, false);
   c.boolean(p, 'invoice_requested', root, true);
 
   const lines = p['lines'];

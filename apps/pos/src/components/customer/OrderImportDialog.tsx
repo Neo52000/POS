@@ -45,6 +45,7 @@ export function importOrderIntoCart(order: CustomerOrder): void {
     tag: `Commande ${order.order_number}`,
     reason: 'order_import',
     quoteId: null,
+    orderId: order.id,
     extraFreeLine:
       order.shipping_ttc && order.shipping_ttc > 0
         ? { label: 'Frais de port', ttc: order.shipping_ttc }

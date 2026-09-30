@@ -1,7 +1,9 @@
-// Cron (5 min) : pont ventes NF525 → dashboard ma-papeterie (pos_record_sales). Hors périmètre
-// fiscal : lecture seule des tickets validés (PERIMETRE-NF525.md §1.2).
+// Cron (5 min) : pont ventes NF525 → dashboard ma-papeterie (pos_record_sales) et rejeu des
+// règlements de commandes transférées (pos_settle_orders). Hors périmètre fiscal : lecture seule
+// des tickets validés (PERIMETRE-NF525.md §1.2).
 import { requireService } from '../_shared/auth.ts';
 import { errorResponse, handleOptions, json } from '../_shared/http.ts';
+import { syncPendingOrderSettlements } from '../_shared/orderSettlement.ts';
 import { syncPendingSales } from '../_shared/salesSync.ts';
 
 Deno.serve(async (req) => {
@@ -10,7 +12,8 @@ Deno.serve(async (req) => {
   try {
     const { db } = requireService(req);
     const out = await syncPendingSales(db, 200);
-    return json(200, out);
+    const orders = await syncPendingOrderSettlements(db, { limit: 200 });
+    return json(200, { ...out, order_settlements: orders });
   } catch (e) {
     return errorResponse(e);
   }
