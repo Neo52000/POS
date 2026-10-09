@@ -15,6 +15,10 @@ valeur fiscale dans ses propres archives, **à conserver 6 ans**.
 | Shopify POS (`shopify_orders`)  | `pos`           | depuis le **01/08/2026**      |
 | Caisse NF525 (`pos-sales-sync`) | `pos`           | à la mise en service          |
 
+> Pour l'historique **Shopify** lui-même (caisse Shopify POS et boutique en ligne), ne pas
+> utiliser ce script : voir `docs/IMPORT-VENTES-SHOPIFY.md`, qui réintègre les commandes dans
+> `shopify_orders` avec le bon canal (caisse / boutique) depuis l'export CSV du back-office.
+
 Par défaut, l'import **s'arrête la veille du premier jour déjà présent** (calculé à chaque
 lancement) : pas de double comptage. `--before AAAA-MM-JJ` impose une autre limite.
 
