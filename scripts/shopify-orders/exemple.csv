@@ -1,0 +1,9 @@
+Name,Email,Financial Status,Paid at,Fulfillment Status,Currency,Subtotal,Shipping,Taxes,Total,Discount Amount,Created at,Lineitem quantity,Lineitem name,Lineitem price,Lineitem sku,Lineitem discount,Billing Name,Phone,Cancelled at,Payment Method,Refunded Amount,Location,Employee,Id,Source
+#1054,,paid,2026-08-10 13:48:48 +0200,fulfilled,EUR,270.00,0.00,45.00,270.00,0.00,2026-08-10 13:48:48 +0200,2,Cahier Clairefontaine 96p,120.00,CF-96,0.00,,,,Carte bancaire,0.00,Boutique Chaumont,Élie,7026151424244,pos
+#1054,,,,,,,,,,,,1,Stylo Bic 4 couleurs,30.00,BIC-4C,0.00,,,,,,,,7026151424244,pos
+#1055,client@example.com,paid,2026-08-11 10:02:00 +0200,fulfilled,EUR,34.90,4.90,6.63,39.80,0.00,2026-08-11 10:01:00 +0200,1,Agenda scolaire 2026-2027,34.90,AG-2627,0.00,Marie Dupont,0325000000,,Shopify Payments,0.00,,,7026178031860,channel:11370740
+#1056,pro@example.com,paid,2026-08-12 09:30:00 +0200,fulfilled,EUR,100.00,0.00,16.67,100.00,10.00,2026-08-12 09:15:00 +0200,10,Ramette A4 80g,11.00,RAM-A4,10.00,Société Martin,,,Virement bancaire,0.00,,,7026251792628,shopify_draft_order
+#1057,,voided,,unfulfilled,EUR,12.00,0.00,2.00,12.00,0.00,2026-08-13 11:00:00 +0200,1,Classeur A4,12.00,CLA-A4,0.00,,,,,0.00,Boutique Chaumont,Élie,7026299240692,pos
+#1058,annule@example.com,pending,,unfulfilled,EUR,50.00,0.00,8.33,50.00,0.00,2026-08-14 15:00:00 +0200,1,Lot de feutres,50.00,FEU-12,0.00,Paul Annulé,,2026-08-14 15:30:00 +0200,,0.00,,,7026332991732,channel:11370740
+#1059,attente@example.com,pending,,unfulfilled,EUR,80.00,0.00,13.33,80.00,0.00,2026-08-15 16:00:00 +0200,2,Fauteuil de bureau,40.00,FAU-01,0.00,Jean Attente,,,,0.00,,,7026332991999,shopify_draft_order
+#1060,rembourse@example.com,refunded,2026-08-16 10:00:00 +0200,fulfilled,EUR,20.00,0.00,3.33,20.00,0.00,2026-08-16 10:00:00 +0200,1,Trousse garnie,20.00,TRO-01,0.00,Léa Rendu,,,Carte bancaire,20.00,Boutique Chaumont,Élie,7026332992111,pos
