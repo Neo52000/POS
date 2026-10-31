@@ -170,6 +170,7 @@ test('captures : KPI du jour et météo', async ({ page }) => {
     await page.getByTestId('checkout-button').click();
     await page.getByTestId('pay-cb').click();
     await page.getByTestId('validate-payment').click();
+    await page.getByTestId('receipt-none').click();
     await expect(page.getByTestId('payment-sheet')).toBeHidden({ timeout: 8000 });
   }
   await page

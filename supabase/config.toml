@@ -27,3 +27,5 @@ verify_jwt = false
 verify_jwt = false
 [functions.pos-sales-sync]
 verify_jwt = false
+[functions.pos-send-receipt]
+verify_jwt = false

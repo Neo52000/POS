@@ -43,6 +43,14 @@ test('vente : login → ouverture session → recherche → remise 10 % → CB �
   await expect(page.getByTestId('ticket-code')).toHaveText(/^T-\d{4}-\d{6}$/);
   await expect(page.getByTestId('receipt-preview')).toContainText('TOTAL TTC');
 
+  // Ticket client : rien n'est imprimé d'office, envoi par e-mail.
+  await expect(page.getByTestId('receipt-choice')).toBeVisible();
+  await page.getByTestId('receipt-email').click();
+  await expect(page.getByTestId('receipt-send')).toBeDisabled();
+  await page.getByTestId('receipt-to').fill('client@exemple.fr');
+  await page.getByTestId('receipt-send').click();
+  await expect(page.getByTestId('receipt-done')).toContainText('e-mail');
+
   // Retour automatique au panier vide après 3 s.
   await expect(page.getByTestId('payment-sheet')).toBeHidden({ timeout: 8000 });
   await expect(page.getByTestId('cart-line')).toHaveCount(0);
@@ -154,6 +162,7 @@ test('CB captée puis rechargement : reprise de l’encaissement sans double dé
   await expect(page.getByLabel('Paiement CB capturé')).toBeVisible();
   await page.getByTestId('validate-payment').click();
   await expect(page.getByTestId('checkout-success')).toBeVisible();
+  await page.getByTestId('receipt-none').click();
   await expect(page.getByTestId('payment-sheet')).toBeHidden({ timeout: 8000 });
   await expect(page.getByTestId('draft-banner')).toHaveCount(0);
   await expect(page.getByTestId('cart-line')).toHaveCount(0);

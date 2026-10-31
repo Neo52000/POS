@@ -38,6 +38,14 @@ test('remise globale : max(remise ligne, globale) puis encaissement', async ({ p
   await page.getByTestId('pay-cb').click();
   await page.getByTestId('validate-payment').click();
   await expect(page.getByTestId('receipt-preview')).toContainText('-10 %');
+  // Ticket papier à la demande : imprimé seulement après le choix du client.
+  const printedCount = () =>
+    page.evaluate(
+      () => (globalThis as { __posMockPrinted?: unknown[] }).__posMockPrinted?.length ?? 0,
+    );
+  const before = await printedCount();
+  await page.getByTestId('receipt-paper').click();
+  await expect.poll(printedCount).toBe(before + 1);
   await expect(page.getByTestId('payment-sheet')).toBeHidden({ timeout: 8000 });
   // Panier vidé : la remise globale ne se reporte pas sur la vente suivante.
   await expect(page.getByTestId('global-discount')).toHaveCount(0);
@@ -113,6 +121,7 @@ test('KPI du jour : météo et indicateurs sur l’historique et la clôture', a
   await page.getByTestId('checkout-button').click();
   await page.getByTestId('pay-cb').click();
   await page.getByTestId('validate-payment').click();
+  await page.getByTestId('receipt-none').click();
   await expect(page.getByTestId('payment-sheet')).toBeHidden({ timeout: 8000 });
 
   await navLink(page, 'Historique').click();

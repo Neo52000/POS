@@ -346,6 +346,18 @@ export function createMockEdge(): EdgeClient {
         ],
       };
     },
+    async sendReceipt(input) {
+      assertMockOnline();
+      const full = mockState().transactions.find((t) => t.transaction.id === input.transaction_id);
+      if (!full) throw new ApiError('NOT_FOUND', 'Transaction introuvable');
+      if (input.channel === 'sms' && input.to.replace(/\D/g, '').length < 9)
+        throw new ApiError('VALIDATION', 'Numéro de mobile invalide');
+      if (input.channel === 'email' && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(input.to))
+        throw new ApiError('VALIDATION', 'Adresse e-mail invalide');
+      const n = Number(full.transaction.ticket_number);
+      const year = new Date(full.transaction.business_at).getUTCFullYear();
+      return { ok: true as const, ticket_code: `T-${year}-${String(n).padStart(6, '0')}` };
+    },
     async closePeriod(input): Promise<ClosePeriodResult> {
       assertMockOnline();
       const st = mockState();

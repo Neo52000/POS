@@ -294,7 +294,8 @@ export type PosEventType =
   | 'offline_replay_failed'
   | 'offline_sale_abandoned'
   | 'training_mode_start'
-  | 'training_mode_end';
+  | 'training_mode_end'
+  | 'receipt_delivery';
 
 /** `pos_client_settings()` (lot 4). */
 export interface PosClientSettings {

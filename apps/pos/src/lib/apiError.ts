@@ -16,7 +16,8 @@ export type ApiErrorCode =
   | 'OFFLINE_FORBIDDEN'
   | 'PERIOD_NOT_ENDED'
   | 'SESSION_OPEN_IN_PERIOD'
-  | 'NOTHING_TO_CLOSE';
+  | 'NOTHING_TO_CLOSE'
+  | 'DELIVERY_FAILED';
 
 export class ApiError extends Error {
   constructor(
@@ -91,6 +92,7 @@ export const ERROR_MESSAGES: Record<ApiErrorCode, string> = {
   SESSION_OPEN_IN_PERIOD:
     'Une session ouverte pendant cette période n’est pas clôturée : faites d’abord son Z1.',
   NOTHING_TO_CLOSE: 'Aucune activité avant la fin de cette période : rien à clôturer.',
+  DELIVERY_FAILED: 'Envoi du ticket impossible.',
 };
 
 /** Message en clair pour l'UI (SPEC §5). */
