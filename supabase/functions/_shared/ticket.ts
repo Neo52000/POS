@@ -6,6 +6,8 @@ export interface TicketPayload {
   ticket_number: number | null;
   ticket_code: string;
   duplicate: boolean;
+  /** Rang du duplicata renvoyé par pos_reprint (0.4.0). */
+  duplicate_number?: number;
   kind: 'sale' | 'refund';
   refund_of_ticket_code?: string;
   business_at: string;

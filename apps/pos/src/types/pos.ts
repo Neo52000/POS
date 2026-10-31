@@ -26,6 +26,8 @@ export interface PosRegister {
   code: string;
   label: string | null;
   is_active: boolean;
+  /** Caisse d'essai (0.4.0) : signalée sur les rapports. */
+  is_test?: boolean;
 }
 
 export type SessionStatus = 'open' | 'closed';
@@ -353,6 +355,7 @@ export type PosEventType =
   | 'offline_sale_abandoned'
   | 'training_mode_start'
   | 'training_mode_end'
+  | 'training_sale'
   | 'receipt_delivery';
 
 /** `pos_client_settings()` (lot 4). */

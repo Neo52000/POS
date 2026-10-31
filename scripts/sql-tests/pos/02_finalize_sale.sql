@@ -28,7 +28,7 @@ DECLARE
   v_n          int;
 BEGIN
   -- ---------------------------------------------------------------- setup
-  INSERT INTO public.pos_registers (code, label) VALUES ('TEST-01', 'Caisse de test SQL') ON CONFLICT (code) DO NOTHING;
+  INSERT INTO public.pos_registers (code, label, is_test) VALUES ('TEST-01', 'Caisse de test SQL', true) ON CONFLICT (code) DO NOTHING;
   SELECT id INTO v_reg FROM public.pos_registers WHERE code = 'TEST-01';
   -- 0.4.0 : une session TEST-01 ouverte un jour précédent est périmée (SESSION_STALE) : Z puis réouverture.
   PERFORM public.pos_close_session(s.id, 0, 'session périmée (test 02)', v_cashier)

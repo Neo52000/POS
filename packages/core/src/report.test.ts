@@ -119,6 +119,11 @@ describe('buildReport — trous hors ligne (Z1, 0.4.0)', () => {
     expect(text).toContain('Maillons manquants=1');
   });
 
+  it('caisse d’essai signalée en pied', () => {
+    const r = buildReport(figures, ctx({ test_register: true }));
+    expect(r.footer.join('\n')).toContain("CAISSE D'ESSAI");
+  });
+
   it('absent sans donnée (clôtures antérieures à 0.4.0)', () => {
     const r = buildReport(figures, ctx({ kind: 'Z1', period_end: '2026-09-28T17:05:00.000Z' }));
     expect(flat(r)).not.toContain('Trous non résolus');

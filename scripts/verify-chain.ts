@@ -33,6 +33,8 @@ const PAGE = 1000;
 interface Register {
   id: string;
   code: string;
+  /** Caisse d'essai (0.4.0) ; absent avant la migration du lot 7. */
+  is_test?: boolean;
 }
 
 interface CheckRow {
@@ -44,7 +46,7 @@ interface CheckRow {
 }
 
 async function loadRegisters(): Promise<Register[]> {
-  let query = db.from('pos_registers').select('id, code').order('code');
+  let query = db.from('pos_registers').select('*').order('code');
   query = registerCode ? query.eq('code', registerCode) : query.eq('is_active', true);
   const { data, error } = await query;
   if (error) throw error;
@@ -203,7 +205,7 @@ async function checkRegister(reg: Register): Promise<CheckRow[]> {
 
 function printTable(rows: CheckRow[]): void {
   const cells = rows.map((r) => [
-    r.register,
+    testCodes.has(r.register) ? `${r.register} [ESSAI]` : r.register,
     r.check,
     r.ok ? 'OK' : 'RUPTURE',
     r.checked === null ? '-' : String(r.checked),
@@ -221,10 +223,21 @@ function printTable(rows: CheckRow[]): void {
   for (const c of cells) console.log(line(c));
 }
 
+/** Caisses d'essai (`is_test`) : signalées dans le tableau et en pied. */
+const testCodes = new Set<string>();
+
 async function main(): Promise<void> {
   const rows: CheckRow[] = [];
-  for (const reg of await loadRegisters()) rows.push(...(await checkRegister(reg)));
+  for (const reg of await loadRegisters()) {
+    if (reg.is_test) testCodes.add(reg.code);
+    rows.push(...(await checkRegister(reg)));
+  }
   printTable(rows);
+  if (testCodes.size > 0) {
+    console.log(
+      `\n[ESSAI] caisse(s) d'essai (pos_registers.is_test) : ${[...testCodes].join(', ')} — hors exploitation.`,
+    );
+  }
   const failed = rows.filter((r) => !r.ok).length;
   console.log(failed === 0 ? '\nTout est intègre.' : `\n${failed} contrôle(s) en échec.`);
   process.exit(failed === 0 ? 0 : 1);

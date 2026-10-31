@@ -173,8 +173,8 @@ BEGIN
   INSERT INTO pos_test_results VALUES ('is_pos', true, 'session_user=' || session_user);
 
   -- 10. caisse de test TEST-01 (créée si absente) + compteurs auto
-  INSERT INTO public.pos_registers (code, label, fiskaly_env)
-  VALUES ('TEST-01', 'Caisse de test SQL (données de test, ne pas utiliser)', 'test')
+  INSERT INTO public.pos_registers (code, label, fiskaly_env, is_test)
+  VALUES ('TEST-01', 'Caisse de test SQL (données de test, ne pas utiliser)', 'test', true)
   ON CONFLICT (code) DO NOTHING;
   SELECT id INTO v_reg FROM public.pos_registers WHERE code = 'TEST-01';
   SELECT count(*) INTO v_n FROM public.pos_counters WHERE register_id = v_reg;

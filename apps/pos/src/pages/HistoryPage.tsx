@@ -16,7 +16,7 @@ import { usePrinter } from '@/hooks/usePrinter';
 import { DayKpiStrip } from '@/components/kpi/DayKpiStrip';
 import { paymentSummary, useTodayTickets } from '@/hooks/useTodayTickets';
 import { useTransactionFull } from '@/hooks/useTransactionFull';
-import { logEvent } from '@/lib/events';
+import { rpc } from '@/lib/supabase';
 import { formatEurCents, formatTime } from '@/lib/format';
 import { buildTicketPayload, ticketCode } from '@/lib/ticket';
 import { cn, errorMessage } from '@/lib/utils';
@@ -56,15 +56,43 @@ export function HistoryPage() {
     [full.data],
   );
 
+  const [reprinting, setReprinting] = useState(false);
+
+  /**
+   * Duplicata (0.4.0) : `pos_reprint` journalise d'abord la réimpression (JET synchrone) et
+   * renvoie son rang ; « DUPLICATA n°X » n'est imprimé qu'après ce succès. Refusé hors ligne.
+   */
   const reprint = async (): Promise<void> => {
-    if (!ticket || !full.data) return;
-    void logEvent('reprint', {
-      transaction_id: full.data.transaction.id,
-      ticket_code: ticket.ticket_code,
-    });
-    const outcome = await print(ticket);
-    if (outcome === 'printed')
-      toast({ title: `Duplicata ${ticket.ticket_code} imprimé`, variant: 'success' });
+    if (!full.data || reprinting) return;
+    if (offline) {
+      toast({
+        title: 'Duplicata impossible hors ligne',
+        description: 'La réimpression doit d’abord être enregistrée au journal.',
+        variant: 'danger',
+      });
+      return;
+    }
+    setReprinting(true);
+    try {
+      const r = await rpc<{ duplicate_number: number }>('pos_reprint', {
+        p_transaction_id: full.data.transaction.id,
+        p_training: training,
+      });
+      const dup = buildTicketPayload(full.data, {
+        duplicate: true,
+        duplicateNumber: r.duplicate_number,
+      });
+      const outcome = await print(dup);
+      if (outcome === 'printed')
+        toast({
+          title: `Duplicata n°${r.duplicate_number} de ${dup.ticket_code} imprimé`,
+          variant: 'success',
+        });
+    } catch (e) {
+      toast({ title: 'Duplicata non imprimé', description: errorMessage(e), variant: 'danger' });
+    } finally {
+      setReprinting(false);
+    }
   };
 
   const totalDay = (tickets.data ?? []).reduce((s, t) => s + Number(t.total_ttc_cents), 0);
@@ -191,6 +219,8 @@ export function HistoryPage() {
                 size="touch"
                 className="flex-1"
                 onClick={() => void reprint()}
+                disabled={offline || reprinting}
+                title={offline ? 'Duplicata impossible hors ligne' : undefined}
                 data-testid="reprint-button"
               >
                 <Printer className="h-5 w-5" /> Duplicata

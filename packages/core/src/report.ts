@@ -122,6 +122,8 @@ export interface ReportContext {
   hash?: string | null;
   training?: boolean;
   duplicate?: boolean;
+  /** Caisse d'essai (`pos_registers.is_test`, 0.4.0) : mention en pied de rapport. */
+  test_register?: boolean;
 }
 
 const money = (cents: number): string => formatEurCents(cents);
@@ -319,6 +321,7 @@ export function buildReport(figures: ReportFigures, ctx: ReportContext): ReportP
     footer.push(`Empreinte ${ctx.hash.slice(0, 16)}`);
   }
   if (ctx.training) footer.push('MODE FORMATION - AUCUNE VENTE ENREGISTRÉE');
+  if (ctx.test_register) footer.push("CAISSE D'ESSAI - HORS EXPLOITATION");
 
   return {
     version: REPORT_PAYLOAD_VERSION,

@@ -420,9 +420,11 @@ n'est jamais tronqué.
 - TPE simulé (`useTpePayment`) : jamais d'appel `/payment` au pont, donc jamais de débit réel.
 - Session de caisse non requise (`session_id` fictif `00000000-0000-4000-8000-000000000000`) ;
   ouverture / clôture de session, Z2 / Z3 et inventaire sont désactivés.
-- JET : rien n'est journalisé **sauf** `training_mode_start`, `training_mode_end` (nombre et total
-  des tickets de formation) et les actes réels toujours possibles, marqués `training: true` :
-  `drawer_opened`, `reprint` (duplicata d'un vrai ticket ou d'une clôture).
+- JET : rien n'est journalisé **sauf** `training_mode_start` (administrateur, en ligne, enregistré
+  avant l'activation — 0.4.0), `training_sale` (chaque vente de formation, 0.4.0),
+  `training_mode_end` (nombre et total des tickets de formation) et les actes réels toujours
+  possibles, marqués `training: true` : `drawer_opened`, `reprint` (duplicata d'un vrai ticket ou
+  d'une clôture).
 - Ticket et rapport imprimés : « FORMATION — Ticket sans valeur - non enregistré », pas d'empreinte
   ni de signature. Lecture X de formation calculée sur les tickets locaux (`summarizeTickets`).
 - Sortie : panier, encaissement interrompu et tickets de formation effacés ; tickets en attente
@@ -585,3 +587,26 @@ archive|prev_hash")`. Tête JET = hash du dernier événement de la caisse cré�
   dans un « payload de clôture Fiskaly » (écart documenté, voir PR 0.4.0).
 - Tests : `scripts/sql-tests/pos/18_closings_v2.sql` (vecteurs, falsification du JET détectée),
   `packages/core/src/closing.test.ts`.
+
+### 14.7 Duplicatas, mode formation, caisses d'essai (lot 7)
+
+- `pos_reprint(p_transaction_id, p_training default false)` → `{duplicate_number, event_id,
+transaction_id, ticket_number}` : JET `reprint` `{document: 'ticket', transaction_id,
+ticket_number, duplicate_number, synchronous: true}` écrit **avant** l'impression ; rang =
+  réimpressions déjà tracées du ticket + 1 (verrou par ticket). `TicketPayload.duplicate_number`
+  (optionnel) → « DUPLICATA n°X » (aperçu PWA, pont 0.2.1). Historique : duplicata imprimé
+  seulement après succès ; refusé hors ligne. Le best effort `logEvent('reprint')` de l'historique
+  est supprimé (les duplicatas de clôture de l'écran Rapports restent journalisés par `logEvent`).
+- Mode formation : activation réservée à un administrateur (`useIsAdmin` côté PWA ;
+  `pos_log_event('training_mode_start')` → `FORBIDDEN_ROLE` sinon), en ligne, `training_mode_start`
+  enregistré avant l'activation. Chaque vente de formation → JET `training_sale` `{training: true,
+training_code: 'FORM-nnnn', kind, business_at, lines, total_ttc_cents, payments}` ; le serveur
+  refuse un `training_sale` sans `training: true` ou portant `ticket_number`, `hash` ou
+  `transaction_id`.
+- `pos_registers.is_test` (défaut `false`) : `TEST-01`, `TEST-10`, `T08-*`, `TESTVEC-*` marquées
+  par la migration (tracé `register_change`, `via: 'migration'`) ; modifiable par
+  `pos_admin_update_register`. `pnpm verify-chain` affiche `[ESSAI]` ; les rapports X / Z portent
+  « CAISSE D'ESSAI - HORS EXPLOITATION » (`ReportContext.test_register`). Les tests SQL créent leurs
+  caisses avec `is_test = true`.
+- Tests : `scripts/sql-tests/pos/19_reprint_training.sql`, `apps/pos/src/lib/training.test.ts`,
+  `packages/core/src/ticket.test.ts`, `report.test.ts`, `services/tpe-bridge/test/renderer.test.ts`.

@@ -1,4 +1,10 @@
-import { PAYMENT_METHOD_LABELS, computeCart, formatEurCents, isPaymentMethod } from '@pos/core';
+import {
+  PAYMENT_METHOD_LABELS,
+  computeCart,
+  duplicateLabel,
+  formatEurCents,
+  isPaymentMethod,
+} from '@pos/core';
 import type { CheckoutPayload, TicketPayload } from '@pos/core';
 import { env } from '@/lib/env';
 import type { CustomerSnapshot, PosSettingsMap, TransactionFull } from '@/types/pos';
@@ -27,7 +33,7 @@ export function ticketCode(businessAt: string, ticketNumber: number): string {
 /** Port client de `_shared/ticket.ts` (Edge) : `pos_transaction_full` → `TicketPayload` (SPEC §6). */
 export function buildTicketPayload(
   full: TransactionFull,
-  opts: { duplicate?: boolean } = {},
+  opts: { duplicate?: boolean; duplicateNumber?: number } = {},
 ): TicketPayload {
   const t = full.transaction;
   const register = full.register;
@@ -45,6 +51,9 @@ export function buildTicketPayload(
     ticket_number: ticketNumber,
     ticket_code: code,
     duplicate: opts.duplicate === true,
+    ...(opts.duplicate === true && opts.duplicateNumber
+      ? { duplicate_number: opts.duplicateNumber }
+      : {}),
     kind: t.kind === 'refund' ? 'refund' : 'sale',
     business_at: t.business_at,
     cashier_name: full.cashier_name ?? t.cashier_id ?? '',
@@ -265,7 +274,7 @@ export function renderTicketText(ticket: TicketPayload, width = WIDTH): string[]
   if (ticket.header.siret) out.push(center(`SIRET ${ticket.header.siret}`, width));
   if (ticket.header.vat_number) out.push(center(`TVA ${ticket.header.vat_number}`, width));
   out.push(sep);
-  if (ticket.duplicate) out.push(center('*** DUPLICATA ***', width));
+  if (ticket.duplicate) out.push(center(`*** ${duplicateLabel(ticket)} ***`, width));
   if (ticket.kind === 'refund') out.push(center('*** REMBOURSEMENT ***', width));
   if (ticket.compliance.provisional) out.push(center('*** TICKET PROVISOIRE ***', width));
   if (ticket.compliance.training) {

@@ -96,7 +96,9 @@ async function loadSession(preferredRegisterId: string | null): Promise<SessionL
 async function loadSessionRemote(preferredRegisterId: string | null): Promise<SessionLoad> {
   const { data: regs, error } = await supabase
     .from('pos_registers')
-    .select('id, code, label, is_active')
+    // `*` : tolère l'absence d'une colonne ajoutée par migration (is_test, 0.4.0) si la PWA
+    // est déployée avant elle.
+    .select('*')
     .eq('is_active', true)
     .order('code');
   if (error) throw new Error(error.message);

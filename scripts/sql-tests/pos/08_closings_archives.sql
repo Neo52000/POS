@@ -56,7 +56,7 @@ BEGIN
   INSERT INTO pos_test_results VALUES ('period_bounds', true, 'jour de 23 h (heure d''été) ; mois Europe/Paris');
 
   -- ---------------------------------------------------------- setup
-  INSERT INTO public.pos_registers (code, label) VALUES (v_code, 'Caisse jetable test 08') RETURNING id INTO v_reg;
+  INSERT INTO public.pos_registers (code, label, is_test) VALUES (v_code, 'Caisse jetable test 08', true) RETURNING id INTO v_reg;
   SELECT value INTO v_tol_old FROM public.pos_settings WHERE key = 'clock_tolerance';
   ALTER TABLE public.pos_settings DISABLE TRIGGER trg_pos_settings_guard;
   ALTER TABLE public.pos_settings DISABLE TRIGGER trg_pos_settings_jet;

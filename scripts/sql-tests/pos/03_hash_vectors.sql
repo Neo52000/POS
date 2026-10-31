@@ -135,7 +135,7 @@ BEGIN
   INSERT INTO pos_test_results VALUES ('pure_all', true, v_idx || ' vecteurs : canonical_string et hash identiques au TS');
 
   -- ===================================================== B) vérification live
-  INSERT INTO public.pos_registers (code, label) VALUES (v_code, 'Vecteurs de hash (test)') RETURNING id INTO v_reg;
+  INSERT INTO public.pos_registers (code, label, is_test) VALUES (v_code, 'Vecteurs de hash (test)', true) RETURNING id INTO v_reg;
   SELECT id INTO v_session FROM public.pos_open_session(v_reg, 0, v_cashier);
 
   v_idx := 0;
