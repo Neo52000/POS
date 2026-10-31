@@ -7,6 +7,25 @@ import { uuidv4 } from '@/lib/uuid';
 import type { PosProduct, ResolvedPrice } from '@/types/pos';
 import { useCustomerStore } from '@/stores/customerStore';
 
+/**
+ * Origine d'une ligne transférée depuis une commande ou un BL ma-papeterie (hors périmètre fiscal).
+ * Sert à construire `settlement_lines` à l'encaissement ; jamais transmise à `pos_finalize_sale`.
+ */
+export interface CartLineSource {
+  /** Client du document : une ligne n'est réglée que pour ce client. */
+  account_id: string;
+  doc_kind: 'order' | 'delivery_note' | 'shipping';
+  /** `sales_orders.id` ou `delivery_notes.id`. */
+  doc_id: string;
+  doc_number: string;
+  order_id: string;
+  /** `null` pour les frais de port (non réglés à la ligne). */
+  sales_order_line_id: string | null;
+  delivery_note_line_id: string | null;
+  /** Quantité restant à encaisser au moment du transfert : plafond du règlement. */
+  qty_open: number;
+}
+
 /** Ligne de panier : `CartLineInput` (SPEC §2) + données d'affichage. */
 export interface CartLine extends CartLineInput {
   key: string;
@@ -18,6 +37,8 @@ export interface CartLine extends CartLineInput {
   public_price_ttc_cents?: number | null;
   /** Prix unitaire saisi à la main : jamais écrasé par un tarif pro. */
   price_overridden?: boolean;
+  /** Ligne transférée d'une commande / d'un BL : jamais fusionnée avec une autre ligne. */
+  source?: CartLineSource | null;
 }
 
 export interface AddProductOptions {
@@ -30,6 +51,8 @@ export interface AddProductOptions {
   discount_percent?: number;
   /** Si `false`, n'appelle pas la résolution de prix client (déjà résolu). */
   resolvePricing?: boolean;
+  /** Ligne transférée d'une commande / d'un BL (ligne dédiée, jamais fusionnée). */
+  source?: CartLineSource | null;
 }
 
 export interface FreeLineInput {
@@ -39,6 +62,7 @@ export interface FreeLineInput {
   qty?: number;
   /** Code-barres scanné mais inconnu du catalogue. */
   ean?: string | null;
+  source?: CartLineSource | null;
 }
 
 export type ClearReason =
@@ -155,6 +179,8 @@ export const useCartStore = create<CartState>()(
         // l'a modifiée (le tarif est réévalué sur la quantité totale).
         const existing = get().lines.find(
           (l) =>
+            !opts.source &&
+            !l.source &&
             l.product_id === product.id &&
             (l.price_tier_title ?? null) === tier &&
             (l.discount_percent ?? 0) === discount &&
@@ -186,6 +212,7 @@ export const useCartStore = create<CartState>()(
             product_name: product.name,
             image_url: product.image_url,
             stock_boutique: product.stock_boutique,
+            ...(opts.source ? { source: opts.source } : {}),
           };
           set((s) => ({ lines: renumber([...s.lines, line]) }));
         }
@@ -217,6 +244,7 @@ export const useCartStore = create<CartState>()(
           product_name: input.label,
           image_url: null,
           stock_boutique: null,
+          ...(input.source ? { source: input.source } : {}),
         };
         set((s) => ({ lines: renumber([...s.lines, line]) }));
         return line;

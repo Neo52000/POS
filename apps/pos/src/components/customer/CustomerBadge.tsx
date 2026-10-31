@@ -1,7 +1,8 @@
 import { Building2, FileText, Loader2, PackageOpen, Phone, User, UserPlus, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { useCustomerOrders } from '@/hooks/useCustomerOrders';
+import { useCustomerDocuments } from '@/hooks/useCustomerDocuments';
+import { openDocumentsCount } from '@/lib/documentImport';
 import { useCustomerStore } from '@/stores/customerStore';
 import { useUiStore } from '@/stores/uiStore';
 
@@ -19,8 +20,11 @@ export function CustomerBadge({ onSearch, onQuotes, onOrders }: CustomerBadgePro
   const error = useCustomerStore((s) => s.error);
   const detach = useCustomerStore((s) => s.detach);
   const offline = useUiStore((s) => s.connectivity === 'offline');
-  const orders = useCustomerOrders(account && !offline ? account.id : null, passageContact?.id);
-  const ordersCount = orders.data?.length ?? 0;
+  const documents = useCustomerDocuments(
+    account && !offline ? account.id : null,
+    passageContact?.id,
+  );
+  const ordersCount = openDocumentsCount(documents.data);
 
   if (!account) {
     return (
@@ -106,7 +110,7 @@ export function CustomerBadge({ onSearch, onQuotes, onOrders }: CustomerBadgePro
           disabled={offline}
           data-testid="orders-button"
         >
-          <PackageOpen className="h-5 w-5" /> Transférer une commande ({ordersCount})
+          <PackageOpen className="h-5 w-5" /> Commandes / BL en cours ({ordersCount})
         </Button>
       )}
     </div>

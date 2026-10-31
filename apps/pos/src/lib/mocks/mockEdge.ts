@@ -7,6 +7,7 @@ import { businessDate } from '@/lib/format';
 import type {
   ClosePeriodResult,
   ExportArchiveResult,
+  OpenDocumentItem,
   PosClosing,
   PosArchive,
   PosPayment,
@@ -18,10 +19,10 @@ import type {
 } from '@/types/pos';
 import {
   MOCK_CUSTOMERS,
-  MOCK_ORDERS,
+  MOCK_DOCUMENTS,
   MOCK_PASSAGE_ACCOUNT_ID,
   MOCK_PASSAGE_CONTACTS,
-  MOCK_PASSAGE_ORDERS,
+  MOCK_PASSAGE_DOCUMENTS,
   MOCK_QUOTES,
   MOCK_REGISTER,
   MOCK_SETTINGS,
@@ -30,6 +31,40 @@ import {
 import { mockProducts } from './mockCatalog';
 import { assertMockOnline } from './mockNetwork';
 import { mockSave, mockState } from './mockStore';
+
+/**
+ * Règlement mock (pos_settle_documents / pos_settle_orders) : les quantités réglées sortent des
+ * documents à encaisser ; une commande transférée par l'ancien modèle (`order_id`) sort entière.
+ */
+function mockSettleDocuments(payload: CheckoutPayload): void {
+  const settled = new Map<string, number>();
+  for (const l of payload.settlement_lines ?? []) {
+    const k = `${l.sales_order_line_id}/${l.delivery_note_line_id ?? ''}`;
+    settled.set(k, (settled.get(k) ?? 0) + l.qty);
+  }
+  const settleItems = <T extends { items: OpenDocumentItem[] }>(doc: T): T => ({
+    ...doc,
+    items: doc.items
+      .map((it) => ({
+        ...it,
+        quantity:
+          it.quantity -
+          (settled.get(`${it.sales_order_line_id}/${it.delivery_note_line_id ?? ''}`) ?? 0),
+      }))
+      .filter((it) => it.quantity > 0),
+  });
+  for (const store of [MOCK_DOCUMENTS, MOCK_PASSAGE_DOCUMENTS]) {
+    for (const [id, docs] of Object.entries(store)) {
+      store[id] = {
+        orders: docs.orders
+          .filter((o) => o.id !== payload.order_id)
+          .map(settleItems)
+          .filter((o) => o.items.length > 0),
+        delivery_notes: docs.delivery_notes.map(settleItems).filter((d) => d.items.length > 0),
+      };
+    }
+  }
+}
 
 /** `pos_settings.clock_tolerance` (contrat lot 4). */
 const CLOCK_TOLERANCE = { online_minutes: 10, offline_hours: 72, future_minutes: 5 };
@@ -276,15 +311,7 @@ export function createMockEdge(): EdgeClient {
       };
       st.transactions.push(full);
       mockSave();
-      // Commande transférée : réglée, retirée des commandes à encaisser (pos_settle_orders).
-      if (payload.order_id && payload.kind === 'sale') {
-        for (const [accountId, orders] of Object.entries(MOCK_ORDERS)) {
-          MOCK_ORDERS[accountId] = orders.filter((o) => o.id !== payload.order_id);
-        }
-        for (const [contactId, orders] of Object.entries(MOCK_PASSAGE_ORDERS)) {
-          MOCK_PASSAGE_ORDERS[contactId] = orders.filter((o) => o.id !== payload.order_id);
-        }
-      }
+      if (payload.kind === 'sale') mockSettleDocuments(payload);
       return {
         transaction,
         lines,
@@ -493,10 +520,12 @@ export function createMockEdge(): EdgeClient {
       assertMockOnline();
       return MOCK_QUOTES[accountId] ?? [];
     },
-    async customerOrders(accountId, passageContactId) {
+    async customerDocuments(accountId, passageContactId) {
       assertMockOnline();
-      if (passageContactId) return MOCK_PASSAGE_ORDERS[passageContactId] ?? [];
-      return MOCK_ORDERS[accountId] ?? [];
+      const docs = passageContactId
+        ? MOCK_PASSAGE_DOCUMENTS[passageContactId]
+        : MOCK_DOCUMENTS[accountId];
+      return structuredClone(docs ?? { orders: [], delivery_notes: [] });
     },
     async passageSearch(q) {
       assertMockOnline();
@@ -506,7 +535,12 @@ export function createMockEdge(): EdgeClient {
         (c) =>
           c.full_name.toLowerCase().includes(needle) ||
           (digits.length >= 4 && (c.phone ?? '').replace(/\D/g, '').includes(digits)),
-      ).map((c) => ({ ...c, open_orders_count: MOCK_PASSAGE_ORDERS[c.id]?.length ?? 0 }));
+      ).map((c) => ({
+        ...c,
+        open_orders_count:
+          (MOCK_PASSAGE_DOCUMENTS[c.id]?.orders.length ?? 0) +
+          (MOCK_PASSAGE_DOCUMENTS[c.id]?.delivery_notes.length ?? 0),
+      }));
     },
     async passageCreate(fullName, phone) {
       assertMockOnline();

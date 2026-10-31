@@ -27,7 +27,8 @@ test('client de passage : recherche par téléphone → commande transférée �
   await expect(page.getByTestId('customer-badge')).toContainText('Passage');
 
   await page.getByTestId('orders-button').click();
-  await page.getByTestId('import-order').first().click();
+  await page.getByTestId('document-CO-2026-00701').check();
+  await page.getByTestId('import-documents').click();
   await expect(page.getByTestId('cart-line').first()).toContainText('Cahier Clairefontaine');
 
   await page.getByTestId('checkout-button').click();

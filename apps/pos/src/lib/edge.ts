@@ -9,7 +9,7 @@ export { ApiError, describeApiError, isApiError, isNetworkError } from '@/lib/ap
 export type { ApiErrorCode } from '@/lib/apiError';
 import type {
   ClosePeriodResult,
-  CustomerOrder,
+  CustomerOpenDocuments,
   CustomerQuote,
   ExportArchiveResult,
   PassageContact,
@@ -34,10 +34,13 @@ export interface EdgeClient {
   customerSearch(q: string, limit?: number): Promise<PosCustomer[]>;
   customerQuotes(accountId: string): Promise<CustomerQuote[]>;
   /**
-   * Commandes non réglées (`pos-customer-orders`), transférables en caisse : du client pro, ou de
-   * la personne de passage si `passageContactId` est fourni.
+   * Commandes (partie non livrée) et BL (lignes livrées) non réglés du client pro, ou de la
+   * personne de passage si `passageContactId` (`pos-customer-orders`, `documents: true`).
    */
-  customerOrders(accountId: string, passageContactId?: string | null): Promise<CustomerOrder[]>;
+  customerDocuments(
+    accountId: string,
+    passageContactId?: string | null,
+  ): Promise<CustomerOpenDocuments>;
   /** Personnes de passage par nom ou téléphone (`pos-passage-contacts`, action `search`). */
   passageSearch(q: string, limit?: number): Promise<PassageContact[]>;
   /** Crée (ou retrouve par téléphone) une personne de passage (`pos-passage-contacts`). */
@@ -124,12 +127,18 @@ function createRealEdge(): EdgeClient {
       const r = await callEdge<{ quotes: CustomerQuote[] }>('pos-customer-quotes', { account_id });
       return r.quotes ?? [];
     },
-    customerOrders: async (account_id, passageContactId) => {
-      const r = await callEdge<{ orders: CustomerOrder[] }>(
+    customerDocuments: async (account_id, passageContactId) => {
+      const r = await callEdge<{ documents?: CustomerOpenDocuments }>(
         'pos-customer-orders',
-        passageContactId ? { passage_contact_id: passageContactId } : { account_id },
+        passageContactId
+          ? { passage_contact_id: passageContactId, documents: true }
+          : { account_id, documents: true },
       );
-      return r.orders ?? [];
+      // Fonction serveur antérieure (sans `documents`) : rien de réglable à la ligne.
+      if (!r.documents) {
+        throw new Error('Fonctions caisse à mettre à jour (commandes et BL indisponibles)');
+      }
+      return r.documents;
     },
     passageSearch: async (q, limit = 10) => {
       const r = await callEdge<{ contacts: PassageContact[] }>('pos-passage-contacts', {

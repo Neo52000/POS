@@ -6,12 +6,19 @@
 // commande ma-papeterie transférée (hors périmètre fiscal, non bloquant) 7. TicketPayload.
 // Contact de passage (hors périmètre fiscal) : retiré du payload comme order_id, inscrit dans
 // l'outbox pos_transaction_passage_contacts juste après validation, transmis par pos-sales-sync.
+// Lignes de commandes / BL réglées (settlement_lines, hors périmètre fiscal) : même traitement,
+// outbox pos_document_settlements → pos_settle_documents.
 // =============================================================================
 import { z } from 'npm:zod@3';
 import { requirePos } from '../_shared/auth.ts';
 import { ApiError, errorResponse, handleOptions, json, readJson } from '../_shared/http.ts';
 import { fetchCustomerSnapshot } from '../_shared/mapapeterie.ts';
-import { recordOrderSettlement, syncPendingOrderSettlements } from '../_shared/orderSettlement.ts';
+import {
+  recordDocumentSettlement,
+  recordOrderSettlement,
+  syncPendingDocumentSettlements,
+  syncPendingOrderSettlements,
+} from '../_shared/orderSettlement.ts';
 import { recordPassageContact } from '../_shared/passageContact.ts';
 import { loadTransactionFull, signTransaction } from '../_shared/signing.ts';
 import { syncStockForTransaction } from '../_shared/stockSync.ts';
@@ -35,6 +42,12 @@ const LineSchema = z.object({
   pricing_rule_id: uuid.nullable().optional(),
   price_tier_title: z.string().max(120).nullable().optional(),
   public_price_ttc_cents: cents.nullable().optional(),
+});
+
+const SettlementLineSchema = z.object({
+  sales_order_line_id: uuid,
+  delivery_note_line_id: uuid.nullable().optional(),
+  qty: z.number().positive().refine((q) => Math.round(q * 1000) === q * 1000, '3 décimales max'),
 });
 
 const PaymentSchema = z.object({
@@ -66,6 +79,9 @@ export const CheckoutSchema = z
     // transmise à pos_finalize_sale. customer_account_id = fiche « Client passage ».
     passage_contact_id: uuid.optional(),
     passage_contact_name: z.string().trim().min(1).max(160).optional(),
+    // Lignes de commandes / BL ma-papeterie réglées : hors périmètre fiscal, jamais transmises à
+    // pos_finalize_sale.
+    settlement_lines: z.array(SettlementLineSchema).min(1).max(500).optional(),
     invoice_requested: z.boolean().default(false),
     lines: z.array(LineSchema).min(1),
     payments: z.array(PaymentSchema).min(1),
@@ -76,6 +92,16 @@ export const CheckoutSchema = z
   .superRefine((v, ctx) => {
     if (v.passage_contact_id && !v.customer_account_id) {
       ctx.addIssue({ code: 'custom', message: 'passage_contact_id exige customer_account_id (fiche Client passage)' });
+    }
+    if (v.settlement_lines) {
+      if (v.kind !== 'sale') ctx.addIssue({ code: 'custom', message: 'settlement_lines : ventes uniquement' });
+      if (!v.customer_account_id) {
+        ctx.addIssue({ code: 'custom', message: 'settlement_lines exige customer_account_id' });
+      }
+      const keys = v.settlement_lines.map((l) => `${l.sales_order_line_id}/${l.delivery_note_line_id ?? ''}`);
+      if (new Set(keys).size !== keys.length) {
+        ctx.addIssue({ code: 'custom', message: 'settlement_lines : ligne en double' });
+      }
     }
     if (v.kind === 'refund' && (!v.refund_of_transaction_id || !v.refund_reason)) {
       ctx.addIssue({ code: 'custom', message: 'refund_of_transaction_id et refund_reason requis pour un remboursement' });
@@ -108,6 +134,7 @@ Deno.serve(async (req) => {
       order_id: orderId,
       passage_contact_id: passageContactId,
       passage_contact_name: passageContactName,
+      settlement_lines: settlementLines,
       ...fiscal
     } = parsed.data;
     const payload: Record<string, unknown> = { ...fiscal };
@@ -160,6 +187,20 @@ Deno.serve(async (req) => {
         : await syncPendingOrderSettlements(auth.db, { transactionIds: [transactionId] });
       orderSettlement = { done: out.done > 0, error: out.error ?? null };
     }
+    // Lignes de commandes / BL réglées (rejouées par le cron en cas d'échec).
+    let documentSettlement: { done: boolean; rejected: boolean; error: string | null } | null = null;
+    if (settlementLines && parsed.data.kind === 'sale') {
+      const lines = settlementLines.map((l) => ({
+        sales_order_line_id: l.sales_order_line_id,
+        delivery_note_line_id: l.delivery_note_line_id ?? null,
+        qty: l.qty,
+      }));
+      const recErr = await recordDocumentSettlement(auth.db, transactionId, lines);
+      const out = recErr
+        ? { done: 0, rejected: 0, error: recErr }
+        : await syncPendingDocumentSettlements(auth.db, { transactionIds: [transactionId] });
+      documentSettlement = { done: out.done > 0, rejected: out.rejected > 0, error: out.error ?? null };
+    }
     return json(200, {
       transaction: full.transaction,
       lines: full.lines,
@@ -168,6 +209,7 @@ Deno.serve(async (req) => {
       idempotent_replay: result.idempotent_replay === true,
       stock_sync: { done: stock.done, pending: stock.processed - stock.done, error: stock.error ?? null },
       order_settlement: orderSettlement,
+      document_settlement: documentSettlement,
     });
   } catch (e) {
     return errorResponse(e);
