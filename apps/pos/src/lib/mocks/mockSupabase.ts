@@ -275,6 +275,7 @@ async function rpc(name: string, params: Record<string, unknown> = {}): Promise<
 /** Mini query builder pour `from(table).select().eq().order().maybeSingle()`. */
 function from(table: string) {
   const filters: Array<[string, unknown]> = [];
+  const inFilters: Array<[string, unknown[]]> = [];
   let single = false;
   let limitN: number | null = null;
 
@@ -289,12 +290,17 @@ function from(table: string) {
       rows = [...mockState().closings]
         .sort((a, b) => b.closing_number - a.closing_number)
         .map((c) => ({ ...c }) as unknown as Record<string, unknown>);
+    else if (table === 'pos_payments')
+      rows = mockState().transactions.flatMap((t) =>
+        t.payments.map((p) => ({ ...p }) as unknown as Record<string, unknown>),
+      );
     else if (table === 'pos_archives')
       rows = [...mockState().archives]
         .sort((a, b) => b.period_start.localeCompare(a.period_start))
         .map((a) => ({ ...a }) as unknown as Record<string, unknown>);
     else return fail(`table mock inconnue : ${table}`);
     for (const [k, v] of filters) rows = rows.filter((r) => r[k] === v);
+    for (const [k, vs] of inFilters) rows = rows.filter((r) => vs.includes(r[k]));
     if (limitN != null) rows = rows.slice(0, limitN);
     if (single) return ok(rows[0] ?? null);
     return ok(rows);
@@ -304,6 +310,10 @@ function from(table: string) {
     select: () => builder,
     eq: (k: string, v: unknown) => {
       filters.push([k, v]);
+      return builder;
+    },
+    in: (k: string, vs: unknown[]) => {
+      inFilters.push([k, vs]);
       return builder;
     },
     order: () => builder,

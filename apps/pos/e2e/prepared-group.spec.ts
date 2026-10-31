@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { ensureSessionOpen, login, resetStorage } from './helpers';
+import { ensureSessionOpen, login, navLink, resetStorage } from './helpers';
 
 /**
  * Lot préparé au back-office (mock : BL + commande web de la Mairie, facture demandée) :
@@ -45,4 +45,9 @@ test('client pro : lot préparé au back-office encaissé sur un ticket, facture
   await page.getByTestId('orders-button').click();
   await expect(page.getByTestId('document-CO-2026-00530')).toBeVisible();
   await expect(page.getByTestId('prepared-group')).toHaveCount(0);
+
+  // Tickets du jour : le moyen de règlement est affiché.
+  await page.keyboard.press('Escape');
+  await navLink(page, 'Historique').click();
+  await expect(page.getByTestId('history-payment').first()).toHaveText('Carte bancaire');
 });

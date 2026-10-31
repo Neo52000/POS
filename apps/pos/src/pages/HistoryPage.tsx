@@ -14,7 +14,7 @@ import { RefundDialog } from '@/components/history/RefundDialog';
 import { ReceiptPreview } from '@/components/ticket/ReceiptPreview';
 import { usePrinter } from '@/hooks/usePrinter';
 import { DayKpiStrip } from '@/components/kpi/DayKpiStrip';
-import { useTodayTickets } from '@/hooks/useTodayTickets';
+import { paymentSummary, useTodayTickets } from '@/hooks/useTodayTickets';
 import { useTransactionFull } from '@/hooks/useTransactionFull';
 import { logEvent } from '@/lib/events';
 import { formatEurCents, formatTime } from '@/lib/format';
@@ -117,6 +117,7 @@ export function HistoryPage() {
                 <TableHead>Heure</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead>Client</TableHead>
+                <TableHead>Règlement</TableHead>
                 <TableHead className="text-right">TTC</TableHead>
                 <TableHead>Signature</TableHead>
               </TableRow>
@@ -147,6 +148,9 @@ export function HistoryPage() {
                     <TableCell className="text-muted">
                       {t.customer_snapshot?.display_name ?? ''}
                     </TableCell>
+                    <TableCell data-testid="history-payment">
+                      {paymentSummary(t.payments)}
+                    </TableCell>
                     <TableCell className="text-right font-semibold tabular">
                       {formatEurCents(Number(t.total_ttc_cents))}
                     </TableCell>
@@ -158,7 +162,7 @@ export function HistoryPage() {
               })}
               {tickets.data && tickets.data.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} className="py-10 text-center text-muted">
+                  <TableCell colSpan={7} className="py-10 text-center text-muted">
                     Aucun ticket aujourd’hui.
                   </TableCell>
                 </TableRow>
