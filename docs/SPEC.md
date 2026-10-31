@@ -170,7 +170,7 @@ Palette Data Noir : `bg #0a0a0f`, `surface #111118`, `border #1e1e2e`, `text #e2
   `period_start − 1 ms` de la période courante.
 - `pos-closing` : sans `period_start` (cron) → période précédente ; avec `period_start` → période
   qui le contient. Plus aucun calcul de fuseau en TypeScript (`_shared/periods.ts`).
-- `pos_verify_closings_chain(register) → (ok, checked, first_break_number, reason)`.
+- `pos_verify_closings_chain(register) → (ok, checked, first_break_number, reason)` (v1 et v2 depuis 0.4.0, §14.6).
 
 ### 11.4 Archives (lot 5) — `pos-archive/v1`
 
@@ -562,3 +562,26 @@ days}` s'il reste des trous, fige `pos_closings.offline_gaps` et ajoute
   résolus, maillons manquants). Hash de clôture inchangé par ce lot.
 - Tests : `scripts/sql-tests/pos/17_offline_refs.sql`, `packages/core/src/offlineChain.test.ts`,
   `report.test.ts`, `apps/pos/src/lib/offlineQueue.test.ts` (chaînage, `last_seq_by_day`).
+
+### 14.6 Ancrage du JET et des archives dans la clôture (lot 6)
+
+- Hash de clôture **v2** (toute clôture créée à partir de 0.4.0, `pos_closings.hash_version = 2`) :
+  `SHA-256("v2|closing|numéro|type|début|fin|nb tickets|total TTC|GTP|tête JET|hash dernière
+archive|prev_hash")`. Tête JET = hash du dernier événement de la caisse créé avant la fin de
+  période (`jet_head_event_id`, `jet_head_hash`, après le `offline_gap` éventuel du Z1) ; dernière
+  archive = archive de la caisse la plus récente créée avant la fin de période
+  (`archive_head_id`, `archive_head_hash`) ; `''` si absent. Les clôtures existantes restent
+  **v1** (formule inchangée, toujours vérifiable).
+- `pos_closing_canonical` / `pos_closing_hash(version, …)` (SQL) ≡ `@pos/core` `closing.ts`
+  (`closingCanonical`, `closingHash`, `verifyClosingsChain`), vecteurs figés
+  `packages/core/src/__fixtures__/closing-vectors.json` (v1, v2, v2 sans archive).
+- `pos_verify_closings_chain` : v1 et v2 ; en v2, contrôle en plus que les têtes stockées sont
+  toujours le hash de l'événement / de l'archive référencés → `JET_HEAD_MISMATCH`,
+  `ARCHIVE_HEAD_MISMATCH` (falsification du JET même rechaîné). `pnpm verify-chain` recalcule la
+  chaîne des clôtures hors base (`@pos/core`, têtes relues) en plus du contrôle SQL.
+- L'événement JET `closing` porte `hash_version`, `hash` et les deux têtes.
+- Fiskaly : aucune clôture n'est envoyée par le dépôt (les clôtures Fiskaly sont produites par
+  Fiskaly et seulement rapprochées par `pos-closings-sync`) ; les têtes ne peuvent donc pas partir
+  dans un « payload de clôture Fiskaly » (écart documenté, voir PR 0.4.0).
+- Tests : `scripts/sql-tests/pos/18_closings_v2.sql` (vecteurs, falsification du JET détectée),
+  `packages/core/src/closing.test.ts`.

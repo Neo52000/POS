@@ -3,7 +3,8 @@
  * - tickets : chaîne recalculée hors base avec @pos/core (miroir de pos_canonical_txn) ET
  *   `pos_verify_chain` côté SQL ;
  * - JET : `pos_verify_events_chain` ;
- * - clôtures : `pos_verify_closings_chain` ;
+ * - clôtures : chaîne recalculée hors base avec @pos/core (hash v1 et v2, têtes JET / archive
+ *   relues) ET `pos_verify_closings_chain` ;
  * - archives : `pos_verify_archives_chain`.
  * Code de sortie 0 si tout est OK, 1 sinon (2 : usage / configuration).
  *
@@ -11,8 +12,12 @@
  * (sans code : toutes les caisses actives).
  */
 import { createClient } from '@supabase/supabase-js';
-import { archivedTransactionToChained, verifyChain } from '../packages/core/src/index.ts';
-import type { ArchiveRecord, ChainedTxn } from '../packages/core/src/index.ts';
+import {
+  archivedTransactionToChained,
+  verifyChain,
+  verifyClosingsChain,
+} from '../packages/core/src/index.ts';
+import type { ArchiveRecord, ChainedClosing, ChainedTxn } from '../packages/core/src/index.ts';
 
 const url = process.env.SUPABASE_URL;
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -68,6 +73,66 @@ async function loadChain(reg: Register): Promise<ChainedTxn[]> {
   }
 }
 
+type ClosingRow = ChainedClosing & {
+  jet_head_event_id: number | null;
+  archive_head_id: string | null;
+};
+
+/** Toutes les clôtures de la caisse (pagination). */
+async function loadClosings(reg: Register): Promise<ClosingRow[]> {
+  const out: ClosingRow[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await db
+      .from('pos_closings')
+      .select(
+        'closing_number, period_type, period_start, period_end, txn_count, total_ttc_cents, ' +
+          'grand_total_perpetual_cents, prev_hash, hash, hash_version, jet_head_event_id, ' +
+          'jet_head_hash, archive_head_id, archive_head_hash',
+      )
+      .eq('register_id', reg.id)
+      .order('closing_number', { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw error;
+    out.push(...((data ?? []) as unknown as ClosingRow[]));
+    if (!data || data.length < PAGE) return out;
+  }
+}
+
+/** Hash actuel des éléments référencés comme têtes (JET, archives) par les clôtures v2. */
+async function loadHeads(
+  reg: Register,
+  closings: ClosingRow[],
+): Promise<{ events: Map<number, string>; archives: Map<string, string> }> {
+  const eventIds = [
+    ...new Set(closings.map((c) => c.jet_head_event_id).filter((v): v is number => v != null)),
+  ];
+  const archiveIds = [
+    ...new Set(closings.map((c) => c.archive_head_id).filter((v): v is string => v != null)),
+  ];
+  const events = new Map<number, string>();
+  const archives = new Map<string, string>();
+  for (let i = 0; i < eventIds.length; i += 200) {
+    const { data, error } = await db
+      .from('pos_events')
+      .select('id, hash')
+      .eq('register_id', reg.id)
+      .in('id', eventIds.slice(i, i + 200));
+    if (error) throw error;
+    for (const e of (data ?? []) as { id: number; hash: string }[])
+      events.set(Number(e.id), e.hash);
+  }
+  for (let i = 0; i < archiveIds.length; i += 200) {
+    const { data, error } = await db
+      .from('pos_archives')
+      .select('id, hash')
+      .eq('register_id', reg.id)
+      .in('id', archiveIds.slice(i, i + 200));
+    if (error) throw error;
+    for (const a of (data ?? []) as { id: string; hash: string }[]) archives.set(a.id, a.hash);
+  }
+  return { events, archives };
+}
+
 /** Appelle une RPC `RETURNS TABLE(ok, checked, …)` et la résume. */
 async function sqlCheck(reg: Register, check: string, fn: string): Promise<CheckRow> {
   const { data, error } = await db.rpc(fn, { p_register_id: reg.id });
@@ -113,6 +178,20 @@ async function checkRegister(reg: Register): Promise<CheckRow[]> {
   ];
   rows.push(await sqlCheck(reg, 'tickets (pos_verify_chain)', 'pos_verify_chain'));
   rows.push(await sqlCheck(reg, 'JET (pos_verify_events_chain)', 'pos_verify_events_chain'));
+  const closings = await loadClosings(reg);
+  const heads = await loadHeads(reg, closings);
+  const closingCheck = await verifyClosingsChain(closings, {
+    eventHash: (id) => heads.events.get(id),
+    archiveHash: (id) => heads.archives.get(id),
+  });
+  const versions = [...new Set(closings.map((c) => `v${c.hash_version ?? 1}`))].join('+');
+  rows.push({
+    register: reg.code,
+    check: `clôtures (@pos/core ${versions || 'v1/v2'})`,
+    ok: closingCheck.ok,
+    checked: closingCheck.checked,
+    detail: closingCheck.ok ? '' : `clôture ${closingCheck.closing_number} ${closingCheck.reason}`,
+  });
   rows.push(
     await sqlCheck(reg, 'clôtures (pos_verify_closings_chain)', 'pos_verify_closings_chain'),
   );

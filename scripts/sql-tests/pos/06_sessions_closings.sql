@@ -105,8 +105,13 @@ BEGIN
   IF coalesce(v_closing.prev_hash, '') <> coalesce(v_prev_hash, '') OR v_closing.closing_number <> coalesce(v_prev_no, 0) + 1 THEN
     RAISE EXCEPTION 'clôture Z : chaînage / numérotation';
   END IF;
-  IF v_closing.hash <> public.pos_sha256('v1|closing|' || v_closing.closing_number || '|daily|' || public.pos_canonical_ts(v_closing.period_start)
-       || '|' || public.pos_canonical_ts(v_closing.period_end) || '|2|3500|' || v_closing.grand_total_perpetual_cents || '|' || coalesce(v_closing.prev_hash, '')) THEN
+  -- 0.4.0 (lot 6) : hash de clôture v2 = v1 + têtes JET et archive, avant prev_hash.
+  IF v_closing.hash_version <> 2
+     OR v_closing.hash <> public.pos_sha256('v2|closing|' || v_closing.closing_number || '|daily|' || public.pos_canonical_ts(v_closing.period_start)
+       || '|' || public.pos_canonical_ts(v_closing.period_end) || '|2|3500|' || v_closing.grand_total_perpetual_cents
+       || '|' || coalesce(v_closing.jet_head_hash, '') || '|' || coalesce(v_closing.archive_head_hash, '')
+       || '|' || coalesce(v_closing.prev_hash, ''))
+     OR v_closing.jet_head_hash IS DISTINCT FROM (SELECT e.hash FROM public.pos_events e WHERE e.id = v_closing.jet_head_event_id) THEN
     RAISE EXCEPTION 'clôture Z : hash non reproductible';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM public.pos_events WHERE event_type = 'closing' AND (payload ->> 'closing_id')::uuid = v_closing.id)
