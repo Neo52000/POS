@@ -101,6 +101,7 @@ export function PaymentSheet({
   const register = useSessionStore((s) => s.register);
   const session = useSessionStore((s) => s.session);
   const account = useCustomerStore((s) => s.account);
+  const passageContact = useCustomerStore((s) => s.passageContact);
   const quoteId = useCartStore((s) => s.quote_id);
   const orderId = useCartStore((s) => s.order_id);
   const clearCart = useCartStore((s) => s.clear);
@@ -167,6 +168,7 @@ export function PaymentSheet({
       order_id: useCartStore.getState().order_id,
       global_discount_percent: useCartStore.getState().global_discount_percent,
       account: useCustomerStore.getState().account,
+      passage_contact: useCustomerStore.getState().passageContact,
       payments,
       change_cents: change,
       invoice_requested: invoiceRequested,
@@ -271,6 +273,13 @@ export function PaymentSheet({
       ...(account && !refund ? { customer_account_id: account.id } : {}),
       ...(quoteId && !refund ? { quote_id: quoteId } : {}),
       ...(orderId && !refund ? { order_id: orderId } : {}),
+      // Personne de passage : hors périmètre fiscal, retirée par pos-checkout avant validation.
+      ...(account && passageContact && !refund
+        ? {
+            passage_contact_id: passageContact.id,
+            passage_contact_name: passageContact.full_name,
+          }
+        : {}),
       invoice_requested: !!account && invoiceRequested && !refund,
       lines: totals.lines.map((l) => ({
         line_no: l.line_no,

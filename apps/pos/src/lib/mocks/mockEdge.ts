@@ -19,6 +19,9 @@ import type {
 import {
   MOCK_CUSTOMERS,
   MOCK_ORDERS,
+  MOCK_PASSAGE_ACCOUNT_ID,
+  MOCK_PASSAGE_CONTACTS,
+  MOCK_PASSAGE_ORDERS,
   MOCK_QUOTES,
   MOCK_REGISTER,
   MOCK_SETTINGS,
@@ -192,14 +195,16 @@ export function createMockEdge(): EdgeClient {
         received_at: new Date().toISOString(),
         cashier_id: st.user?.id ?? null,
         customer_account_id: payload.customer_account_id ?? null,
-        customer_snapshot: customer
-          ? {
-              display_name: customer.display_name,
-              company_name: customer.company_name ?? undefined,
-              siret: customer.siret ?? undefined,
-              vat_number: customer.vat_number ?? undefined,
-            }
-          : null,
+        customer_snapshot: payload.passage_contact_id
+          ? { display_name: `Passage — ${payload.passage_contact_name ?? ''}`.trim() }
+          : customer
+            ? {
+                display_name: customer.display_name,
+                company_name: customer.company_name ?? undefined,
+                siret: customer.siret ?? undefined,
+                vat_number: customer.vat_number ?? undefined,
+              }
+            : null,
         quote_id: payload.quote_id ?? null,
         invoice_requested: payload.invoice_requested,
         total_ht_cents: totals.total_ht_cents,
@@ -275,6 +280,9 @@ export function createMockEdge(): EdgeClient {
       if (payload.order_id && payload.kind === 'sale') {
         for (const [accountId, orders] of Object.entries(MOCK_ORDERS)) {
           MOCK_ORDERS[accountId] = orders.filter((o) => o.id !== payload.order_id);
+        }
+        for (const [contactId, orders] of Object.entries(MOCK_PASSAGE_ORDERS)) {
+          MOCK_PASSAGE_ORDERS[contactId] = orders.filter((o) => o.id !== payload.order_id);
         }
       }
       return {
@@ -485,9 +493,36 @@ export function createMockEdge(): EdgeClient {
       assertMockOnline();
       return MOCK_QUOTES[accountId] ?? [];
     },
-    async customerOrders(accountId) {
+    async customerOrders(accountId, passageContactId) {
       assertMockOnline();
+      if (passageContactId) return MOCK_PASSAGE_ORDERS[passageContactId] ?? [];
       return MOCK_ORDERS[accountId] ?? [];
+    },
+    async passageSearch(q) {
+      assertMockOnline();
+      const needle = q.trim().toLowerCase();
+      const digits = q.replace(/\D/g, '');
+      return MOCK_PASSAGE_CONTACTS.filter(
+        (c) =>
+          c.full_name.toLowerCase().includes(needle) ||
+          (digits.length >= 4 && (c.phone ?? '').replace(/\D/g, '').includes(digits)),
+      ).map((c) => ({ ...c, open_orders_count: MOCK_PASSAGE_ORDERS[c.id]?.length ?? 0 }));
+    },
+    async passageCreate(fullName, phone) {
+      assertMockOnline();
+      const digits = (phone ?? '').replace(/\D/g, '');
+      const existing = digits
+        ? MOCK_PASSAGE_CONTACTS.find((c) => (c.phone ?? '').replace(/\D/g, '') === digits)
+        : undefined;
+      if (existing) return existing;
+      const contact = {
+        id: `b1000000-0000-4000-8000-${String(MOCK_PASSAGE_CONTACTS.length + 1).padStart(12, '0')}`,
+        full_name: fullName.trim(),
+        phone: phone?.trim() || null,
+        passage_account_id: MOCK_PASSAGE_ACCOUNT_ID,
+      };
+      MOCK_PASSAGE_CONTACTS.push(contact);
+      return contact;
     },
     async resolvePrices(accountId, lines) {
       assertMockOnline();

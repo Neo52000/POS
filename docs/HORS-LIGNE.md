@@ -52,12 +52,13 @@ file (le client a payé) ; la limite bloque la vente **suivante**.
 
 ### Actions interdites hors ligne
 
-| Action                                        | Raison                                                                            |
-| --------------------------------------------- | --------------------------------------------------------------------------------- |
-| Remboursement                                 | nécessite le ticket d'origine chaîné ; refusé aussi par le serveur (`VALIDATION`) |
-| Ouverture / fermeture de session (Z)          | le Z doit inclure toutes les ventes, signées                                      |
-| Recherche d'un **nouveau** client pro         | données ma-papeterie inaccessibles (seul un client déjà chargé reste utilisable)  |
-| Inventaire (`/inventory`), clôtures, archives | écritures serveur uniquement                                                      |
+| Action                                         | Raison                                                                            |
+| ---------------------------------------------- | --------------------------------------------------------------------------------- |
+| Remboursement                                  | nécessite le ticket d'origine chaîné ; refusé aussi par le serveur (`VALIDATION`) |
+| Ouverture / fermeture de session (Z)           | le Z doit inclure toutes les ventes, signées                                      |
+| Recherche d'un **nouveau** client pro          | données ma-papeterie inaccessibles (seul un client déjà chargé reste utilisable)  |
+| Recherche / création d'une personne de passage | données ma-papeterie inaccessibles (une personne déjà attachée reste utilisable)  |
+| Inventaire (`/inventory`), clôtures, archives  | écritures serveur uniquement                                                      |
 
 ## 3. Rejeu
 

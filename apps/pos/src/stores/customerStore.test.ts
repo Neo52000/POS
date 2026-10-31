@@ -175,3 +175,55 @@ describe('customerStore.attach', () => {
     expect(edge.resolvePrices).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('customerStore — personne de passage', () => {
+  const DUPONT = {
+    id: 'b1000000-0000-4000-8000-000000000001',
+    full_name: 'Mme Dupont',
+    phone: '06 12 34 56 78',
+    passage_account_id: 'c0000000-0000-4000-8000-0000000000aa',
+  };
+
+  beforeEach(() => {
+    useCartStore.setState({ lines: [], quote_id: null });
+    useCustomerStore.setState({
+      account: null,
+      passageContact: null,
+      pricing: {},
+      quotes: [],
+      resolving: false,
+      pendingLines: 0,
+      error: null,
+    });
+    useCartStore.getState().setLocked(false);
+    vi.mocked(edge.resolvePrices).mockReset();
+    vi.mocked(edge.resolvePrices).mockResolvedValue([]);
+  });
+
+  it('attache la fiche « Client passage » et garde le contact à côté', async () => {
+    await useCustomerStore.getState().attachPassage(DUPONT);
+    const s = useCustomerStore.getState();
+    expect(s.account?.id).toBe(DUPONT.passage_account_id);
+    expect(s.account?.display_name).toBe('Passage — Mme Dupont');
+    expect(s.account?.pricing_rules_count).toBe(0);
+    expect(s.passageContact).toEqual({
+      id: DUPONT.id,
+      full_name: 'Mme Dupont',
+      phone: '06 12 34 56 78',
+    });
+  });
+
+  it('un client pro attaché ensuite remplace la personne de passage', async () => {
+    await useCustomerStore.getState().attachPassage(DUPONT);
+    await useCustomerStore.getState().attach(MAIRIE);
+    expect(useCustomerStore.getState().account?.id).toBe(MAIRIE.id);
+    expect(useCustomerStore.getState().passageContact).toBeNull();
+  });
+
+  it('detach efface aussi la personne de passage', async () => {
+    await useCustomerStore.getState().attachPassage(DUPONT);
+    useCustomerStore.getState().detach();
+    expect(useCustomerStore.getState().account).toBeNull();
+    expect(useCustomerStore.getState().passageContact).toBeNull();
+  });
+});

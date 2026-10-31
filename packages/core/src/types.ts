@@ -34,6 +34,14 @@ export interface CheckoutPayload {
    * retirée du payload avant `pos_finalize_sale`, sert à marquer la commande réglée.
    */
   order_id?: string;
+  /**
+   * Personne de passage ma-papeterie (`passage_contacts.id`) : nom + téléphone, sans dossier
+   * client. Hors périmètre fiscal comme `order_id` (retiré avant `pos_finalize_sale`, outbox).
+   * `customer_account_id` porte alors la fiche « Client passage ».
+   */
+  passage_contact_id?: string;
+  /** Nom de la personne de passage, imprimé sur le ticket (snapshot client, non haché). */
+  passage_contact_name?: string;
   invoice_requested: boolean;
   lines: CartLineInput[];
   payments: CheckoutPayment[];
@@ -282,6 +290,11 @@ export function validateCheckoutPayload(payload: unknown): CheckoutValidation {
   c.uuid(p, 'customer_account_id', root, false);
   c.uuid(p, 'quote_id', root, false);
   c.uuid(p, 'order_id', root, false);
+  c.uuid(p, 'passage_contact_id', root, false);
+  c.string(p, 'passage_contact_name', root, false);
+  if (p['passage_contact_id'] !== undefined && p['customer_account_id'] === undefined) {
+    c.fail(`${root}.passage_contact_id`, 'requires customer_account_id (Client passage)');
+  }
   c.boolean(p, 'invoice_requested', root, true);
 
   const lines = p['lines'];

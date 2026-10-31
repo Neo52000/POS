@@ -55,9 +55,11 @@ export function importOrderIntoCart(order: CustomerOrder): void {
 
 export function OrderImportDialog({ open, onOpenChange }: OrderImportDialogProps) {
   const account = useCustomerStore((s) => s.account);
+  const passageContact = useCustomerStore((s) => s.passageContact);
   const cartCount = useCartStore((s) => s.lines.length);
   const { data, isFetching, isError, error } = useCustomerOrders(
     open && account ? account.id : null,
+    passageContact?.id,
   );
 
   const pick = (order: CustomerOrder): void => {

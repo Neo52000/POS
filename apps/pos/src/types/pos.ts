@@ -231,6 +231,20 @@ export interface CustomerQuote {
   items: CustomerQuoteItem[];
 }
 
+/**
+ * Personne de passage (`pos-passage-contacts`) : nom + téléphone, sans dossier client.
+ * Le ticket porte la fiche « Client passage » (`passage_account_id`) ; le contact voyage hors
+ * périmètre fiscal (outbox `pos_transaction_passage_contacts`).
+ */
+export interface PassageContact {
+  id: string;
+  full_name: string;
+  phone: string | null;
+  passage_account_id: string;
+  /** Commandes à encaisser (recherche uniquement). */
+  open_orders_count?: number;
+}
+
 /** Commande non réglée (`pos-customer-orders`) transférable dans le panier. */
 export interface CustomerOrder {
   id: string;

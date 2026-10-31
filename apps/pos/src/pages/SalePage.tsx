@@ -254,7 +254,12 @@ export function SalePage() {
         draft.global_discount_percent ?? 0,
         draft.order_id ?? null,
       );
-    useCustomerStore.setState({ account: draft.account, pricing: {}, error: null });
+    useCustomerStore.setState({
+      account: draft.account,
+      passageContact: draft.passage_contact ?? null,
+      pricing: {},
+      error: null,
+    });
     setPaying(true);
   };
 
@@ -523,6 +528,10 @@ export function SalePage() {
         onPick={(c) => {
           setCustomerDialog(false);
           void attach(c);
+        }}
+        onPickPassage={(contact) => {
+          setCustomerDialog(false);
+          void useCustomerStore.getState().attachPassage(contact);
         }}
       />
       <QuoteImportDialog open={quoteDialog} onOpenChange={setQuoteDialog} />

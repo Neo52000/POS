@@ -90,6 +90,15 @@ describe('validateCheckoutPayload', () => {
     expect(validateCheckoutPayload(payload).ok).toBe(true);
   });
 
+  it('accepts a sale attached to a passage contact', () => {
+    const p = mutate((x) => {
+      x['customer_account_id'] = '7c1f4c2e-9a7b-4d3e-8f21-0b5c6d7e8f90';
+      x['passage_contact_id'] = '9b2e6c1a-3f4d-4e5b-8a6c-7d8e9f0a1b2c';
+      x['passage_contact_name'] = 'Mme Dupont';
+    });
+    expect(validateCheckoutPayload(p).ok).toBe(true);
+  });
+
   it('rejects a non-object payload', () => {
     expect(validateCheckoutPayload(null)).toEqual({
       ok: false,
@@ -245,6 +254,24 @@ describe('validateCheckoutPayload', () => {
       'invalid customer_account_id',
       () => mutate((p) => (p['customer_account_id'] = 'nope')),
       'customer_account_id',
+    ],
+    [
+      'invalid passage_contact_id',
+      () =>
+        mutate((p) => {
+          p['customer_account_id'] = '7c1f4c2e-9a7b-4d3e-8f21-0b5c6d7e8f90';
+          p['passage_contact_id'] = 'nope';
+        }),
+      'passage_contact_id',
+    ],
+    [
+      'passage_contact_id without customer_account_id',
+      () =>
+        mutate((p) => {
+          delete p['customer_account_id'];
+          p['passage_contact_id'] = '9b2e6c1a-3f4d-4e5b-8a6c-7d8e9f0a1b2c';
+        }),
+      'passage_contact_id',
     ],
   ];
 

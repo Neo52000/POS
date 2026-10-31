@@ -13,6 +13,8 @@ verify_jwt = false
 verify_jwt = false
 [functions.pos-customer-orders]
 verify_jwt = false
+[functions.pos-passage-contacts]
+verify_jwt = false
 [functions.pos-customer-quotes]
 verify_jwt = false
 [functions.pos-resolve-prices]

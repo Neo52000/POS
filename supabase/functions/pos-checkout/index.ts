@@ -4,12 +4,15 @@
 // (transaction atomique, chaînage, file de stock) 4. Application du stock sur ma-papeterie
 // (non bloquante, rejouée par cron) 5. Signature Fiskaly (non bloquante) 6. Règlement de la
 // commande ma-papeterie transférée (hors périmètre fiscal, non bloquant) 7. TicketPayload.
+// Contact de passage (hors périmètre fiscal) : retiré du payload comme order_id, inscrit dans
+// l'outbox pos_transaction_passage_contacts juste après validation, transmis par pos-sales-sync.
 // =============================================================================
 import { z } from 'npm:zod@3';
 import { requirePos } from '../_shared/auth.ts';
 import { ApiError, errorResponse, handleOptions, json, readJson } from '../_shared/http.ts';
 import { fetchCustomerSnapshot } from '../_shared/mapapeterie.ts';
 import { recordOrderSettlement, syncPendingOrderSettlements } from '../_shared/orderSettlement.ts';
+import { recordPassageContact } from '../_shared/passageContact.ts';
 import { loadTransactionFull, signTransaction } from '../_shared/signing.ts';
 import { syncStockForTransaction } from '../_shared/stockSync.ts';
 import { buildTicketPayload } from '../_shared/ticket.ts';
@@ -59,6 +62,10 @@ export const CheckoutSchema = z
     quote_id: uuid.optional(),
     // Commande ma-papeterie transférée : hors périmètre fiscal, jamais transmise à pos_finalize_sale.
     order_id: uuid.optional(),
+    // Personne de passage (ma-papeterie passage_contacts) : hors périmètre fiscal, jamais
+    // transmise à pos_finalize_sale. customer_account_id = fiche « Client passage ».
+    passage_contact_id: uuid.optional(),
+    passage_contact_name: z.string().trim().min(1).max(160).optional(),
     invoice_requested: z.boolean().default(false),
     lines: z.array(LineSchema).min(1),
     payments: z.array(PaymentSchema).min(1),
@@ -67,6 +74,9 @@ export const CheckoutSchema = z
     app_version: z.string().max(40),
   })
   .superRefine((v, ctx) => {
+    if (v.passage_contact_id && !v.customer_account_id) {
+      ctx.addIssue({ code: 'custom', message: 'passage_contact_id exige customer_account_id (fiche Client passage)' });
+    }
     if (v.kind === 'refund' && (!v.refund_of_transaction_id || !v.refund_reason)) {
       ctx.addIssue({ code: 'custom', message: 'refund_of_transaction_id et refund_reason requis pour un remboursement' });
     }
@@ -94,7 +104,12 @@ Deno.serve(async (req) => {
     if (!parsed.success) {
       throw new ApiError('VALIDATION', 'Payload invalide', parsed.error.flatten());
     }
-    const { order_id: orderId, ...fiscal } = parsed.data;
+    const {
+      order_id: orderId,
+      passage_contact_id: passageContactId,
+      passage_contact_name: passageContactName,
+      ...fiscal
+    } = parsed.data;
     const payload: Record<string, unknown> = { ...fiscal };
 
     // Snapshot client pro (données ma-papeterie), figée sur le ticket.
@@ -103,7 +118,10 @@ Deno.serve(async (req) => {
       if (!snap) throw new ApiError('NOT_FOUND', 'Client pro introuvable', { account_id: parsed.data.customer_account_id });
       payload.customer_snapshot = {
         id: snap.id,
-        display_name: snap.display_name ?? snap.company_name ?? '',
+        // Personne de passage : son nom sur le ticket (snapshot non haché, imprimé).
+        display_name: passageContactId && passageContactName
+          ? `Passage — ${passageContactName}`
+          : snap.display_name ?? snap.company_name ?? '',
         company_name: snap.company_name,
         siret: snap.siret,
         vat_number: snap.vat_number,
@@ -118,6 +136,11 @@ Deno.serve(async (req) => {
     if (error) throw error;
     const result = data as { transaction: { id: string }; idempotent_replay?: boolean };
     const transactionId = result.transaction.id;
+
+    // Contact de passage : inscrit avant toute autre étape pour devancer le cron pos-sales-sync.
+    if (passageContactId && parsed.data.kind === 'sale') {
+      await recordPassageContact(auth.db, transactionId, passageContactId);
+    }
 
     // Signature Fiskaly : jamais bloquante pour la vente.
     await signTransaction(auth.db, transactionId);

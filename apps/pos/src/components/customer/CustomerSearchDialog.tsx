@@ -9,20 +9,30 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { PassageContactPanel } from '@/components/customer/PassageContactPanel';
 import { useCustomerSearch } from '@/hooks/useCustomerSearch';
 import { formatEurCents } from '@/lib/format';
 import { errorMessage } from '@/lib/utils';
 import { useUiStore } from '@/stores/uiStore';
-import type { PosCustomer } from '@/types/pos';
+import type { PassageContact, PosCustomer } from '@/types/pos';
 
 export interface CustomerSearchDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onPick: (customer: PosCustomer) => void;
+  /** Personne de passage (nom + téléphone, sans dossier client). */
+  onPickPassage: (contact: PassageContact) => void;
 }
 
-export function CustomerSearchDialog({ open, onOpenChange, onPick }: CustomerSearchDialogProps) {
+export function CustomerSearchDialog({
+  open,
+  onOpenChange,
+  onPick,
+  onPickPassage,
+}: CustomerSearchDialogProps) {
   const [q, setQ] = useState('');
+  const [tab, setTab] = useState<'pro' | 'passage'>('pro');
   const offline = useUiStore((s) => s.connectivity === 'offline');
   const { data, isFetching, isError, error } = useCustomerSearch(open && !offline ? q : '');
 
@@ -30,82 +40,102 @@ export function CustomerSearchDialog({ open, onOpenChange, onPick }: CustomerSea
     <Dialog
       open={open}
       onOpenChange={(o) => {
-        if (!o) setQ('');
+        if (!o) {
+          setQ('');
+          setTab('pro');
+        }
         onOpenChange(o);
       }}
     >
       <DialogContent className="max-h-[85vh] max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Client professionnel</DialogTitle>
+          <DialogTitle>Client</DialogTitle>
           <DialogDescription>
-            Nom, raison sociale ou SIRET (2 caractères minimum).
+            {tab === 'pro'
+              ? 'Nom, raison sociale ou SIRET (2 caractères minimum).'
+              : 'Personne sans compte : nom et téléphone, pour ses commandes à retirer.'}
           </DialogDescription>
         </DialogHeader>
-        <Input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder={offline ? 'Recherche indisponible hors ligne' : 'Rechercher un client…'}
-          disabled={offline}
-          autoFocus
-          data-testid="customer-search-input"
-        />
-        <div className="min-h-[200px] flex-1 overflow-y-auto">
-          {offline && (
-            <p className="py-4 text-center text-warning" data-testid="customer-search-offline">
-              Hors ligne : recherche client indisponible.
-            </p>
-          )}
-          {isFetching && (
-            <div className="flex justify-center py-6 text-muted">
-              <Loader2 className="h-6 w-6 animate-spin" />
+        <Tabs value={tab} onValueChange={(v) => setTab(v as 'pro' | 'passage')}>
+          <TabsList>
+            <TabsTrigger value="pro" data-testid="customer-tab-pro">
+              Professionnel
+            </TabsTrigger>
+            <TabsTrigger value="passage" data-testid="customer-tab-passage">
+              De passage
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="passage">
+            <PassageContactPanel offline={offline} onPick={onPickPassage} />
+          </TabsContent>
+          <TabsContent value="pro" className="flex flex-col gap-3">
+            <Input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder={offline ? 'Recherche indisponible hors ligne' : 'Rechercher un client…'}
+              disabled={offline}
+              autoFocus
+              data-testid="customer-search-input"
+            />
+            <div className="min-h-[200px] flex-1 overflow-y-auto">
+              {offline && (
+                <p className="py-4 text-center text-warning" data-testid="customer-search-offline">
+                  Hors ligne : recherche client indisponible.
+                </p>
+              )}
+              {isFetching && (
+                <div className="flex justify-center py-6 text-muted">
+                  <Loader2 className="h-6 w-6 animate-spin" />
+                </div>
+              )}
+              {isError && <p className="py-4 text-center text-danger">{errorMessage(error)}</p>}
+              {data && data.length === 0 && !isFetching && (
+                <p className="py-6 text-center text-muted">Aucun client.</p>
+              )}
+              <ul className="flex flex-col gap-2">
+                {(data ?? []).map((c) => (
+                  <li key={c.id}>
+                    <button
+                      type="button"
+                      onClick={() => onPick(c)}
+                      className="flex w-full items-start gap-3 rounded-xl border border-border bg-bg p-3 text-left hover:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                      data-testid="customer-result"
+                    >
+                      <Building2 className="mt-0.5 h-5 w-5 shrink-0 text-accent" />
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium">{c.display_name}</p>
+                        <p className="truncate text-xs text-muted">
+                          {[c.siret && `SIRET ${c.siret}`, c.email, c.phone]
+                            .filter(Boolean)
+                            .join(' · ')}
+                        </p>
+                        <div className="mt-1.5 flex flex-wrap gap-1.5">
+                          {c.customer_type && <Badge variant="secondary">{c.customer_type}</Badge>}
+                          {c.payment_terms_days ? (
+                            <Badge variant="outline">Paiement à {c.payment_terms_days} j</Badge>
+                          ) : null}
+                          {c.pricing_rules_count > 0 && (
+                            <Badge variant="success">
+                              {c.pricing_rules_count} règle(s) tarifaire(s)
+                            </Badge>
+                          )}
+                          {c.open_quotes_count > 0 && (
+                            <Badge variant="warning">{c.open_quotes_count} devis ouvert(s)</Badge>
+                          )}
+                          {c.revenue_ttc_12m != null && (
+                            <Badge variant="muted">
+                              CA 12 m {formatEurCents(Math.round(c.revenue_ttc_12m * 100))}
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    </button>
+                  </li>
+                ))}
+              </ul>
             </div>
-          )}
-          {isError && <p className="py-4 text-center text-danger">{errorMessage(error)}</p>}
-          {data && data.length === 0 && !isFetching && (
-            <p className="py-6 text-center text-muted">Aucun client.</p>
-          )}
-          <ul className="flex flex-col gap-2">
-            {(data ?? []).map((c) => (
-              <li key={c.id}>
-                <button
-                  type="button"
-                  onClick={() => onPick(c)}
-                  className="flex w-full items-start gap-3 rounded-xl border border-border bg-bg p-3 text-left hover:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                  data-testid="customer-result"
-                >
-                  <Building2 className="mt-0.5 h-5 w-5 shrink-0 text-accent" />
-                  <div className="min-w-0 flex-1">
-                    <p className="font-medium">{c.display_name}</p>
-                    <p className="truncate text-xs text-muted">
-                      {[c.siret && `SIRET ${c.siret}`, c.email, c.phone]
-                        .filter(Boolean)
-                        .join(' · ')}
-                    </p>
-                    <div className="mt-1.5 flex flex-wrap gap-1.5">
-                      {c.customer_type && <Badge variant="secondary">{c.customer_type}</Badge>}
-                      {c.payment_terms_days ? (
-                        <Badge variant="outline">Paiement à {c.payment_terms_days} j</Badge>
-                      ) : null}
-                      {c.pricing_rules_count > 0 && (
-                        <Badge variant="success">
-                          {c.pricing_rules_count} règle(s) tarifaire(s)
-                        </Badge>
-                      )}
-                      {c.open_quotes_count > 0 && (
-                        <Badge variant="warning">{c.open_quotes_count} devis ouvert(s)</Badge>
-                      )}
-                      {c.revenue_ttc_12m != null && (
-                        <Badge variant="muted">
-                          CA 12 m {formatEurCents(Math.round(c.revenue_ttc_12m * 100))}
-                        </Badge>
-                      )}
-                    </div>
-                  </div>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
+          </TabsContent>
+        </Tabs>
       </DialogContent>
     </Dialog>
   );
