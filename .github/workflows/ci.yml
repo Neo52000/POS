@@ -21,7 +21,9 @@ jobs:
       - run: pnpm test
       - run: pnpm build
   e2e:
-    runs-on: ubuntu-latest
+    # ubuntu-latest = 26.04 depuis fin octobre 2026 : Playwright 1.56 n'y installe pas
+    # Chromium (« does not support chromium on ubuntu26.04-x64 »). Épinglé sur 24.04.
+    runs-on: ubuntu-24.04
     needs: ci
     steps:
       - uses: actions/checkout@v4
