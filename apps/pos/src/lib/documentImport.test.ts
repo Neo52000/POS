@@ -161,7 +161,9 @@ describe('lot préparé au back-office', () => {
     expect(g).toMatchObject({ id: 'g1', invoiceRequested: true });
     expect(g!.docs.map((d) => d.doc.id)).toEqual([BL.doc.id, WEB.doc.id]);
     expect(preparedGroupDocuments(withGroup([WEB.doc.id, 'absente'], []))).toBeNull();
-    expect(preparedGroupDocuments(RAW)).toBeNull();
+    expect(preparedGroupDocuments({ ...RAW, prepared_group: null })).toBeNull();
+    // Mock : la Mairie a un lot préparé (BL + commande web).
+    expect(preparedGroupDocuments(RAW)?.docs).toHaveLength(2);
     expect(preparedGroupDocuments(null)).toBeNull();
   });
 
