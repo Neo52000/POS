@@ -20,6 +20,7 @@ export type ErrorCode =
   | 'NOTHING_TO_CLOSE'
   | 'DB_ERROR'
   | 'FISKALY_ERROR'
+  | 'DELIVERY_FAILED'
   | 'INTERNAL';
 
 const STATUS_BY_CODE: Record<ErrorCode, number> = {
@@ -47,6 +48,8 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
   NOTHING_TO_CLOSE: 409,
   DB_ERROR: 500,
   FISKALY_ERROR: 502,
+  // Envoi du ticket dématérialisé (Brevo) refusé ou injoignable.
+  DELIVERY_FAILED: 502,
   INTERNAL: 500,
 };
 

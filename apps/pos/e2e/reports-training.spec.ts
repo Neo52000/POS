@@ -157,6 +157,8 @@ test('mode formation : vente fictive, TPE simulé, rien enregistré, X de format
   await expect(page.getByTestId('ticket-code')).toHaveText('FORM-0001');
   await expect(page.getByTestId('receipt-preview')).toContainText('FORMATION');
   await shot(page, 'formation-1-vente');
+  await expect(page.getByTestId('receipt-email')).toBeDisabled();
+  await page.getByTestId('receipt-none').click();
   await expect(page.getByTestId('payment-sheet')).toBeHidden({ timeout: 8000 });
 
   const state = await page.evaluate(() => {

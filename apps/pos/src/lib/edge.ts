@@ -29,6 +29,15 @@ export interface PriceLineInput {
   qty: number;
 }
 
+export type ReceiptChannel = 'email' | 'sms';
+
+export interface SendReceiptInput {
+  transaction_id: string;
+  channel: ReceiptChannel;
+  /** Adresse e-mail ou numéro de mobile (normalisé côté serveur). */
+  to: string;
+}
+
 export interface EdgeClient {
   checkout(payload: CheckoutPayload): Promise<PosCheckoutResult>;
   customerSearch(q: string, limit?: number): Promise<PosCustomer[]>;
@@ -60,6 +69,8 @@ export interface EdgeClient {
     period_type: 'monthly' | 'annual';
     period_start?: string;
   }): Promise<ClosePeriodResult>;
+  /** Ticket dématérialisé (`pos-send-receipt`) : e-mail ou SMS via Brevo, contenu relu en base. */
+  sendReceipt(input: SendReceiptInput): Promise<{ ok: true; ticket_code: string }>;
 }
 
 const EDGE_TIMEOUT_MS = 30_000;
@@ -158,6 +169,8 @@ function createRealEdge(): EdgeClient {
     exportArchive: (input) => callEdge<ExportArchiveResult>('pos-export-archive', input, 120_000),
     stockAdjust: (input) => callEdge<StockAdjustResult>('pos-stock-adjust', input),
     closePeriod: (input) => callEdge<ClosePeriodResult>('pos-closing', input, 60_000),
+    sendReceipt: (input) =>
+      callEdge<{ ok: true; ticket_code: string }>('pos-send-receipt', input, 20_000),
   };
 }
 

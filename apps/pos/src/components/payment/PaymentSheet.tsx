@@ -47,6 +47,7 @@ import { useUiStore } from '@/stores/uiStore';
 import { CashPaymentPad } from './CashPaymentPad';
 import { CbPaymentDialog } from './CbPaymentDialog';
 import type { CbPaymentOutcome } from './CbPaymentDialog';
+import { ReceiptChoice } from './ReceiptChoice';
 import { ReferenceForm } from './ReferenceForm';
 
 export interface PaymentSheetProps {
@@ -85,6 +86,13 @@ export function PaymentSheet({
   const [clientTxnId, setClientTxnId] = useState(() => uuidv4());
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<CheckoutOutcome | null>(null);
+  /** Choix du ticket client fait (papier, e-mail, SMS, aucun) : autorise la fermeture auto. */
+  const [receiptDone, setReceiptDone] = useState(false);
+  /** Coordonnées du client au moment de l'encaissement (le client est détaché ensuite). */
+  const [receiptContact, setReceiptContact] = useState<{
+    email: string | null;
+    phone: string | null;
+  }>({ email: null, phone: null });
   /** Garde synchrone : `checkout.isPending` n'est vrai qu'au rendu suivant (double tap). */
   const inFlight = useRef(false);
 
@@ -150,6 +158,7 @@ export function PaymentSheet({
     setClientTxnId(draft?.client_txn_id ?? uuidv4());
     setError(null);
     setResult(null);
+    setReceiptDone(false);
     inFlight.current = false;
   }, [open, isRefund]);
 
@@ -185,14 +194,15 @@ export function PaymentSheet({
     discardDraft,
   ]);
 
-  // Écran de confirmation 3 s puis fermeture — sauf rendu monnaie à compter (fermeture manuelle).
+  // Après le choix du ticket : confirmation 3 s puis fermeture — sauf rendu monnaie à compter
+  // (fermeture manuelle).
   useEffect(() => {
-    if (!result || result.ticket.change_cents > 0) return;
+    if (!result || !receiptDone || result.ticket.change_cents > 0) return;
     const t = setTimeout(() => {
       onOpenChange(false);
     }, CONFIRM_DELAY_MS);
     return () => clearTimeout(t);
-  }, [result, onOpenChange]);
+  }, [result, receiptDone, onOpenChange]);
 
   /**
    * Fermeture : interdite tant qu'une CB captée n'est pas enregistrée, sauf après un refus serveur
@@ -329,6 +339,10 @@ export function PaymentSheet({
           : null,
       quote_number: !refund ? (quoteNumber ?? null) : null,
     };
+    setReceiptContact({
+      email: !refund ? (account?.email ?? null) : null,
+      phone: !refund ? (passageContact?.phone ?? account?.phone ?? null) : null,
+    });
     try {
       const outcome = await checkout.mutateAsync({ payload, context });
       if (!refund) discardDraft();
@@ -344,7 +358,12 @@ export function PaymentSheet({
           durationMs: 6000,
         });
       }
-      void print(outcome.ticket);
+      // Remboursement : ticket imprimé d'office (justificatif). Vente : le client choisit
+      // (papier, e-mail, SMS ou aucun) sur l'écran de confirmation (loi AGEC).
+      if (refund) {
+        void print(outcome.ticket);
+        setReceiptDone(true);
+      }
       if (payments.some((p) => p.method === 'cash')) void openDrawer('Encaissement espèces', false);
       if (refund) {
         toast({
@@ -456,7 +475,24 @@ export function PaymentSheet({
                 </span>
               </p>
             )}
-            <div className="max-h-[45vh] overflow-y-auto">
+            {!refund && (
+              <ReceiptChoice
+                transactionId={result.status === 'recorded' ? result.result.transaction.id : null}
+                ticketCode={result.ticket.ticket_code}
+                digitalUnavailableReason={
+                  result.status === 'training'
+                    ? 'Mode formation : envoi par e-mail ou SMS désactivé.'
+                    : result.status === 'queued'
+                      ? 'Hors ligne : envoi par e-mail ou SMS impossible, proposez le ticket papier.'
+                      : null
+                }
+                defaultEmail={receiptContact.email}
+                defaultPhone={receiptContact.phone}
+                onPrint={() => void print(result.ticket)}
+                onDone={() => setReceiptDone(true)}
+              />
+            )}
+            <div className="max-h-[40vh] overflow-y-auto">
               <ReceiptPreview ticket={result.ticket} className="w-[380px]" />
             </div>
             <Button

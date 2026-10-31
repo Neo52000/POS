@@ -133,6 +133,11 @@ test('hors ligne : échec réseau pendant l’envoi → bascule et ticket provis
   await expect(page.getByTestId('ticket-code')).toHaveText(/^OFF-TEST-01-\d{8}-\d{3}$/);
   await expect(page.getByTestId('connectivity-status')).toContainText('Hors ligne');
 
+  // Ticket provisoire : e-mail / SMS impossibles hors ligne, papier proposé.
+  await expect(page.getByTestId('receipt-email')).toBeDisabled();
+  await expect(page.getByTestId('receipt-sms')).toBeDisabled();
+  await page.getByTestId('receipt-paper').click();
+
   // Recherche client indisponible hors ligne.
   await expect(page.getByTestId('payment-sheet')).toBeHidden({ timeout: 8000 });
   await expect(page.getByTestId('customer-button')).toBeDisabled();

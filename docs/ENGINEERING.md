@@ -25,6 +25,7 @@
 
 - PWA (`apps/pos/.env`) : `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (projet Pos), `VITE_CATALOG_SUPABASE_URL`, `VITE_CATALOG_SUPABASE_ANON_KEY` (projet ma-papeterie, lecture catalogue), `VITE_BRIDGE_URL` (défaut `http://localhost:8787`), `VITE_APP_VERSION`.
 - Edge Functions (secrets du projet Pos) : `FISKALY_MODE` (`mock` | `live`), `FISKALY_BASE_URL`, `FISKALY_API_KEY`, `FISKALY_API_SECRET`, `MAPAP_SUPABASE_URL`, `MAPAP_SERVICE_ROLE_KEY` (clé service de ma-papeterie) (+ `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` fournis par la plateforme).
+- Ticket dématérialisé (`pos-send-receipt`, e-mail / SMS via Brevo) : `BREVO_API_KEY` (obligatoire), `RECEIPT_SENDER_EMAIL` (défaut `contact@ma-papeterie.fr`, expéditeur vérifié dans Brevo), `RECEIPT_SENDER_NAME` (défaut `Ma Papeterie`), `RECEIPT_SMS_SENDER` (≤ 11 caractères alphanumériques, défaut `MaPapeterie`). Le SMS exige des crédits SMS Brevo ; sans eux l'envoi échoue proprement (`DELIVERY_FAILED`) et la caisse propose le ticket papier.
 - Vault (projet Pos) : `pos_functions_url` (créé par migration), `pos_service_role_key` (à créer par l'admin, même valeur que `SUPABASE_SERVICE_ROLE_KEY` des Edge Functions) — utilisés par `pos_cron_call`.
 - Scripts : `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (`verify-archive` : facultatifs, pour lire l'empreinte attendue dans `pos_archives`).
 - Pont TPE : `bridge.config.json` (dont `tls` pour l'iPad), `BRIDGE_TOKEN`, `LOG_LEVEL`.
