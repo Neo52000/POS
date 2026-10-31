@@ -80,6 +80,12 @@ interface CartState {
   /** Commande ma-papeterie transférée (`sales_orders.id`) : marquée réglée après encaissement. */
   order_id: string | null;
   /**
+   * Facture demandée par le lot préparé au back-office : pré-coche « facture » à l'encaissement
+   * (le vendeur peut la décocher). Remis à false au vidage et au rappel d'un panier.
+   */
+  invoice_hint: boolean;
+  setInvoiceHint: (hint: boolean) => void;
+  /**
    * Remise globale (%) : chaque ligne est vendue avec `max(remise ligne, remise globale)`
    * (pas de cumul). Appliquée au calcul des totaux, jamais écrite dans les lignes.
    */
@@ -141,16 +147,19 @@ export const useCartStore = create<CartState>()(
       lines: [],
       quote_id: null,
       order_id: null,
+      invoice_hint: false,
       global_discount_percent: 0,
       locked: false,
 
       setLocked: (locked) => set({ locked }),
+      setInvoiceHint: (hint) => set({ invoice_hint: hint }),
 
       restore: (lines, quoteId, globalDiscountPercent = 0, orderId = null) =>
         set({
           lines: renumber(lines),
           quote_id: quoteId,
           order_id: orderId,
+          invoice_hint: false,
           global_discount_percent: roundDiscount(globalDiscountPercent),
         }),
 
@@ -356,7 +365,13 @@ export const useCartStore = create<CartState>()(
             order_id,
           });
         }
-        set({ lines: [], quote_id: null, order_id: null, global_discount_percent: 0 });
+        set({
+          lines: [],
+          quote_id: null,
+          order_id: null,
+          invoice_hint: false,
+          global_discount_percent: 0,
+        });
       },
 
       setQuoteId: (quoteId) => set({ quote_id: quoteId }),
@@ -405,6 +420,7 @@ export const useCartStore = create<CartState>()(
         lines: s.lines,
         quote_id: s.quote_id,
         order_id: s.order_id,
+        invoice_hint: s.invoice_hint,
         global_discount_percent: s.global_discount_percent,
       }),
     },

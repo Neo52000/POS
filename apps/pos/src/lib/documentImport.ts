@@ -157,6 +157,22 @@ export function openDocumentTotalCents(d: OpenDocument): number {
   return total;
 }
 
+/**
+ * Lot préparé au back-office, s'il est complet : ses documents (BL puis commandes) et sa demande
+ * de facture. `null` si aucun lot ou si un document du lot n'est plus à encaisser.
+ */
+export function preparedGroupDocuments(
+  docs: CustomerOpenDocuments | null | undefined,
+): { id: string; invoiceRequested: boolean; docs: OpenDocument[] } | null {
+  const group = docs?.prepared_group;
+  if (!group) return null;
+  const all = flattenOpenDocuments(docs);
+  const wanted = new Set([...group.delivery_note_ids, ...group.order_ids]);
+  const picked = all.filter((d) => wanted.has(d.doc.id));
+  if (picked.length !== wanted.size) return null;
+  return { id: group.id, invoiceRequested: group.invoice_requested, docs: picked };
+}
+
 /** Documents déjà présents dans le panier (au moins une ligne sourcée). */
 export function documentIdsInCart(lines: CartLine[]): Set<string> {
   return new Set(lines.flatMap((l) => (l.source ? [l.source.doc_id] : [])));

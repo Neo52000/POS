@@ -292,6 +292,21 @@ export interface OpenDeliveryNoteDocument {
 export interface CustomerOpenDocuments {
   orders: OpenOrderDocument[];
   delivery_notes: OpenDeliveryNoteDocument[];
+  /**
+   * Lot préparé au back-office (fiche client) : documents à encaisser ensemble, sur un seul
+   * ticket. `null` / absent si aucun lot complet (ou fonction serveur antérieure).
+   */
+  prepared_group?: PreparedDocumentGroup | null;
+}
+
+/** Lot de commandes / BL préparé au back-office (`pos_order_groups`, ma-papeterie). */
+export interface PreparedDocumentGroup {
+  id: string;
+  /** Facture demandée : la case « facture » est pré-cochée à l'encaissement. */
+  invoice_requested: boolean;
+  order_ids: string[];
+  delivery_note_ids: string[];
+  created_at: string;
 }
 
 /** Ligne de `pos_resolve_cart_prices`. */

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Layers, Loader2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -17,6 +17,7 @@ import {
   flattenOpenDocuments,
   openDocumentNumber,
   openDocumentTotalCents,
+  preparedGroupDocuments,
   type OpenDocument,
 } from '@/lib/documentImport';
 import { formatEurCents } from '@/lib/format';
@@ -43,11 +44,14 @@ export function OrderImportDialog({ open, onOpenChange }: OrderImportDialogProps
   );
   const docs = useMemo(() => flattenOpenDocuments(data), [data]);
   const inCart = useMemo(() => documentIdsInCart(cartLines), [cartLines]);
+  const group = useMemo(() => preparedGroupDocuments(data), [data]);
   const [selected, setSelected] = useState<string[]>([]);
 
+  // À l'ouverture : le lot préparé au back-office est présélectionné (documents pas déjà au panier).
   useEffect(() => {
-    if (open) setSelected([]);
-  }, [open]);
+    if (!open) return;
+    setSelected(group ? group.docs.map((d) => d.doc.id).filter((id) => !inCart.has(id)) : []);
+  }, [open, group]);
 
   const toggle = (id: string): void =>
     setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -56,11 +60,18 @@ export function OrderImportDialog({ open, onOpenChange }: OrderImportDialogProps
   const pickedTotal = picked.reduce((s, d) => s + openDocumentTotalCents(d), 0);
   const addable = docs.filter((d) => !inCart.has(d.doc.id));
 
-  const add = (): void => {
-    if (!account || picked.length === 0) return;
-    addOpenDocumentsToCart(account.id, picked);
+  const addDocs = (list: OpenDocument[]): void => {
+    if (!account || list.length === 0) return;
+    addOpenDocumentsToCart(account.id, list);
+    // Lot entièrement au panier : sa demande de facture suit (case pré-cochée au paiement).
+    if (group?.invoiceRequested) {
+      const now = documentIdsInCart(useCartStore.getState().lines);
+      if (group.docs.every((d) => now.has(d.doc.id))) useCartStore.getState().setInvoiceHint(true);
+    }
     onOpenChange(false);
   };
+  const add = (): void => addDocs(picked);
+  const groupPending = group ? group.docs.filter((d) => !inCart.has(d.doc.id)) : [];
 
   const holder = passageContact ? passageContact.full_name : account?.display_name;
 
@@ -74,6 +85,27 @@ export function OrderImportDialog({ open, onOpenChange }: OrderImportDialogProps
             cochés s’ajoutent au panier courant.
           </DialogDescription>
         </DialogHeader>
+        {group && groupPending.length > 0 && (
+          <div
+            className="flex items-center justify-between gap-3 rounded-xl border border-accent bg-accent-soft p-3"
+            data-testid="prepared-group"
+          >
+            <p className="text-sm">
+              <span className="font-semibold">Lot préparé au back-office</span> ·{' '}
+              {group.docs.length} document(s) ·{' '}
+              {formatEurCents(group.docs.reduce((s, d) => s + openDocumentTotalCents(d), 0))} TTC
+              {group.invoiceRequested ? ' · facture demandée' : ''}
+            </p>
+            <Button
+              size="touch"
+              onClick={() => addDocs(groupPending)}
+              data-testid="import-prepared-group"
+            >
+              <Layers className="mr-2 h-4 w-4" />
+              Encaisser le lot
+            </Button>
+          </div>
+        )}
         <div className="min-h-[160px] flex-1 overflow-y-auto">
           {isFetching && (
             <div className="flex justify-center py-6 text-muted">

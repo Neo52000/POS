@@ -26,6 +26,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { ReceiptFallbackDialog } from '@/components/ticket/ReceiptFallbackDialog';
+import { UpdateBanner } from '@/components/layout/UpdateBanner';
 import { useBridgeHealth } from '@/hooks/useBridgeHealth';
 import { useIsAdmin } from '@/hooks/useIsAdmin';
 import { useOfflineQueue } from '@/hooks/useOfflineQueue';
@@ -209,6 +210,7 @@ export function AppShell() {
   return (
     <div className="touch-ui flex h-full flex-col bg-bg text-text">
       {training && <TrainingBanner />}
+      <UpdateBanner />
       <header className="flex h-16 shrink-0 items-center gap-2 border-b border-border bg-surface px-3">
         <span className="mr-2 whitespace-nowrap text-base font-semibold leading-tight tracking-tight">
           <span className="hidden xl:inline">Ma Papeterie </span>

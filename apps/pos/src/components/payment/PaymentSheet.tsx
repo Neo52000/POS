@@ -155,7 +155,8 @@ export function PaymentSheet({
     setPayments(draft?.payments ?? []);
     setChange(draft?.change_cents ?? 0);
     setMode(null);
-    setInvoiceRequested(draft?.invoice_requested ?? false);
+    // Lot préparé au back-office avec facture demandée : case pré-cochée (décochable).
+    setInvoiceRequested(draft?.invoice_requested ?? useCartStore.getState().invoice_hint);
     setClientTxnId(draft?.client_txn_id ?? uuidv4());
     setError(null);
     setResult(null);

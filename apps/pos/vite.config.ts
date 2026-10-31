@@ -30,7 +30,9 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       VitePWA({
-        registerType: 'autoUpdate',
+        // « prompt » : jamais de rechargement imposé en pleine vente, bandeau « Nouvelle version »
+        // (src/lib/pwaUpdate.ts) ; le vendeur applique la mise à jour quand il veut.
+        registerType: 'prompt',
         // Le service worker est désactivé en mode e2e (mocks in-memory, pas de cache).
         disable: e2eMock,
         includeAssets: ['icons/icon.svg'],

@@ -13,6 +13,7 @@ import {
   flattenOpenDocuments,
   openDocumentTotalCents,
   openDocumentsCount,
+  preparedGroupDocuments,
 } from './documentImport';
 
 const ACCOUNT = 'c0000000-0000-4000-8000-000000000001';
@@ -127,5 +128,51 @@ describe('commandes et BL à encaisser', () => {
       },
     );
     expect(useCartStore.getState().lines[0]!.qty).toBe(10);
+  });
+});
+
+describe('lot préparé au back-office', () => {
+  const RAW = MOCK_DOCUMENTS[ACCOUNT]!;
+  const withGroup = (order_ids: string[], delivery_note_ids: string[], invoice = true) => ({
+    ...RAW,
+    prepared_group: {
+      id: 'g1',
+      invoice_requested: invoice,
+      order_ids,
+      delivery_note_ids,
+      created_at: '2026-10-31T10:00:00Z',
+    },
+  });
+
+  beforeEach(() => {
+    localStorage.clear();
+    useCartStore.setState({
+      lines: [],
+      quote_id: null,
+      order_id: null,
+      invoice_hint: false,
+      global_discount_percent: 0,
+      locked: false,
+    });
+  });
+
+  it('documents du lot (BL puis commandes), seulement s’il est complet', () => {
+    const g = preparedGroupDocuments(withGroup([WEB.doc.id], [BL.doc.id]));
+    expect(g).toMatchObject({ id: 'g1', invoiceRequested: true });
+    expect(g!.docs.map((d) => d.doc.id)).toEqual([BL.doc.id, WEB.doc.id]);
+    expect(preparedGroupDocuments(withGroup([WEB.doc.id, 'absente'], []))).toBeNull();
+    expect(preparedGroupDocuments({ ...RAW, prepared_group: null })).toBeNull();
+    // Mock : la Mairie a un lot préparé (BL + commande web).
+    expect(preparedGroupDocuments(RAW)?.docs).toHaveLength(2);
+    expect(preparedGroupDocuments(null)).toBeNull();
+  });
+
+  it('facture pré-demandée : remise à zéro au vidage et au rappel d’un panier', () => {
+    useCartStore.getState().setInvoiceHint(true);
+    useCartStore.getState().clear('manual');
+    expect(useCartStore.getState().invoice_hint).toBe(false);
+    useCartStore.getState().setInvoiceHint(true);
+    useCartStore.getState().restore([], null);
+    expect(useCartStore.getState().invoice_hint).toBe(false);
   });
 });

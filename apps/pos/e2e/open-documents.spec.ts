@@ -37,7 +37,7 @@ test('client pro : 2 commandes + 1 BL encaissés sur un ticket', async ({ page }
   await expect(page.getByTestId('checkout-success')).toBeVisible();
 
   // Le client est détaché après la vente : on le rappelle, plus rien à encaisser.
-  await page.keyboard.press('Escape');
+  await page.getByTestId('close-success').click();
   await page.getByTestId('customer-button').click();
   await page.getByTestId('customer-search-input').fill('Mairie');
   await page.getByTestId('customer-result').first().click();
