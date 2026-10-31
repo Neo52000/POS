@@ -276,13 +276,17 @@ export function createMockEdge(): EdgeClient {
       };
       st.transactions.push(full);
       mockSave();
-      // Commande transférée : réglée, retirée des commandes à encaisser (pos_settle_orders).
-      if (payload.order_id && payload.kind === 'sale') {
+      // Commandes transférées (regroupées) : réglées, retirées des commandes à encaisser.
+      const settled = new Set([
+        ...(payload.order_ids ?? []),
+        ...(payload.order_id ? [payload.order_id] : []),
+      ]);
+      if (settled.size > 0 && payload.kind === 'sale') {
         for (const [accountId, orders] of Object.entries(MOCK_ORDERS)) {
-          MOCK_ORDERS[accountId] = orders.filter((o) => o.id !== payload.order_id);
+          MOCK_ORDERS[accountId] = orders.filter((o) => !settled.has(o.id));
         }
         for (const [contactId, orders] of Object.entries(MOCK_PASSAGE_ORDERS)) {
-          MOCK_PASSAGE_ORDERS[contactId] = orders.filter((o) => o.id !== payload.order_id);
+          MOCK_PASSAGE_ORDERS[contactId] = orders.filter((o) => !settled.has(o.id));
         }
       }
       return {

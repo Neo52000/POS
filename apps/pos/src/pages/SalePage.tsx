@@ -28,7 +28,7 @@ import { parseMultiplier } from '@/lib/saleInput';
 import { isValidEan, normalizeScannedCode } from '@/lib/scanner';
 import { describeApiError } from '@/lib/apiError';
 import { errorMessage } from '@/lib/utils';
-import { selectTotals, useCartStore } from '@/stores/cartStore';
+import { selectTotals, storedOrderIds, useCartStore } from '@/stores/cartStore';
 import { draftCapturedCents, useCheckoutDraftStore } from '@/stores/checkoutDraftStore';
 import { useCustomerStore } from '@/stores/customerStore';
 import { MAX_PARKED, useParkedStore } from '@/stores/parkedStore';
@@ -252,7 +252,7 @@ export function SalePage() {
         draft.lines,
         draft.quote_id,
         draft.global_discount_percent ?? 0,
-        draft.order_id ?? null,
+        storedOrderIds(draft),
       );
     useCustomerStore.setState({
       account: draft.account,

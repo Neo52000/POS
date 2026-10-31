@@ -118,7 +118,7 @@ export const useCustomerStore = create<CustomerState>()(
         });
         useCartStore.getState().restorePublicPrices();
         useCartStore.getState().setQuoteId(null);
-        useCartStore.getState().setOrderId(null);
+        useCartStore.getState().setOrderIds([]);
       },
 
       resolveLine: async (lineKey, productId, qty) => {

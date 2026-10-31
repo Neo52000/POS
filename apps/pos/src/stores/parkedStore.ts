@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { logEvent } from '@/lib/events';
 import { uuidv4 } from '@/lib/uuid';
-import { selectTotals, useCartStore } from '@/stores/cartStore';
+import { selectTotals, storedOrderIds, useCartStore } from '@/stores/cartStore';
 import type { CartLine } from '@/stores/cartStore';
 import { useCustomerStore } from '@/stores/customerStore';
 import type { PosCustomer } from '@/types/pos';
@@ -15,7 +15,9 @@ export interface ParkedCart {
   parked_at: string;
   lines: CartLine[];
   quote_id: string | null;
-  /** Commande transférée ; absente des tickets mis en attente avant son ajout. */
+  /** Commandes transférées (regroupées) ; absentes des tickets mis en attente avant leur ajout. */
+  order_ids?: string[];
+  /** Ancien champ (une seule commande), lu pour les tickets mis en attente avant le regroupement. */
   order_id?: string | null;
   /** Remise globale du panier (%), 0 si aucune. Absente des tickets mis en attente avant son ajout. */
   global_discount_percent?: number;
@@ -41,7 +43,7 @@ function snapshotCurrent(): ParkedCart | null {
     parked_at: new Date().toISOString(),
     lines: cart.lines,
     quote_id: cart.quote_id,
-    order_id: cart.order_id,
+    order_ids: cart.order_ids,
     global_discount_percent: cart.global_discount_percent,
     account: useCustomerStore.getState().account,
     total_ttc_cents: selectTotals(cart).total_ttc_cents,
@@ -99,7 +101,7 @@ export const useParkedStore = create<ParkedState>()(
             target.lines,
             target.quote_id,
             target.global_discount_percent ?? 0,
-            target.order_id ?? null,
+            storedOrderIds(target),
           );
         void logEvent('sale_recalled', {
           parked_id: target.id,

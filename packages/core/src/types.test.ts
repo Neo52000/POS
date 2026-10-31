@@ -99,6 +99,17 @@ describe('validateCheckoutPayload', () => {
     expect(validateCheckoutPayload(p).ok).toBe(true);
   });
 
+  it('accepts a sale grouping several orders (order_ids)', () => {
+    const p = mutate((x) => {
+      x['customer_account_id'] = '7c1f4c2e-9a7b-4d3e-8f21-0b5c6d7e8f90';
+      x['order_ids'] = [
+        '1b4e28ba-2fa1-41d2-883f-0016d3cca427',
+        '2c5f39cb-3ab2-42e3-994a-1127e4ddb538',
+      ];
+    });
+    expect(validateCheckoutPayload(p).ok).toBe(true);
+  });
+
   it('rejects a non-object payload', () => {
     expect(validateCheckoutPayload(null)).toEqual({
       ok: false,
@@ -263,6 +274,32 @@ describe('validateCheckoutPayload', () => {
           p['passage_contact_id'] = 'nope';
         }),
       'passage_contact_id',
+    ],
+    ['empty order_ids', () => mutate((p) => (p['order_ids'] = [])), 'order_ids'],
+    ['invalid order_ids entry', () => mutate((p) => (p['order_ids'] = ['nope'])), 'order_ids[0]'],
+    [
+      'duplicate order_ids',
+      () =>
+        mutate(
+          (p) =>
+            (p['order_ids'] = [
+              '1b4e28ba-2fa1-41d2-883f-0016d3cca427',
+              '1b4e28ba-2fa1-41d2-883f-0016d3cca427',
+            ]),
+        ),
+      'duplicates',
+    ],
+    [
+      'too many order_ids',
+      () =>
+        mutate(
+          (p) =>
+            (p['order_ids'] = Array.from(
+              { length: 51 },
+              (_, i) => `1b4e28ba-2fa1-41d2-883f-${String(i).padStart(12, '0')}`,
+            )),
+        ),
+      'at most 50',
     ],
     [
       'passage_contact_id without customer_account_id',

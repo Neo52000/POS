@@ -2,9 +2,10 @@
 // pos-checkout — validation d'une vente/remboursement (SPEC §4-5).
 // 1. Auth vendeur (rôle pos) 2. Snapshot client pro (ma-papeterie) 3. RPC pos_finalize_sale
 // (transaction atomique, chaînage, file de stock) 4. Application du stock sur ma-papeterie
-// (non bloquante, rejouée par cron) 5. Signature Fiskaly (non bloquante) 6. Règlement de la
-// commande ma-papeterie transférée (hors périmètre fiscal, non bloquant) 7. TicketPayload.
-// Contact de passage (hors périmètre fiscal) : retiré du payload comme order_id, inscrit dans
+// (non bloquante, rejouée par cron) 5. Signature Fiskaly (non bloquante) 6. Règlement des
+// commandes ma-papeterie transférées, regroupables sur un ticket (hors périmètre fiscal, non
+// bloquant) 7. TicketPayload.
+// Contact de passage (hors périmètre fiscal) : retiré du payload comme order_ids, inscrit dans
 // l'outbox pos_transaction_passage_contacts juste après validation, transmis par pos-sales-sync.
 // =============================================================================
 import { z } from 'npm:zod@3';
@@ -60,8 +61,11 @@ export const CheckoutSchema = z
     deferred_capture: z.boolean().default(false),
     customer_account_id: uuid.optional(),
     quote_id: uuid.optional(),
-    // Commande ma-papeterie transférée : hors périmètre fiscal, jamais transmise à pos_finalize_sale.
+    // Commande(s) ma-papeterie transférée(s) : hors périmètre fiscal, jamais transmises à
+    // pos_finalize_sale. order_ids = encaissement groupé (une facture) ; order_id = ventes en file
+    // hors ligne écrites avant le regroupement.
     order_id: uuid.optional(),
+    order_ids: z.array(uuid).min(1).max(50).optional(),
     // Personne de passage (ma-papeterie passage_contacts) : hors périmètre fiscal, jamais
     // transmise à pos_finalize_sale. customer_account_id = fiche « Client passage ».
     passage_contact_id: uuid.optional(),
@@ -74,6 +78,9 @@ export const CheckoutSchema = z
     app_version: z.string().max(40),
   })
   .superRefine((v, ctx) => {
+    if (v.order_ids && new Set(v.order_ids).size !== v.order_ids.length) {
+      ctx.addIssue({ code: 'custom', message: 'order_ids : doublons interdits' });
+    }
     if (v.passage_contact_id && !v.customer_account_id) {
       ctx.addIssue({ code: 'custom', message: 'passage_contact_id exige customer_account_id (fiche Client passage)' });
     }
@@ -105,12 +112,14 @@ Deno.serve(async (req) => {
       throw new ApiError('VALIDATION', 'Payload invalide', parsed.error.flatten());
     }
     const {
-      order_id: orderId,
+      order_id: legacyOrderId,
+      order_ids: groupedOrderIds,
       passage_contact_id: passageContactId,
       passage_contact_name: passageContactName,
       ...fiscal
     } = parsed.data;
     const payload: Record<string, unknown> = { ...fiscal };
+    const orderIds = [...new Set([...(groupedOrderIds ?? []), ...(legacyOrderId ? [legacyOrderId] : [])])];
 
     // Snapshot client pro (données ma-papeterie), figée sur le ticket.
     if (parsed.data.customer_account_id) {
@@ -151,14 +160,20 @@ Deno.serve(async (req) => {
     const ticketRef = String(full.transaction?.ticket_number ?? transactionId);
     const stock = await syncStockForTransaction(auth.db, transactionId, ticketRef);
 
-    // Commande transférée : marquée réglée côté ma-papeterie (rejouée par le cron en cas d'échec).
-    let orderSettlement: { done: boolean; error: string | null } | null = null;
-    if (orderId && parsed.data.kind === 'sale') {
-      const recErr = await recordOrderSettlement(auth.db, transactionId, orderId);
+    // Commandes transférées (regroupées) : marquées réglées côté ma-papeterie (rejouées par le
+    // cron en cas d'échec). done = toutes les commandes du ticket réglées.
+    let orderSettlement: { done: boolean; orders: number; settled: number; error: string | null } | null = null;
+    if (orderIds.length > 0 && parsed.data.kind === 'sale') {
+      const recErr = await recordOrderSettlement(auth.db, transactionId, orderIds);
       const out = recErr
         ? { done: 0, error: recErr }
         : await syncPendingOrderSettlements(auth.db, { transactionIds: [transactionId] });
-      orderSettlement = { done: out.done > 0, error: out.error ?? null };
+      orderSettlement = {
+        done: out.done >= orderIds.length,
+        orders: orderIds.length,
+        settled: out.done,
+        error: out.error ?? null,
+      };
     }
     return json(200, {
       transaction: full.transaction,

@@ -6,7 +6,7 @@ vi.mock('@/lib/edge', () => ({
 }));
 
 import { logEvent } from '@/lib/events';
-import { effectiveLines, selectTotals, useCartStore } from './cartStore';
+import { effectiveLines, selectTotals, storedOrderIds, useCartStore } from './cartStore';
 import { useCustomerStore } from './customerStore';
 import { MAX_PARKED, useParkedStore } from './parkedStore';
 import type { PosProduct } from '@/types/pos';
@@ -228,6 +228,39 @@ describe('cartStore', () => {
       state?: { lines?: Array<{ qty: number }> };
     };
     expect(raw.state?.lines?.[0]?.qty).toBe(2);
+  });
+
+  it('migre l’ancien panier persisté (order_id → order_ids)', async () => {
+    localStorage.setItem(
+      'pos.cart.v1',
+      JSON.stringify({
+        state: {
+          lines: [],
+          quote_id: null,
+          order_id: 'e0000000-0000-4000-8000-000000000001',
+          global_discount_percent: 0,
+        },
+        version: 1,
+      }),
+    );
+    await useCartStore.persist.rehydrate();
+    expect(useCartStore.getState().order_ids).toEqual(['e0000000-0000-4000-8000-000000000001']);
+    expect(useCartStore.getState()).not.toHaveProperty('order_id');
+  });
+
+  it('commandes regroupées : dédoublonnées, conservées en attente et rappelées', () => {
+    const ids = ['e0000000-0000-4000-8000-000000000001', 'e0000000-0000-4000-8000-000000000002'];
+    useCartStore.getState().addProduct(BIC);
+    useCartStore.getState().setOrderIds([...ids, ids[0]!]);
+    expect(useCartStore.getState().order_ids).toEqual(ids);
+    expect(useParkedStore.getState().park()).toBe(true);
+    expect(useCartStore.getState().order_ids).toEqual([]);
+    const parked = useParkedStore.getState().parked[0]!;
+    expect(useParkedStore.getState().recall(parked.id)).toBe(true);
+    expect(useCartStore.getState().order_ids).toEqual(ids);
+    // Ancien format (ticket mis en attente / brouillon d'avant le regroupement).
+    expect(storedOrderIds({ order_id: ids[1] })).toEqual([ids[1]]);
+    expect(storedOrderIds({})).toEqual([]);
   });
 
   it('met en attente puis rappelle un panier (échange avec le panier courant)', () => {

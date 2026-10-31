@@ -78,6 +78,8 @@ export async function recordSales(sales: unknown[]): Promise<RecordSaleResult[]>
 /** Résultat par ticket de `pos_settle_orders` (projet ma-papeterie). */
 export interface SettleOrderResult {
   transaction_id: string;
+  /** Commande réglée (absent des réponses antérieures à l'encaissement groupé). */
+  order_id?: string;
   applied: boolean;
   already_applied?: boolean;
   /** Refus métier définitif : ORDER_NOT_FOUND, ACCOUNT_MISMATCH, VALIDATION. */
@@ -86,7 +88,7 @@ export interface SettleOrderResult {
 
 /**
  * Pont commandes : marque réglées en caisse les commandes sales_orders transférées dans le panier
- * (`pos_settle_orders`, service role, idempotente par transaction_id). Payload tel que renvoyé par
+ * (`pos_settle_orders`, service role, idempotente par (transaction_id, order_id)). Payload tel que renvoyé par
  * `pos_order_settlement_pending` (projet Pos).
  */
 export async function settleOrders(settlements: unknown[]): Promise<SettleOrderResult[]> {

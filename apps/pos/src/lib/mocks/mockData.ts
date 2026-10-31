@@ -215,6 +215,37 @@ export const MOCK_ORDERS: Record<string, CustomerOrder[]> = {
         },
       ],
     },
+    // Seconde commande non réglée : démontre l'encaissement groupé (un ticket, une facture).
+    {
+      id: 'e0000000-0000-4000-8000-000000000002',
+      order_number: 'CO-2026-00541',
+      status: 'confirmed',
+      origin: 'shopify',
+      financial_status: 'pending',
+      created_at: '2026-09-30T14:40:00Z',
+      shipping_ttc: 0,
+      total_ttc: 6,
+      items: [
+        {
+          product_id: 'a0000000-0000-4000-8000-000000000004',
+          label: 'Cahier Clairefontaine 96p grands carreaux',
+          quantity: 2,
+          unit_price_ht: 1.8,
+          unit_price_ttc: null,
+          discount_percent: 0,
+          vat_rate: 20,
+        },
+        {
+          product_id: null,
+          label: 'Étiquettes adhésives (lot)',
+          quantity: 1,
+          unit_price_ht: 1.4,
+          unit_price_ttc: null,
+          discount_percent: 0,
+          vat_rate: 20,
+        },
+      ],
+    },
   ],
 };
 

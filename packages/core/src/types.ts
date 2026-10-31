@@ -35,6 +35,12 @@ export interface CheckoutPayload {
    */
   order_id?: string;
   /**
+   * Commandes ma-papeterie regroupées sur ce ticket (encaissement groupé, une facture). Mêmes
+   * règles que `order_id` (hors périmètre fiscal) ; `order_id` reste accepté pour les ventes en
+   * file hors ligne écrites avant le regroupement. 50 commandes max, sans doublon.
+   */
+  order_ids?: string[];
+  /**
    * Personne de passage ma-papeterie (`passage_contacts.id`) : nom + téléphone, sans dossier
    * client. Hors périmètre fiscal comme `order_id` (retiré avant `pos_finalize_sale`, outbox).
    * `customer_account_id` porte alors la fiche « Client passage ».
@@ -110,6 +116,9 @@ function hasDecimals(value: number, maxDecimals: number): boolean {
   const scale = 10 ** maxDecimals;
   return Math.abs(value * scale - Math.round(value * scale)) < 1e-6;
 }
+
+/** Commandes ma-papeterie regroupables sur un même ticket (`order_ids`). */
+export const MAX_ORDER_IDS = 50;
 
 class Collector {
   readonly errors: string[] = [];
@@ -290,6 +299,18 @@ export function validateCheckoutPayload(payload: unknown): CheckoutValidation {
   c.uuid(p, 'customer_account_id', root, false);
   c.uuid(p, 'quote_id', root, false);
   c.uuid(p, 'order_id', root, false);
+  const orderIds = p['order_ids'];
+  if (orderIds !== undefined) {
+    if (!Array.isArray(orderIds) || orderIds.length === 0 || orderIds.length > MAX_ORDER_IDS) {
+      c.fail(`${root}.order_ids`, `must be a non-empty array of at most ${MAX_ORDER_IDS} uuids`);
+    } else {
+      orderIds.forEach((id, i) => {
+        if (!isUuidV4(id)) c.fail(`${root}.order_ids[${i}]`, 'must be a uuid v4');
+      });
+      if (new Set(orderIds).size !== orderIds.length)
+        c.fail(`${root}.order_ids`, 'must not contain duplicates');
+    }
+  }
   c.uuid(p, 'passage_contact_id', root, false);
   c.string(p, 'passage_contact_name', root, false);
   if (p['passage_contact_id'] !== undefined && p['customer_account_id'] === undefined) {

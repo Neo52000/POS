@@ -53,8 +53,11 @@ export type ClearReason =
 interface CartState {
   lines: CartLine[];
   quote_id: string | null;
-  /** Commande ma-papeterie transférée (`sales_orders.id`) : marquée réglée après encaissement. */
-  order_id: string | null;
+  /**
+   * Commandes ma-papeterie transférées (`sales_orders.id`), regroupées sur un seul ticket :
+   * toutes marquées réglées après encaissement. Vide si aucune.
+   */
+  order_ids: string[];
   /**
    * Remise globale (%) : chaque ligne est vendue avec `max(remise ligne, remise globale)`
    * (pas de cumul). Appliquée au calcul des totaux, jamais écrite dans les lignes.
@@ -69,7 +72,7 @@ interface CartState {
     lines: CartLine[],
     quoteId: string | null,
     globalDiscountPercent?: number,
-    orderId?: string | null,
+    orderIds?: string[] | null,
   ) => void;
   addProduct: (product: PosProduct, opts?: AddProductOptions) => CartLine;
   addFreeLine: (input: FreeLineInput) => CartLine;
@@ -79,7 +82,7 @@ interface CartState {
   remove: (key: string) => void;
   clear: (reason: ClearReason) => void;
   setQuoteId: (quoteId: string | null) => void;
-  setOrderId: (orderId: string | null) => void;
+  setOrderIds: (orderIds: string[]) => void;
   /**
    * Applique les prix pro résolus (product_id → résultat). Les lignes absentes, à palier ou à prix
    * forcé restent inchangées ; `lineKey` restreint l'application à une seule ligne.
@@ -87,6 +90,22 @@ interface CartState {
   applyPricing: (pricing: Record<string, ResolvedPrice>, lineKey?: string) => void;
   /** Restaure les prix publics sur toutes les lignes tarifées. */
   restorePublicPrices: () => void;
+}
+
+/** Identifiants de commande dédoublonnés, ordre conservé ; `null` → []. */
+export function uniqueIds(ids: readonly string[] | null | undefined): string[] {
+  return [...new Set((ids ?? []).filter((id) => typeof id === 'string' && id.length > 0))];
+}
+
+/**
+ * Commandes d'un panier mis en attente ou d'un brouillon : `order_ids`, sinon l'ancien champ
+ * `order_id` (écrit avant le regroupement de commandes).
+ */
+export function storedOrderIds(s: {
+  order_ids?: string[] | null;
+  order_id?: string | null;
+}): string[] {
+  return uniqueIds(s.order_ids ?? (s.order_id ? [s.order_id] : []));
 }
 
 function renumber(lines: CartLine[]): CartLine[] {
@@ -116,17 +135,17 @@ export const useCartStore = create<CartState>()(
     (set, get) => ({
       lines: [],
       quote_id: null,
-      order_id: null,
+      order_ids: [],
       global_discount_percent: 0,
       locked: false,
 
       setLocked: (locked) => set({ locked }),
 
-      restore: (lines, quoteId, globalDiscountPercent = 0, orderId = null) =>
+      restore: (lines, quoteId, globalDiscountPercent = 0, orderIds = null) =>
         set({
           lines: renumber(lines),
           quote_id: quoteId,
-          order_id: orderId,
+          order_ids: uniqueIds(orderIds),
           global_discount_percent: roundDiscount(globalDiscountPercent),
         }),
 
@@ -317,7 +336,7 @@ export const useCartStore = create<CartState>()(
       },
 
       clear: (reason) => {
-        const { lines, quote_id, order_id, global_discount_percent } = get();
+        const { lines, quote_id, order_ids, global_discount_percent } = get();
         if (lines.length > 0 && reason !== 'sale_completed') {
           const totals = computeCart(effectiveLines(lines, global_discount_percent));
           void logEvent('sale_abandoned', {
@@ -325,14 +344,14 @@ export const useCartStore = create<CartState>()(
             lines: lines.length,
             total_ttc_cents: totals.total_ttc_cents,
             quote_id,
-            order_id,
+            order_ids,
           });
         }
-        set({ lines: [], quote_id: null, order_id: null, global_discount_percent: 0 });
+        set({ lines: [], quote_id: null, order_ids: [], global_discount_percent: 0 });
       },
 
       setQuoteId: (quoteId) => set({ quote_id: quoteId }),
-      setOrderId: (orderId) => set({ order_id: orderId }),
+      setOrderIds: (orderIds) => set({ order_ids: uniqueIds(orderIds) }),
 
       applyPricing: (pricing, lineKey) => {
         if (get().locked) return;
@@ -371,12 +390,21 @@ export const useCartStore = create<CartState>()(
     {
       // Le panier survit à un rechargement, un crash ou une mise à jour de la PWA.
       name: CART_STORAGE_KEY,
-      version: 1,
+      // v2 : `order_id` (une commande) → `order_ids` (commandes regroupées sur un ticket).
+      version: 2,
+      migrate: (persisted, version) => {
+        const st = (persisted ?? {}) as Record<string, unknown>;
+        if (version < 2) {
+          const { order_id: legacy, ...rest } = st;
+          return { ...rest, order_ids: typeof legacy === 'string' ? [legacy] : [] };
+        }
+        return st;
+      },
       storage: createJSONStorage(() => localStorage),
       partialize: (s) => ({
         lines: s.lines,
         quote_id: s.quote_id,
-        order_id: s.order_id,
+        order_ids: s.order_ids,
         global_discount_percent: s.global_discount_percent,
       }),
     },

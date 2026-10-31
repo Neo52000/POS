@@ -103,7 +103,7 @@ export function PaymentSheet({
   const account = useCustomerStore((s) => s.account);
   const passageContact = useCustomerStore((s) => s.passageContact);
   const quoteId = useCartStore((s) => s.quote_id);
-  const orderId = useCartStore((s) => s.order_id);
+  const orderIds = useCartStore((s) => s.order_ids);
   const clearCart = useCartStore((s) => s.clear);
   const detachCustomer = useCustomerStore((s) => s.detach);
   const saveDraft = useCheckoutDraftStore((s) => s.save);
@@ -165,7 +165,7 @@ export function PaymentSheet({
       session_id: useSessionStore.getState().session?.id ?? null,
       lines: useCartStore.getState().lines,
       quote_id: useCartStore.getState().quote_id,
-      order_id: useCartStore.getState().order_id,
+      order_ids: useCartStore.getState().order_ids,
       global_discount_percent: useCartStore.getState().global_discount_percent,
       account: useCustomerStore.getState().account,
       passage_contact: useCustomerStore.getState().passageContact,
@@ -272,7 +272,8 @@ export function PaymentSheet({
       offline_queued: false,
       ...(account && !refund ? { customer_account_id: account.id } : {}),
       ...(quoteId && !refund ? { quote_id: quoteId } : {}),
-      ...(orderId && !refund ? { order_id: orderId } : {}),
+      // Commandes transférées (regroupées) : hors périmètre fiscal, réglées après validation.
+      ...(orderIds.length > 0 && !refund ? { order_ids: orderIds } : {}),
       // Personne de passage : hors périmètre fiscal, retirée par pos-checkout avant validation.
       ...(account && passageContact && !refund
         ? {
@@ -352,8 +353,9 @@ export function PaymentSheet({
           variant: 'success',
         });
       } else {
-        // Commande transférée : réglée côté serveur, la liste « à encaisser » doit se rafraîchir.
-        if (orderId) void queryClient.invalidateQueries({ queryKey: ['customers', 'orders'] });
+        // Commandes transférées : réglées côté serveur, la liste « à encaisser » doit se rafraîchir.
+        if (orderIds.length > 0)
+          void queryClient.invalidateQueries({ queryKey: ['customers', 'orders'] });
         clearCart('sale_completed');
         detachCustomer();
       }

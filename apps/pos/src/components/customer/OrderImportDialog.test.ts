@@ -7,10 +7,17 @@ vi.mock('@/lib/edge', () => ({
 
 import { MOCK_ORDERS } from '@/lib/mocks/mockData';
 import { selectTotals, useCartStore } from '@/stores/cartStore';
-import type { CustomerQuoteItem } from '@/types/pos';
-import { importOrderIntoCart, orderCartTotalCents } from './OrderImportDialog';
+import type { CustomerOrder, CustomerQuoteItem } from '@/types/pos';
+import {
+  importOrderIntoCart,
+  importOrdersIntoCart,
+  orderCartTotalCents,
+} from './OrderImportDialog';
 
-const ORDER = MOCK_ORDERS['c0000000-0000-4000-8000-000000000001']![0]!;
+const [ORDER, ORDER_2] = MOCK_ORDERS['c0000000-0000-4000-8000-000000000001']! as [
+  CustomerOrder,
+  CustomerOrder,
+];
 const [CAHIER, RELIURE] = ORDER.items as [CustomerQuoteItem, CustomerQuoteItem];
 
 describe('importOrderIntoCart', () => {
@@ -19,7 +26,7 @@ describe('importOrderIntoCart', () => {
     useCartStore.setState({
       lines: [],
       quote_id: 'stale',
-      order_id: null,
+      order_ids: [],
       global_discount_percent: 0,
       locked: false,
     });
@@ -48,9 +55,9 @@ describe('importOrderIntoCart', () => {
 
   it('rattache la commande au panier (réglée après encaissement), effacée au vidage', () => {
     importOrderIntoCart(ORDER);
-    expect(useCartStore.getState().order_id).toBe(ORDER.id);
+    expect(useCartStore.getState().order_ids).toEqual([ORDER.id]);
     useCartStore.getState().clear('manual');
-    expect(useCartStore.getState().order_id).toBeNull();
+    expect(useCartStore.getState().order_ids).toEqual([]);
   });
 
   it('ignore les lignes soldées et l’absence de port', () => {
@@ -62,5 +69,51 @@ describe('importOrderIntoCart', () => {
     expect(useCartStore.getState().lines.map((l) => l.label)).toEqual([
       'Reliure spirale A4 (atelier)',
     ]);
+  });
+});
+
+describe('importOrdersIntoCart (encaissement groupé)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useCartStore.setState({
+      lines: [],
+      quote_id: null,
+      order_ids: [],
+      global_discount_percent: 0,
+      locked: false,
+    });
+  });
+
+  it('regroupe les commandes sur un seul panier, plus ancienne d’abord, lignes tracées par commande', () => {
+    importOrdersIntoCart([ORDER_2, ORDER]);
+    const { lines, order_ids } = useCartStore.getState();
+    expect(order_ids).toEqual([ORDER.id, ORDER_2.id]);
+    expect(lines.map((l) => [l.label, l.qty, l.price_tier_title])).toEqual([
+      ['Cahier Clairefontaine 96p grands carreaux', 10, 'Commande CO-2026-00529'],
+      ['Reliure spirale A4 (atelier)', 2, 'Commande CO-2026-00529'],
+      ['Frais de port', 1, 'Commande CO-2026-00529'],
+      // Même produit, autre commande : ligne distincte (traçabilité par commande).
+      ['Cahier Clairefontaine 96p grands carreaux', 2, 'Commande CO-2026-00541'],
+      ['Étiquettes adhésives (lot)', 1, 'Commande CO-2026-00541'],
+    ]);
+    expect(lines.map((l) => l.line_no)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it('total du panier = somme des totaux annoncés par commande', () => {
+    importOrdersIntoCart([ORDER, ORDER_2]);
+    const total = selectTotals(useCartStore.getState()).total_ttc_cents;
+    expect(total).toBe(orderCartTotalCents(ORDER) + orderCartTotalCents(ORDER_2));
+    expect(total).toBe(3599 + 600);
+  });
+
+  it('ignore les commandes sans ligne due ; sélection vide = panier inchangé', () => {
+    importOrdersIntoCart([ORDER]);
+    importOrdersIntoCart([]);
+    expect(useCartStore.getState().order_ids).toEqual([ORDER.id]);
+    importOrdersIntoCart([
+      { ...ORDER_2, items: ORDER_2.items.map((it) => ({ ...it, quantity: 0 })) },
+      ORDER,
+    ]);
+    expect(useCartStore.getState().order_ids).toEqual([ORDER.id]);
   });
 });
