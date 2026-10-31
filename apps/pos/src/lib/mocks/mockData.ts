@@ -1,6 +1,7 @@
 import type {
   CustomerOrder,
   CustomerQuote,
+  PassageContact,
   PosCustomer,
   PosProduct,
   PosRegister,
@@ -208,6 +209,46 @@ export const MOCK_ORDERS: Record<string, CustomerOrder[]> = {
           label: 'Reliure spirale A4 (atelier)',
           quantity: 2,
           unit_price_ht: 2.25,
+          unit_price_ttc: null,
+          discount_percent: 0,
+          vat_rate: 20,
+        },
+      ],
+    },
+  ],
+};
+
+/** Fiche « Client passage » ma-papeterie (customer_accounts.is_passage) — mock. */
+export const MOCK_PASSAGE_ACCOUNT_ID = 'c0000000-0000-4000-8000-0000000000aa';
+
+/** Personnes de passage (passage_contacts ma-papeterie) — mock. */
+export const MOCK_PASSAGE_CONTACTS: PassageContact[] = [
+  {
+    id: 'b1000000-0000-4000-8000-000000000001',
+    full_name: 'Mme Dupont',
+    phone: '06 12 34 56 78',
+    passage_account_id: MOCK_PASSAGE_ACCOUNT_ID,
+  },
+];
+
+/** Commandes à encaisser par personne de passage (pos_passage_open_orders) — mock. */
+export const MOCK_PASSAGE_ORDERS: Record<string, CustomerOrder[]> = {
+  'b1000000-0000-4000-8000-000000000001': [
+    {
+      id: 'e0000000-0000-4000-8000-000000000091',
+      order_number: 'CO-2026-00701',
+      status: 'confirmed',
+      origin: 'erp',
+      financial_status: null,
+      created_at: '2026-10-30T15:20:00Z',
+      shipping_ttc: 0,
+      total_ttc: 21.6,
+      items: [
+        {
+          product_id: 'a0000000-0000-4000-8000-000000000004',
+          label: 'Cahier Clairefontaine 96p grands carreaux',
+          quantity: 6,
+          unit_price_ht: 3,
           unit_price_ttc: null,
           discount_percent: 0,
           vat_rate: 20,

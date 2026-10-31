@@ -2,10 +2,37 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { edge } from '@/lib/edge';
 import { useCartStore } from '@/stores/cartStore';
-import type { CustomerQuote, PosCustomer, ResolvedPrice } from '@/types/pos';
+import type { CustomerQuote, PassageContact, PosCustomer, ResolvedPrice } from '@/types/pos';
+
+/** Personne de passage attachée (hors périmètre fiscal : voyage à côté du ticket). */
+export type PassageContactRef = Pick<PassageContact, 'id' | 'full_name' | 'phone'>;
+
+/**
+ * Compte porté par le ticket pour une personne de passage : la fiche « Client passage »
+ * ma-papeterie (prix publics, aucune règle tarifaire, pas de devis).
+ */
+export function passageAccount(contact: PassageContact): PosCustomer {
+  return {
+    id: contact.passage_account_id,
+    display_name: `Passage — ${contact.full_name}`,
+    company_name: null,
+    siret: null,
+    vat_number: null,
+    kind: 'b2c',
+    customer_type: null,
+    payment_terms_days: null,
+    pricing_rules_count: 0,
+    open_quotes_count: 0,
+    revenue_ttc_12m: null,
+    email: null,
+    phone: contact.phone,
+  };
+}
 
 interface CustomerState {
   account: PosCustomer | null;
+  /** Personne de passage : `account` est alors la fiche « Client passage ». */
+  passageContact: PassageContactRef | null;
   /** product_id → dernier résultat de `pos_resolve_cart_prices`. */
   pricing: Record<string, ResolvedPrice>;
   quotes: CustomerQuote[];
@@ -15,6 +42,8 @@ interface CustomerState {
   error: string | null;
   /** Attache un client pro et réapplique ses tarifs sur tout le panier. */
   attach: (account: PosCustomer) => Promise<void>;
+  /** Attache une personne de passage (fiche « Client passage » + contact). */
+  attachPassage: (contact: PassageContact) => Promise<void>;
   /** Détache le client et restaure les prix publics. */
   detach: () => void;
   /** Résout le tarif d'une ligne (appelé à chaque ajout/changement de quantité). */
@@ -39,6 +68,7 @@ export const useCustomerStore = create<CustomerState>()(
   persist(
     (set, get) => ({
       account: null,
+      passageContact: null,
       pricing: {},
       quotes: [],
       resolving: false,
@@ -46,7 +76,7 @@ export const useCustomerStore = create<CustomerState>()(
       error: null,
 
       attach: async (account) => {
-        set({ account, quotes: [], error: null, resolving: true });
+        set({ account, passageContact: null, quotes: [], error: null, resolving: true });
         const cart = useCartStore.getState();
         const lines = cart.lines
           .filter((l) => l.product_id && !l.price_tier_title)
@@ -67,9 +97,25 @@ export const useCustomerStore = create<CustomerState>()(
         }
       },
 
+      attachPassage: async (contact) => {
+        const pending = get().attach(passageAccount(contact));
+        // attach() remet passageContact à null de façon synchrone : on le pose juste après.
+        set({
+          passageContact: { id: contact.id, full_name: contact.full_name, phone: contact.phone },
+        });
+        await pending;
+      },
+
       detach: () => {
         lineSeq.clear();
-        set({ account: null, pricing: {}, quotes: [], error: null, resolving: false });
+        set({
+          account: null,
+          passageContact: null,
+          pricing: {},
+          quotes: [],
+          error: null,
+          resolving: false,
+        });
         useCartStore.getState().restorePublicPrices();
         useCartStore.getState().setQuoteId(null);
         useCartStore.getState().setOrderId(null);
@@ -104,7 +150,11 @@ export const useCustomerStore = create<CustomerState>()(
       name: 'pos.customer.v1',
       version: 1,
       storage: createJSONStorage(() => localStorage),
-      partialize: (s) => ({ account: s.account, pricing: s.pricing }),
+      partialize: (s) => ({
+        account: s.account,
+        passageContact: s.passageContact,
+        pricing: s.pricing,
+      }),
     },
   ),
 );

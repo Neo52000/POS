@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import type { PaymentInput } from '@pos/core';
 import type { CartLine } from '@/stores/cartStore';
+import type { PassageContactRef } from '@/stores/customerStore';
 import type { PosCustomer } from '@/types/pos';
 
 /** Paiement saisi dans la feuille d'encaissement. */
@@ -26,6 +27,8 @@ export interface CheckoutDraft {
   order_id?: string | null;
   global_discount_percent: number;
   account: PosCustomer | null;
+  /** Personne de passage (absente des brouillons antérieurs). */
+  passage_contact?: PassageContactRef | null;
   payments: DraftPayment[];
   change_cents: number;
   invoice_requested: boolean;

@@ -12,6 +12,7 @@ import type {
   CustomerOrder,
   CustomerQuote,
   ExportArchiveResult,
+  PassageContact,
   PosCustomer,
   PosPayment,
   PosTransaction,
@@ -32,8 +33,15 @@ export interface EdgeClient {
   checkout(payload: CheckoutPayload): Promise<PosCheckoutResult>;
   customerSearch(q: string, limit?: number): Promise<PosCustomer[]>;
   customerQuotes(accountId: string): Promise<CustomerQuote[]>;
-  /** Commandes non réglées du client (`pos-customer-orders`), transférables en caisse. */
-  customerOrders(accountId: string): Promise<CustomerOrder[]>;
+  /**
+   * Commandes non réglées (`pos-customer-orders`), transférables en caisse : du client pro, ou de
+   * la personne de passage si `passageContactId` est fourni.
+   */
+  customerOrders(accountId: string, passageContactId?: string | null): Promise<CustomerOrder[]>;
+  /** Personnes de passage par nom ou téléphone (`pos-passage-contacts`, action `search`). */
+  passageSearch(q: string, limit?: number): Promise<PassageContact[]>;
+  /** Crée (ou retrouve par téléphone) une personne de passage (`pos-passage-contacts`). */
+  passageCreate(fullName: string, phone: string | null): Promise<PassageContact>;
   /** Tarifs pro (`pos-resolve-prices`) : `{account_id, lines}` → `{prices}`. */
   resolvePrices(accountId: string, lines: PriceLineInput[]): Promise<ResolvedPrice[]>;
   /** Archive NF525 (`pos-export-archive`, admin) : défaut = mois précédent, toutes caisses. */
@@ -116,9 +124,28 @@ function createRealEdge(): EdgeClient {
       const r = await callEdge<{ quotes: CustomerQuote[] }>('pos-customer-quotes', { account_id });
       return r.quotes ?? [];
     },
-    customerOrders: async (account_id) => {
-      const r = await callEdge<{ orders: CustomerOrder[] }>('pos-customer-orders', { account_id });
+    customerOrders: async (account_id, passageContactId) => {
+      const r = await callEdge<{ orders: CustomerOrder[] }>(
+        'pos-customer-orders',
+        passageContactId ? { passage_contact_id: passageContactId } : { account_id },
+      );
       return r.orders ?? [];
+    },
+    passageSearch: async (q, limit = 10) => {
+      const r = await callEdge<{ contacts: PassageContact[] }>('pos-passage-contacts', {
+        action: 'search',
+        q,
+        limit,
+      });
+      return r.contacts ?? [];
+    },
+    passageCreate: async (full_name, phone) => {
+      const r = await callEdge<{ contact: PassageContact }>('pos-passage-contacts', {
+        action: 'create',
+        full_name,
+        phone,
+      });
+      return r.contact;
     },
     resolvePrices: async (account_id, lines) => {
       if (lines.length === 0) return [];

@@ -1,4 +1,4 @@
-import { Building2, FileText, Loader2, PackageOpen, UserPlus, X } from 'lucide-react';
+import { Building2, FileText, Loader2, PackageOpen, Phone, User, UserPlus, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useCustomerOrders } from '@/hooks/useCustomerOrders';
@@ -14,11 +14,12 @@ export interface CustomerBadgeProps {
 /** Client pro attaché (ou bouton « Client pro »). */
 export function CustomerBadge({ onSearch, onQuotes, onOrders }: CustomerBadgeProps) {
   const account = useCustomerStore((s) => s.account);
+  const passageContact = useCustomerStore((s) => s.passageContact);
   const resolving = useCustomerStore((s) => s.resolving);
   const error = useCustomerStore((s) => s.error);
   const detach = useCustomerStore((s) => s.detach);
   const offline = useUiStore((s) => s.connectivity === 'offline');
-  const orders = useCustomerOrders(account && !offline ? account.id : null);
+  const orders = useCustomerOrders(account && !offline ? account.id : null, passageContact?.id);
   const ordersCount = orders.data?.length ?? 0;
 
   if (!account) {
@@ -33,7 +34,7 @@ export function CustomerBadge({ onSearch, onQuotes, onOrders }: CustomerBadgePro
           title={offline ? 'Recherche client indisponible hors ligne' : undefined}
           data-testid="customer-button"
         >
-          <UserPlus className="h-5 w-5 text-accent" /> Client pro
+          <UserPlus className="h-5 w-5 text-accent" /> Client
           {offline && <span className="ml-auto text-xs text-muted">(hors ligne)</span>}
         </Button>
       </div>
@@ -43,9 +44,28 @@ export function CustomerBadge({ onSearch, onQuotes, onOrders }: CustomerBadgePro
   return (
     <div className="flex flex-col gap-2 p-3" data-testid="customer-badge">
       <div className="flex items-start gap-2">
-        <Building2 className="mt-0.5 h-5 w-5 shrink-0 text-accent" />
+        {passageContact ? (
+          <User className="mt-0.5 h-5 w-5 shrink-0 text-accent" />
+        ) : (
+          <Building2 className="mt-0.5 h-5 w-5 shrink-0 text-accent" />
+        )}
         <div className="min-w-0 flex-1">
-          <p className="truncate font-medium">{account.display_name}</p>
+          <p className="truncate font-medium" data-testid="customer-badge-name">
+            {passageContact ? passageContact.full_name : account.display_name}
+          </p>
+          {passageContact && (
+            <p className="flex items-center gap-1 text-xs text-muted">
+              <Badge variant="secondary">Passage</Badge>
+              {passageContact.phone && (
+                <a
+                  href={`tel:${passageContact.phone.replace(/[^\d+]/g, '')}`}
+                  className="inline-flex items-center gap-1 hover:text-accent"
+                >
+                  <Phone className="h-3 w-3" /> {passageContact.phone}
+                </a>
+              )}
+            </p>
+          )}
           <div className="mt-1 flex flex-wrap gap-1.5">
             {account.customer_type && <Badge variant="secondary">{account.customer_type}</Badge>}
             {account.pricing_rules_count > 0 && (
