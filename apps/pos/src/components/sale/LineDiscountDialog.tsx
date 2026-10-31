@@ -24,7 +24,11 @@ export interface LineDiscountDialogProps {
   /** Remise maximale (%) autorisée sans droits administrateur. */
   maxPercent: number;
   isAdmin: boolean;
+  /** Onglet ouvert à l'affichage (tap sur le prix de la ligne → `price`). */
+  mode?: LineDialogMode;
 }
+
+export type LineDialogMode = 'percent' | 'price';
 
 const QUICK = [0, 5, 10, 15, 20, 30, 50];
 
@@ -36,16 +40,22 @@ export function LineDiscountDialog({
   onUnitPrice,
   maxPercent,
   isAdmin,
+  mode = 'percent',
 }: LineDiscountDialogProps) {
+  const [tab, setTab] = useState<LineDialogMode>(mode);
   const [percent, setPercent] = useState('');
   const [price, setPrice] = useState('');
+  /** Prix pré-rempli non encore modifié : la première touche du pavé le remplace. */
+  const [priceFresh, setPriceFresh] = useState(true);
 
   useEffect(() => {
     if (line) {
+      setTab(mode);
       setPercent(line.discount_percent ? String(line.discount_percent).replace('.', ',') : '');
       setPrice((line.unit_price_ttc_cents / 100).toFixed(2).replace('.', ','));
+      setPriceFresh(true);
     }
-  }, [line]);
+  }, [line, mode]);
 
   const percentValue = parsePercent(percent);
   const percentOverCap = percentValue !== null && percentValue > maxPercent && !isAdmin;
@@ -67,6 +77,8 @@ export function LineDiscountDialog({
 
   const applyPrice = (): void => {
     if (!line || !priceValid || priceCents === null) return;
+    // Le prix saisi est le prix vendu : une remise de ligne en place ne s'y cumule pas.
+    if ((line.discount_percent ?? 0) > 0) onDiscount(line.key, 0);
     onUnitPrice(line.key, priceCents);
     onClose();
   };
@@ -75,12 +87,14 @@ export function LineDiscountDialog({
     <Dialog open={line !== null} onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Remise · {line?.label}</DialogTitle>
+          <DialogTitle>
+            {tab === 'price' ? 'Prix' : 'Remise'} · {line?.label}
+          </DialogTitle>
           <DialogDescription>
             Prix unitaire actuel {line ? formatEurCents(line.unit_price_ttc_cents) : ''}
           </DialogDescription>
         </DialogHeader>
-        <Tabs defaultValue="percent">
+        <Tabs value={tab} onValueChange={(v) => setTab(v as LineDialogMode)}>
           <TabsList className="w-full">
             <TabsTrigger value="percent" className="flex-1">
               Remise %
@@ -141,18 +155,40 @@ export function LineDiscountDialog({
           <TabsContent value="price" className="flex flex-col gap-3">
             <Input
               value={price}
-              onChange={(e) => setPrice(e.target.value)}
+              onChange={(e) => {
+                setPrice(e.target.value);
+                setPriceFresh(false);
+              }}
+              onFocus={(e) => e.currentTarget.select()}
+              autoFocus={tab === 'price'}
               inputMode="decimal"
               data-no-vk=""
               aria-label="Prix unitaire TTC"
               className="text-center text-2xl"
               onKeyDown={(e) => e.key === 'Enter' && applyPrice()}
+              data-testid="price-input"
             />
             <NumPad
               decimal
-              onDigit={(d) => setPrice((p) => (d === ',' && p.includes(',') ? p : p + d))}
-              onBackspace={() => setPrice((p) => p.slice(0, -1))}
+              onDigit={(d) => {
+                setPrice((p) => {
+                  const base = priceFresh ? '' : p;
+                  if (d === ',') return base.includes(',') ? base : (base || '0') + ',';
+                  return base + d;
+                });
+                setPriceFresh(false);
+              }}
+              onBackspace={() => {
+                setPrice((p) => (priceFresh ? '' : p.slice(0, -1)));
+                setPriceFresh(false);
+              }}
             />
+            {line && (line.discount_percent ?? 0) > 0 && (
+              <p className="text-sm text-muted">
+                La remise de −{formatPercent(line.discount_percent ?? 0)} sera remplacée par ce
+                prix.
+              </p>
+            )}
             {priceDiscount > 0 && (
               <p
                 className={priceOverCap ? 'text-sm text-warning' : 'text-sm text-muted'}

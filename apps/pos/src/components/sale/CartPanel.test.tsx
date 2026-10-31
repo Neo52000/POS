@@ -99,6 +99,38 @@ describe('CartPanel', () => {
     expect(useCartStore.getState().lines[0]?.discount_percent).toBe(30);
   });
 
+  it('modifie le prix unitaire en touchant le prix de la ligne', () => {
+    useCartStore.getState().addProduct(BIC, { qty: 2 });
+    useCartStore.getState().setDiscount(useCartStore.getState().lines[0]!.key, 10);
+    renderPanel();
+    fireEvent.click(screen.getByTestId('line-price'));
+    expect(screen.getByTestId('price-input')).toHaveValue('1,20');
+    // La première touche du pavé remplace le prix pré-rempli.
+    fireEvent.click(screen.getByRole('button', { name: '1' }));
+    expect(screen.getByTestId('price-input')).toHaveValue('1');
+    fireEvent.click(screen.getByTestId('apply-price'));
+    const line = useCartStore.getState().lines[0];
+    expect(line?.unit_price_ttc_cents).toBe(100);
+    expect(line?.price_overridden).toBe(true);
+    expect(line?.discount_percent).toBe(0);
+    expect(screen.getByTestId('cart-total')).toHaveTextContent('2,00');
+    expect(logEvent).toHaveBeenCalledWith(
+      'price_override',
+      expect.objectContaining({ from_cents: 120, to_cents: 100 }),
+    );
+  });
+
+  it('bloque un prix sous le plafond de remise pour un vendeur', () => {
+    useCartStore.getState().addProduct(BIC);
+    renderPanel();
+    fireEvent.click(screen.getByTestId('line-price'));
+    fireEvent.change(screen.getByTestId('price-input'), { target: { value: '0,50' } });
+    expect(screen.getByTestId('apply-price')).toBeDisabled();
+    fireEvent.change(screen.getByTestId('price-input'), { target: { value: '1,50' } });
+    fireEvent.click(screen.getByTestId('apply-price'));
+    expect(useCartStore.getState().lines[0]?.unit_price_ttc_cents).toBe(150);
+  });
+
   it('attend la fin des tarifs pro avant d’encaisser', () => {
     useCartStore.getState().addProduct(BIC);
     const props = renderPanel({ pricingBusy: true });
