@@ -169,6 +169,14 @@ export interface PosClosing {
   grand_total_perpetual_cents: number;
   hash: string | null;
   created_at: string;
+  /** Z1 (0.4.0) : trous de numérotation hors ligne non résolus à la clôture. */
+  offline_gaps?: OfflineGapsSummary | null;
+}
+
+export interface OfflineGapsSummary {
+  count: number;
+  days: { business_day: string; missing: number[] }[];
+  chain_breaks: number;
 }
 
 /** `pos_x_report(session)` : lecture X (SPEC §13.1). */

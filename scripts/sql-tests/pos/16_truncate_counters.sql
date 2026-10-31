@@ -20,7 +20,7 @@ DECLARE
     'pos_transactions', 'pos_transaction_lines', 'pos_payments', 'pos_events', 'pos_closings',
     'pos_sessions', 'pos_archives', 'pos_counters', 'pos_stock_sync',
     'pos_order_settlements', 'pos_document_settlements', 'pos_transaction_passage_contacts',
-    'pos_settings', 'pos_registers'];
+    'pos_settings', 'pos_registers', 'pos_offline_refs'];
   v_t      text;
   v_n      int := 0;
   v_reg    uuid;

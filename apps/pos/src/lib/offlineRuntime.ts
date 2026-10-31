@@ -3,12 +3,14 @@ import { logEvent, replayEvents } from '@/lib/events';
 import { DELTA_SYNC_INTERVAL_MS, syncCatalog } from '@/lib/offlineCatalog';
 import {
   hasPendingQueue,
+  lastProvisionalSeqByDay,
   queueStats,
   refreshClientSettings,
   replayQueue,
 } from '@/lib/offlineQueue';
 import { refreshTicketSettings } from '@/lib/ticketSettings';
 import { db } from '@/lib/db';
+import { useSessionStore } from '@/stores/sessionStore';
 
 /** Intervalle de rejeu automatique tant que des ventes attendent. */
 export const REPLAY_INTERVAL_MS = 30_000;
@@ -47,10 +49,19 @@ export function startOfflineRuntime(): () => void {
       const durationS = t.since
         ? Math.max(0, Math.round((Date.parse(t.at) - Date.parse(t.since)) / 1000))
         : null;
+      // 0.4.0 lot 5 : dernier numéro OFF-… attribué par jour (détection serveur d'une
+      // suppression en fin de file).
+      const registerCode = useSessionStore.getState().register?.code;
+      const lastSeqByDay = registerCode
+        ? await lastProvisionalSeqByDay(registerCode).catch(() => null)
+        : null;
       await logEvent('offline_exit', {
         since: t.since,
         duration_s: durationS,
         pending_sales: stats?.pending ?? null,
+        ...(registerCode
+          ? { register_code: registerCode, last_seq_by_day: lastSeqByDay ?? {} }
+          : {}),
       });
       await refreshClientSettings();
       await replayQueue();

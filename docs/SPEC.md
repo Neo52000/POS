@@ -536,3 +536,29 @@ changed, old, new, actor}` sur la caisse. Le motif est transmis par `pos.change_
 - `REVOKE TRUNCATE` de `service_role`, `authenticated`, `anon` sur ces tables.
 - `pos_counters` : `DELETE` interdit ; `UPDATE` seulement `value = value + 1` (même caisse, même type).
 - Test : `scripts/sql-tests/pos/16_truncate_counters.sql`.
+
+### 14.5 File hors ligne vérifiable (lot 5)
+
+- `pos_offline_refs` (immuable, `UNIQUE (register_id, business_day, seq)`, `client_txn_id`
+  unique) : référence `OFF-<caisse>-<AAAAMMJJ>-<nnn>` reçue, `source` `sale` (vente rejouée,
+  `pos_finalize_sale`) ou `abandoned` (JET `offline_sale_abandoned`, trigger sur `pos_events`).
+- Au rejeu, numéro > maximum connu du jour + 1 → JET `offline_gap` `{detected_by: 'replay',
+business_day, provisional_ref, previous_max_seq, missing}`. Référence mal formée ou d'une autre
+  caisse → `offline_ref_invalid` ; numéro déjà reçu → `offline_ref_duplicate` (la vente est
+  enregistrée dans tous les cas : elle a été payée).
+- Fin de file : `offline_exit` porte `register_code` et `last_seq_by_day` `{"AAAAMMJJ": n}`
+  (`lastProvisionalSeqByDay`, file tous statuts + compteur du jour). `pos_offline_gaps(caisse)` =
+  numéros `1..max(reçu, déclaré)` absents ; `pos_offline_gaps_summary` →
+  `{count, days:[{business_day, missing}], chain_breaks}`.
+- Chaînage local (`@pos/core` `offlineChain.ts`) : `offline_chain_hash = SHA-256("offline-chain/v1|"
+  - prev + "|" + canonicalJson(payload sans offline_chain_prev / offline_chain_hash))`,
+`offline_chain_prev` = empreinte de l'élément précédent (`''`au départ, tête en`meta`
+`offline_chain_head`). Champs optionnels du `CheckoutPayload`(validateur, zod`pos-checkout`),
+recopiés dans le payload JET de la vente ; **jamais dans le hash v1**.
+`pos_offline_chain_breaks(caisse)` : maillons dont le prédécesseur n'a jamais été reçu ni tracé.
+- Z1 : `pos_compute_closing` (daily) journalise `offline_gap` `{detected_by: 'closing', count,
+days}` s'il reste des trous, fige `pos_closings.offline_gaps` et ajoute
+  `offline_gaps_unresolved` à l'événement `closing`. Rapport Z1 : section « Hors ligne » (trous non
+  résolus, maillons manquants). Hash de clôture inchangé par ce lot.
+- Tests : `scripts/sql-tests/pos/17_offline_refs.sql`, `packages/core/src/offlineChain.test.ts`,
+  `report.test.ts`, `apps/pos/src/lib/offlineQueue.test.ts` (chaînage, `last_seq_by_day`).

@@ -98,6 +98,11 @@ export interface ReportFigures {
   };
   /** Grand total perpétuel (Z) ou projeté (X : dernier Z1 + période en cours). */
   grand_total_perpetual_cents?: number | null;
+  /**
+   * Z1 (0.4.0) : trous de numérotation hors ligne non résolus à la clôture
+   * (`pos_closings.offline_gaps`) et maillons manquants du chaînage local de la file.
+   */
+  offline_gaps?: { count: number; chain_breaks?: number } | null;
 }
 
 export interface ReportContext {
@@ -283,6 +288,25 @@ export function buildReport(figures: ReportFigures, ctx: ReportContext): ReportP
           value: money(figures.grand_total_perpetual_cents),
           bold: !isX,
         },
+      ],
+    });
+  }
+
+  if (figures.offline_gaps) {
+    const g = figures.offline_gaps;
+    sections.push({
+      title: 'Hors ligne',
+      rows: [
+        { label: 'Trous non résolus', value: String(g.count), bold: g.count > 0 },
+        ...(g.chain_breaks != null
+          ? [
+              {
+                label: 'Maillons manquants',
+                value: String(g.chain_breaks),
+                bold: g.chain_breaks > 0,
+              },
+            ]
+          : []),
       ],
     });
   }

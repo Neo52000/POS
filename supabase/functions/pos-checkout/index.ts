@@ -82,6 +82,9 @@ export const CheckoutSchema = z
     // Lignes de commandes / BL ma-papeterie réglées : hors périmètre fiscal, jamais transmises à
     // pos_finalize_sale.
     settlement_lines: z.array(SettlementLineSchema).min(1).max(500).optional(),
+    // Chaînage local de la file hors ligne (0.4.0) : tracé au JET de la vente, hors hash v1.
+    offline_chain_prev: z.string().regex(/^([0-9a-f]{64})?$/).optional(),
+    offline_chain_hash: z.string().regex(/^[0-9a-f]{64}$/).optional(),
     invoice_requested: z.boolean().default(false),
     lines: z.array(LineSchema).min(1),
     payments: z.array(PaymentSchema).min(1),

@@ -55,6 +55,15 @@ export function closingReport(
     vat_breakdown: closing.vat_breakdown ?? [],
     payments: normalizePaymentFigures(closing.payments_breakdown),
     grand_total_perpetual_cents: Number(closing.grand_total_perpetual_cents),
+    // Z1 0.4.0 : trous hors ligne non résolus (absent des clôtures antérieures).
+    ...(closing.offline_gaps
+      ? {
+          offline_gaps: {
+            count: Number(closing.offline_gaps.count),
+            chain_breaks: Number(closing.offline_gaps.chain_breaks ?? 0),
+          },
+        }
+      : {}),
     ...(session && session.expected_cash_cents != null
       ? {
           cash: {

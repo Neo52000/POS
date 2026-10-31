@@ -1,3 +1,4 @@
+import { chainOfflinePayload } from '@pos/core';
 import type { CheckoutPayload, TicketPayload } from '@pos/core';
 import { ApiError, describeApiError, isApiError, isNetworkFailure } from '@/lib/apiError';
 import { markOffline } from '@/lib/connectivity';
@@ -184,13 +185,40 @@ export async function nextProvisionalRef(
 // Mise en file
 // ---------------------------------------------------------------------------
 
-/** Ajoute une vente à la file (idempotent par `client_txn_id`). */
-export async function enqueueSale(
+const CHAIN_HEAD_KEY = 'offline_chain_head';
+let chainLock: Promise<unknown> = Promise.resolve();
+
+/** Exécute `fn` après les mises en file en cours (la tête de chaîne est lue puis avancée). */
+function withChainLock<T>(fn: () => Promise<T>): Promise<T> {
+  const run = chainLock.then(fn, fn);
+  chainLock = run.catch(() => undefined);
+  return run;
+}
+
+/** Tête de la chaîne locale de la file (SHA-256 du dernier élément mis en file, `''` au départ). */
+export async function offlineChainHead(): Promise<string> {
+  return ((await getMeta<string>(CHAIN_HEAD_KEY)) ?? '') as string;
+}
+
+/**
+ * Ajoute une vente à la file (idempotent par `client_txn_id`). 0.4.0 : l'élément est chaîné à la
+ * file (`offline_chain_prev` = SHA-256 de l'élément précédent, `offline_chain_hash` = le sien,
+ * `@pos/core` `chainOfflinePayload`) ; la valeur part au JET de la vente, jamais dans le hash v1.
+ */
+export function enqueueSale(
   payload: CheckoutPayload,
   opts: { ticket?: TicketPayload | null; error?: string | null } = {},
 ): Promise<QueuedCheckout> {
-  const existing = await db.queue.where('client_txn_id').equals(payload.client_txn_id).first();
+  return withChainLock(() => enqueueChained(payload, opts));
+}
+
+async function enqueueChained(
+  base: CheckoutPayload,
+  opts: { ticket?: TicketPayload | null; error?: string | null },
+): Promise<QueuedCheckout> {
+  const existing = await db.queue.where('client_txn_id').equals(base.client_txn_id).first();
   if (existing) return existing;
+  const payload = await chainOfflinePayload(await offlineChainHead(), base);
   const now = new Date().toISOString();
   const item: QueuedCheckout = {
     client_txn_id: payload.client_txn_id,
@@ -207,8 +235,38 @@ export async function enqueueSale(
     server_ticket_code: null,
     server_transaction_id: null,
   };
-  const local_seq = await db.queue.add(item);
+  const local_seq = await db.transaction('rw', db.queue, db.meta, async () => {
+    const seq = await db.queue.add(item);
+    await db.meta.put({ key: CHAIN_HEAD_KEY, value: payload.offline_chain_hash ?? '' });
+    return seq;
+  });
   return { ...item, local_seq };
+}
+
+/**
+ * Dernier numéro provisoire attribué par jour (`{ "AAAAMMJJ": n }`) : références de la file (tous
+ * statuts, les éléments enregistrés restent conservés) et compteur du jour. Transmis à
+ * `offline_exit` : le serveur y détecte une suppression en fin de file.
+ */
+export async function lastProvisionalSeqByDay(
+  registerCode: string,
+): Promise<Record<string, number>> {
+  const prefix = `OFF-${registerCode}-`;
+  const out: Record<string, number> = {};
+  const bump = (day: string, seq: number): void => {
+    if (/^\d{8}$/.test(day) && Number.isInteger(seq) && seq > 0)
+      out[day] = Math.max(out[day] ?? 0, seq);
+  };
+  for (const q of await db.queue.toArray()) {
+    const ref = q.provisional_ref;
+    if (!ref || !ref.startsWith(prefix)) continue;
+    const m = /-(\d{8})-(\d+)$/.exec(ref.slice(prefix.length - 1));
+    if (m) bump(m[1] ?? '', Number(m[2]));
+  }
+  const cur = (await db.meta.get(`provisional_seq:${registerCode}`))?.value as
+    { day: string; seq: number } | undefined;
+  if (cur) bump(cur.day, cur.seq);
+  return out;
 }
 
 export interface QueuedSaleOutcome {

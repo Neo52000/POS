@@ -33,7 +33,13 @@ La barre d'état affiche `Hors ligne` (rouge) ou `Synchronisation…` pendant le
    **référence provisoire** `OFF-<code caisse>-<YYYYMMDD>-<nnn>` (ex. `OFF-CHAUMONT-01-20260924-007`) :
    compteur local par caisse remis à 1 chaque jour (date Europe/Paris), jamais réutilisé tant que
    la file contient une référence du jour.
-3. La vente est écrite dans IndexedDB (table `queue`, clé `client_txn_id`, ordre `local_seq`) et
+3. La vente est **chaînée** à la file (0.4.0) : elle porte le SHA-256 de l'élément précédent
+   (`offline_chain_prev`) et le sien (`offline_chain_hash`), transmis au JET de la vente au rejeu
+   (jamais dans le hash du ticket). Le serveur inscrit chaque référence `OFF-…` reçue
+   (`pos_offline_refs`) et journalise `offline_gap` pour tout numéro sauté ; `offline_exit`
+   déclare le dernier numéro attribué par jour, ce qui révèle une suppression en fin de file. Les
+   trous non résolus figurent sur le Z1 (section « Hors ligne »).
+4. La vente est écrite dans IndexedDB (table `queue`, clé `client_txn_id`, ordre `local_seq`) et
    un **ticket provisoire** est imprimé : mention « provisoire », pas de numéro de ticket, pas
    de hash ni de signature.
 

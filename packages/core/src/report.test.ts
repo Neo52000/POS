@@ -107,6 +107,24 @@ describe('buildReport', () => {
   });
 });
 
+describe('buildReport — trous hors ligne (Z1, 0.4.0)', () => {
+  it('affiche les trous non résolus et les maillons manquants', () => {
+    const r = buildReport(
+      { ...figures, offline_gaps: { count: 2, chain_breaks: 1 } },
+      ctx({ kind: 'Z1', period_end: '2026-09-28T17:05:00.000Z', number: 3, hash: 'ab'.repeat(32) }),
+    );
+    const text = flat(r);
+    expect(text).toContain('Hors ligne');
+    expect(text).toContain('Trous non résolus=2');
+    expect(text).toContain('Maillons manquants=1');
+  });
+
+  it('absent sans donnée (clôtures antérieures à 0.4.0)', () => {
+    const r = buildReport(figures, ctx({ kind: 'Z1', period_end: '2026-09-28T17:05:00.000Z' }));
+    expect(flat(r)).not.toContain('Trous non résolus');
+  });
+});
+
 describe('formatReportPeriod', () => {
   it('Z1 : bornes en heure de Paris', () => {
     expect(formatReportPeriod('Z1', '2026-09-28T07:00:00.000Z', '2026-09-28T17:05:00.000Z')).toBe(
