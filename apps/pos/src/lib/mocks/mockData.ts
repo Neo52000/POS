@@ -275,6 +275,14 @@ export const MOCK_DOCUMENTS: Record<string, CustomerOpenDocuments> = {
         ],
       },
     ],
+    // Lot préparé au back-office (BL + commande web), facture demandée.
+    prepared_group: {
+      id: 'f0000000-0000-4000-8000-000000000001',
+      invoice_requested: true,
+      order_ids: ['e0000000-0000-4000-8000-000000000001'],
+      delivery_note_ids: ['d0000000-0000-4000-8000-000000000001'],
+      created_at: '2026-10-31T09:00:00Z',
+    },
   },
 };
 

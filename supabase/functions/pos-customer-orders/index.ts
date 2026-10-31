@@ -2,7 +2,8 @@
 // (sales_orders + sales_order_lines), transférables dans le panier pour encaissement.
 // Avec passage_contact_id : commandes d'une personne de passage (pos_passage_open_orders).
 // documents: true → commandes ET bons de livraison à encaisser, ligne par ligne
-// (pos_customer_open_documents / pos_passage_open_documents) : {documents: {orders, delivery_notes}}.
+// (pos_customer_open_documents / pos_passage_open_documents) : {documents: {orders, delivery_notes,
+// prepared_group}} — prepared_group = lot préparé au back-office (null si aucun).
 // Sans documents : ancien format {orders} (caisses d'une version antérieure).
 import { z } from 'npm:zod@3';
 import { requirePos } from '../_shared/auth.ts';
@@ -27,8 +28,15 @@ Deno.serve(async (req) => {
         : mapapClient().rpc('pos_customer_open_documents', { p_account_id: parsed.data.account_id });
       const { data, error } = await docsRpc;
       if (error) throw new ApiError('DB_ERROR', `open documents: ${error.message}`);
-      const docs = (data ?? {}) as { orders?: unknown[]; delivery_notes?: unknown[] };
-      return json(200, { documents: { orders: docs.orders ?? [], delivery_notes: docs.delivery_notes ?? [] } });
+      const docs = (data ?? {}) as { orders?: unknown[]; delivery_notes?: unknown[]; prepared_group?: unknown };
+      return json(200, {
+        documents: {
+          orders: docs.orders ?? [],
+          delivery_notes: docs.delivery_notes ?? [],
+          // Lot préparé au back-office (pos_order_groups) : présélectionné par la caisse.
+          prepared_group: docs.prepared_group ?? null,
+        },
+      });
     }
     const rpc = 'passage_contact_id' in parsed.data
       ? mapapClient().rpc('pos_passage_open_orders', { p_contact_id: parsed.data.passage_contact_id })
