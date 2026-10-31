@@ -231,6 +231,14 @@ export interface CustomerQuote {
   items: CustomerQuoteItem[];
 }
 
+/** Lot de commandes préparé au back-office (`pos_order_groups`, ma-papeterie). */
+export interface PreparedOrderGroup {
+  id: string;
+  invoice_requested: boolean;
+  order_count: number;
+  created_at: string;
+}
+
 /**
  * Personne de passage (`pos-passage-contacts`) : nom + téléphone, sans dossier client.
  * Le ticket porte la fiche « Client passage » (`passage_account_id`) ; le contact voyage hors
@@ -257,6 +265,11 @@ export interface CustomerOrder {
   shipping_ttc: number | null;
   total_ttc: number | null;
   items: CustomerQuoteItem[];
+  /**
+   * Lot préparé au back-office (fiche client) : commandes à encaisser ensemble, sur un seul
+   * ticket. Présent sur chaque commande du lot ; absent des réponses antérieures.
+   */
+  prepared_group?: PreparedOrderGroup | null;
 }
 
 /** Ligne de `pos_resolve_cart_prices`. */

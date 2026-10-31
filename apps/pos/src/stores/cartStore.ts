@@ -59,6 +59,12 @@ interface CartState {
    */
   order_ids: string[];
   /**
+   * Facture demandée par le lot préparé au back-office : pré-coche « facture » à l'encaissement
+   * (le vendeur peut la décocher). Remis à false au vidage.
+   */
+  invoice_hint: boolean;
+  setInvoiceHint: (hint: boolean) => void;
+  /**
    * Remise globale (%) : chaque ligne est vendue avec `max(remise ligne, remise globale)`
    * (pas de cumul). Appliquée au calcul des totaux, jamais écrite dans les lignes.
    */
@@ -136,8 +142,11 @@ export const useCartStore = create<CartState>()(
       lines: [],
       quote_id: null,
       order_ids: [],
+      invoice_hint: false,
       global_discount_percent: 0,
       locked: false,
+
+      setInvoiceHint: (hint) => set({ invoice_hint: hint }),
 
       setLocked: (locked) => set({ locked }),
 
@@ -146,6 +155,8 @@ export const useCartStore = create<CartState>()(
           lines: renumber(lines),
           quote_id: quoteId,
           order_ids: uniqueIds(orderIds),
+          // Brouillon / ticket en attente : la facture suit son propre choix, pas un lot.
+          invoice_hint: false,
           global_discount_percent: roundDiscount(globalDiscountPercent),
         }),
 
@@ -347,7 +358,13 @@ export const useCartStore = create<CartState>()(
             order_ids,
           });
         }
-        set({ lines: [], quote_id: null, order_ids: [], global_discount_percent: 0 });
+        set({
+          lines: [],
+          quote_id: null,
+          order_ids: [],
+          invoice_hint: false,
+          global_discount_percent: 0,
+        });
       },
 
       setQuoteId: (quoteId) => set({ quote_id: quoteId }),
@@ -405,6 +422,7 @@ export const useCartStore = create<CartState>()(
         lines: s.lines,
         quote_id: s.quote_id,
         order_ids: s.order_ids,
+        invoice_hint: s.invoice_hint,
         global_discount_percent: s.global_discount_percent,
       }),
     },

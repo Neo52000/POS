@@ -62,7 +62,10 @@ export function orderSellable(order: CustomerOrder): boolean {
  * panier courant) : un seul ticket, une seule facture, toutes réglées après encaissement. Les
  * commandes sans ligne due sont ignorées ; ordre chronologique (plus ancienne d'abord).
  */
-export function importOrdersIntoCart(orders: CustomerOrder[]): void {
+export function importOrdersIntoCart(
+  orders: CustomerOrder[],
+  opts: { invoiceRequested?: boolean } = {},
+): void {
   const picked = orders
     .filter(orderSellable)
     .sort((a, b) => a.created_at.localeCompare(b.created_at));
@@ -72,6 +75,22 @@ export function importOrdersIntoCart(orders: CustomerOrder[]): void {
     quoteId: null,
     orderIds: picked.map((o) => o.id),
   });
+  useCartStore.getState().setInvoiceHint(opts.invoiceRequested === true);
+}
+
+/**
+ * Lot préparé au back-office et encore complet : ses commandes (toutes encaissables) et sa
+ * demande de facture. `null` si aucun lot ou si une commande du lot manque.
+ */
+export function preparedGroup(
+  orders: CustomerOrder[],
+): { orders: CustomerOrder[]; invoiceRequested: boolean; id: string } | null {
+  const first = orders.find((o) => o.prepared_group);
+  const group = first?.prepared_group;
+  if (!group) return null;
+  const members = orders.filter((o) => o.prepared_group?.id === group.id);
+  if (members.length !== group.order_count || !members.every(orderSellable)) return null;
+  return { orders: members, invoiceRequested: group.invoice_requested, id: group.id };
 }
 
 /** Transfère une commande ma-papeterie non réglée dans le panier (remplace le panier courant). */
@@ -89,12 +108,14 @@ export function OrderImportDialog({ open, onOpenChange }: OrderImportDialogProps
   );
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
 
-  // Sélection remise à zéro à chaque ouverture / changement de client.
-  useEffect(() => {
-    setSelected(new Set());
-  }, [open, account?.id, passageContact?.id]);
-
   const orders = useMemo(() => data ?? [], [data]);
+  const group = useMemo(() => preparedGroup(orders), [orders]);
+
+  // Sélection remise à zéro à chaque ouverture / changement de client ; le lot préparé au
+  // back-office est présélectionné.
+  useEffect(() => {
+    setSelected(new Set(group ? group.orders.map((o) => o.id) : []));
+  }, [open, account?.id, passageContact?.id, group]);
   const sellable = useMemo(() => orders.filter(orderSellable), [orders]);
   const picked = useMemo(() => sellable.filter((o) => selected.has(o.id)), [sellable, selected]);
   const pickedTotal = picked.reduce((sum, o) => sum + orderCartTotalCents(o), 0);
@@ -114,7 +135,12 @@ export function OrderImportDialog({ open, onOpenChange }: OrderImportDialogProps
   };
 
   const transfer = (list: CustomerOrder[]): void => {
-    importOrdersIntoCart(list);
+    // Sélection identique au lot préparé : sa demande de facture suit.
+    const isGroup =
+      !!group &&
+      list.length === group.orders.length &&
+      list.every((o) => o.prepared_group?.id === group.id);
+    importOrdersIntoCart(list, { invoiceRequested: isGroup && group.invoiceRequested });
     onOpenChange(false);
   };
 
@@ -130,6 +156,27 @@ export function OrderImportDialog({ open, onOpenChange }: OrderImportDialogProps
             {cartCount > 0 ? ` (${cartCount} ligne(s))` : ''} par les lignes restant dues.
           </DialogDescription>
         </DialogHeader>
+        {group && (
+          <div
+            className="flex items-center justify-between gap-3 rounded-xl border border-accent bg-accent-soft p-3"
+            data-testid="prepared-group"
+          >
+            <p className="text-sm">
+              <span className="font-semibold">Lot préparé au back-office</span> ·{' '}
+              {group.orders.length} commandes ·{' '}
+              {formatEurCents(group.orders.reduce((sum, o) => sum + orderCartTotalCents(o), 0))} TTC
+              {group.invoiceRequested ? ' · facture demandée' : ''}
+            </p>
+            <Button
+              size="touch"
+              onClick={() => transfer(group.orders)}
+              data-testid="import-prepared-group"
+            >
+              <Layers className="mr-2 h-4 w-4" />
+              Encaisser le lot
+            </Button>
+          </div>
+        )}
         {sellable.length > 1 && (
           <label className="flex cursor-pointer items-center gap-2 text-sm">
             <input

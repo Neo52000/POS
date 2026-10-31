@@ -47,6 +47,8 @@ import { useCartStore } from '@/stores/cartStore';
 import { useCheckoutDraftStore } from '@/stores/checkoutDraftStore';
 import type { CheckoutDraft } from '@/stores/checkoutDraftStore';
 import { useSessionStore } from '@/stores/sessionStore';
+import { useCustomerStore } from '@/stores/customerStore';
+import { MOCK_CUSTOMERS } from '@/lib/mocks/mockData';
 
 const totals = computeCart([
   {
@@ -220,6 +222,17 @@ describe('PaymentSheet', () => {
       payments: [{ method: 'cash', amount_cents: 0 }],
       change_cents: 0,
     });
+  });
+
+  it('lot préparé avec facture demandée : case « facture » pré-cochée', () => {
+    useCustomerStore.setState({ account: MOCK_CUSTOMERS[0]! });
+    useCartStore.setState({ invoice_hint: true });
+    renderSheet(
+      computeCart([{ line_no: 1, label: 'X', qty: 1, unit_price_ttc_cents: 500, vat_rate: 20 }]),
+    );
+    expect(screen.getByTestId('invoice-requested')).toBeChecked();
+    useCartStore.setState({ invoice_hint: false });
+    useCustomerStore.setState({ account: null });
   });
 
   it('transmet les commandes transférées regroupées (order_ids) avec la vente', async () => {

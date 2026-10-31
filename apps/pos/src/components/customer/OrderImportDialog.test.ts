@@ -12,6 +12,7 @@ import {
   importOrderIntoCart,
   importOrdersIntoCart,
   orderCartTotalCents,
+  preparedGroup,
 } from './OrderImportDialog';
 
 const [ORDER, ORDER_2] = MOCK_ORDERS['c0000000-0000-4000-8000-000000000001']! as [
@@ -115,5 +116,50 @@ describe('importOrdersIntoCart (encaissement groupé)', () => {
       ORDER,
     ]);
     expect(useCartStore.getState().order_ids).toEqual([ORDER.id]);
+  });
+});
+
+describe('lot préparé au back-office', () => {
+  const G = {
+    id: 'g1',
+    invoice_requested: true,
+    order_count: 2,
+    created_at: '2026-10-31T10:00:00Z',
+  };
+
+  beforeEach(() => {
+    localStorage.clear();
+    useCartStore.setState({
+      lines: [],
+      quote_id: null,
+      order_ids: [],
+      invoice_hint: false,
+      global_discount_percent: 0,
+      locked: false,
+    });
+  });
+
+  it('reconnu seulement s’il est complet et encaissable', () => {
+    const a = { ...ORDER, prepared_group: G };
+    const b = { ...ORDER_2, prepared_group: G };
+    expect(preparedGroup([a, b])).toMatchObject({ id: 'g1', invoiceRequested: true });
+    expect(preparedGroup([a, b])!.orders.map((o) => o.id)).toEqual([ORDER.id, ORDER_2.id]);
+    expect(preparedGroup([a, ORDER_2])).toBeNull();
+    expect(preparedGroup([ORDER, ORDER_2])).toBeNull();
+    expect(
+      preparedGroup([a, { ...b, items: b.items.map((it) => ({ ...it, quantity: 0 })) }]),
+    ).toBeNull();
+  });
+
+  it('transfert du lot : facture pré-demandée, remise à zéro au vidage et au rappel', () => {
+    importOrdersIntoCart([ORDER, ORDER_2], { invoiceRequested: true });
+    expect(useCartStore.getState().invoice_hint).toBe(true);
+    useCartStore.getState().clear('manual');
+    expect(useCartStore.getState().invoice_hint).toBe(false);
+    importOrdersIntoCart([ORDER, ORDER_2], { invoiceRequested: true });
+    useCartStore.getState().restore([], null);
+    expect(useCartStore.getState().invoice_hint).toBe(false);
+    importOrdersIntoCart([ORDER, ORDER_2]);
+    expect(useCartStore.getState().invoice_hint).toBe(false);
   });
 });
