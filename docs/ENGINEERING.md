@@ -45,6 +45,7 @@
 
 - Déploiement : `supabase functions deploy pos-checkout` (etc.) ou MCP `deploy_edge_function`. `verify_jwt=false` dans `config.toml` : l'auth est faite dans le code (`_shared/auth.ts`).
 - `FISKALY_MODE=mock` par défaut : signatures déterministes, aucun appel réseau. Passer en `live` avec les clés du dashboard Fiskaly (TEST puis LIVE).
+- **Caisse `live` (0.4.0)** : `getFiskalyClient(caisse)` (`_shared/fiskaly/config.ts`) n'accepte que `FISKALY_MODE=live` + `FISKALY_API_KEY` / `FISKALY_API_SECRET` + `FISKALY_BASE_URL` LIVE (`https://live.api.fiskaly.com`). Sinon `FISKALY_NOT_CONFIGURED` : le ticket reste `pending_signature` (une trace JET, tentatives non consommées) et `pos-sign-pending` le rejoue. Aucune URL par défaut ; une URL LIVE est refusée pour une caisse `test`. En base, `pos_mark_signature` refuse une signature mock pour une caisse live (`FISKALY_MOCK_FOR_LIVE_REGISTER`).
 - Contrat Fiskaly : uniquement dans `_shared/fiskaly/types.ts` et `client.ts`.
 - Les Edge Functions n'importent pas `packages/core` (spécificateurs `.js`, déploiement limité à `supabase/functions`) : le code partagé est recopié dans `_shared/` (`ticket.ts`, `archive.ts`). `_shared/archive.ts` est un **miroir exact** sans import de `@pos/core` `archive.ts` : toute modification se fait des deux côtés, `pnpm --filter @pos/core test` (bloc « miroir Deno ») compare les deux sur `archive-vector.json`.
 - Fonctions du lot 4-6 :

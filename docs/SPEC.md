@@ -126,7 +126,7 @@ Port 8787, JSON, header `X-Bridge-Token` obligatoire (sauf `/health`), CORS stri
 - **Projet `ma-papeterie`** (données métier) : la PWA lit le catalogue directement (clé anon `VITE_CATALOG_SUPABASE_URL` / `VITE_CATALOG_SUPABASE_ANON_KEY`, RPC `pos_search_products`, `pos_product_by_ean`, SECURITY INVOKER). Les données protégées passent par les Edge Functions de Pos qui appellent les RPC ma-papeterie (`pos_customer_lookup`, `pos_customer_open_quotes`, `pos_resolve_cart_prices`, `pos_apply_stock_movements`) avec le secret `MAPAP_SERVICE_ROLE_KEY` (+ `MAPAP_SUPABASE_URL`).
 - **Stock** : `pos_finalize_sale` écrit une file `pos_stock_sync` (une ligne par ligne de vente, `idempotency_key = transaction_id:line_no`). `pos-checkout` tente l'application immédiate via `pos_apply_stock_movements` ; le cron `pos-stock-sync` (1 min) rejoue les lignes `pending`. Le stock n'est pas une donnée fiscale : un retard est toléré, jamais une double application.
 - **Auth** : header `Authorization: Bearer <JWT utilisateur Pos>` ; la fonction appelle `auth.getUser(jwt)` puis `rpc('is_pos')` (`pos_user_roles`). Les crons appellent avec le service role de Pos (comparaison stricte).
-- Secrets Pos (Edge) : `FISKALY_MODE` (`mock` | `live`), `FISKALY_BASE_URL`, `FISKALY_API_KEY`, `FISKALY_API_SECRET`, `MAPAP_SUPABASE_URL`, `MAPAP_SERVICE_ROLE_KEY` (+ `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY` fournis par la plateforme).
+- Secrets Pos (Edge) : `FISKALY_MODE` (`mock` | `live`), `FISKALY_BASE_URL` (obligatoire en `live`, aucune valeur par défaut ; LIVE exigée pour une caisse `live`, refusée pour une caisse `test` — §14.1), `FISKALY_API_KEY`, `FISKALY_API_SECRET`, `MAPAP_SUPABASE_URL`, `MAPAP_SERVICE_ROLE_KEY` (+ `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY` fournis par la plateforme).
 - Edge Function supplémentaire `pos-resolve-prices` : `{account_id, lines:[{product_id, qty}]}` → `{prices:[...]}` (proxy de `pos_resolve_cart_prices`).
 
 ## 10. Design (PWA)
@@ -461,3 +461,25 @@ massicot), tiroir `BEL` (périphérique 1) / `SUB`. Sans massicot : 5 sauts de l
 découpe. En dessous de 40 colonnes, la ventilation TVA du ticket passe sur deux lignes par taux.
 `GET /health` expose `printer.command_set` et `printer.width` : l'aperçu PWA adopte la largeur de
 l'imprimante. Mise en service : `docs/IMPRIMANTE-STAR-MPOP.md`.
+
+## 14. Attestabilité NF525 (v0.4.0)
+
+### 14.1 Signature Fiskaly sans repli silencieux (lot 1)
+
+- `getFiskalyClient(caisse)` (`_shared/fiskaly/config.ts`, `resolveFiskalyConfig`) :
+
+  | Caisse | Configuration                                                          | Client                          |
+  | ------ | ---------------------------------------------------------------------- | ------------------------------- |
+  | `live` | `FISKALY_MODE=live`, clés, `FISKALY_BASE_URL` LIVE                     | réel                            |
+  | `live` | toute autre (mode mock, clés ou URL absentes, URL de test ou inconnue) | `FISKALY_NOT_CONFIGURED` levée  |
+  | `test` | mode ≠ `live` ou clés absentes                                         | mock                            |
+  | `test` | `FISKALY_MODE=live` + clés : URL obligatoire, URL LIVE refusée         | réel (TEST) ou `NOT_CONFIGURED` |
+
+- `FISKALY_NOT_CONFIGURED` : la vente est enregistrée (`pending_signature`), une trace
+  `signature_failed` au JET à la première tentative, aucune tentative consommée ensuite :
+  `pos-sign-pending` rejoue jusqu'à configuration. `pos-closings-sync` ignore la caisse et la
+  liste dans `not_configured`.
+- Défense en base : `pos_mark_signature(…, 'signed', …)` sur une caisse `live` avec une signature
+  simulée (`pos_signature_is_mock` : record `mock-…`, payload `mock: true` ou `mode: 'mock'`) →
+  `FISKALY_MOCK_FOR_LIVE_REGISTER`, ticket inchangé.
+- Tests : `scripts/fiskaly/config.test.ts` (Vitest), `scripts/sql-tests/pos/13_fiskaly_live_guard.sql`.

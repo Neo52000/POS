@@ -41,7 +41,7 @@ export class MockFiskalyClient implements FiskalyClient {
       record_id: `mock-${tx.id}`,
       signature,
       signed_at: new Date().toISOString(),
-      raw: { mock: true, system_id: systemId, ticket_code: tx.ticket_code },
+      raw: { mock: true, mode: 'mock', system_id: systemId, ticket_code: tx.ticket_code },
     };
   }
 
