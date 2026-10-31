@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Clock, Loader2, Minus, PauseCircle, Percent, Plus, Trash2 } from 'lucide-react';
+import { Clock, Loader2, Minus, PauseCircle, Pencil, Percent, Plus, Trash2 } from 'lucide-react';
 import type { ComputedLine } from '@pos/core';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,7 @@ import type { CartLine } from '@/stores/cartStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { CustomerBadge } from '@/components/customer/CustomerBadge';
 import { LineDiscountDialog } from './LineDiscountDialog';
+import type { LineDialogMode } from './LineDiscountDialog';
 import { QtyDialog } from './QtyDialog';
 
 interface CartLineRowProps {
@@ -21,10 +22,19 @@ interface CartLineRowProps {
   onQty: (key: string, qty: number) => void;
   onRemove: (key: string) => void;
   onDiscount: (line: CartLine) => void;
+  onEditPrice: (line: CartLine) => void;
   onEditQty: (line: CartLine) => void;
 }
 
-function CartLineRow({ line, computed, onQty, onRemove, onDiscount, onEditQty }: CartLineRowProps) {
+function CartLineRow({
+  line,
+  computed,
+  onQty,
+  onRemove,
+  onDiscount,
+  onEditPrice,
+  onEditQty,
+}: CartLineRowProps) {
   const pro = !!line.pricing_rule_id;
   const publicPrice = line.public_price_ttc_cents ?? null;
   const lowStock = line.stock_boutique !== null && line.stock_boutique < line.qty;
@@ -49,17 +59,25 @@ function CartLineRow({ line, computed, onQty, onRemove, onDiscount, onEditQty }:
             <span>TVA {formatVatRate(line.vat_rate)}</span>
           </div>
         </div>
-        <div className="text-right">
+        <button
+          type="button"
+          className="-mr-1 rounded-lg px-1 py-0.5 text-right hover:bg-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          onClick={() => onEditPrice(line)}
+          aria-label={`Prix ${formatEurCents(line.unit_price_ttc_cents)} l’unité, modifier`}
+          title="Modifier le prix"
+          data-testid="line-price"
+        >
           <p className="text-base font-semibold tabular">
             {formatEurCents(computed?.line_ttc_cents ?? 0)}
           </p>
-          <p className="text-xs text-muted tabular">
+          <p className="flex items-center justify-end gap-1 text-xs text-muted tabular">
             {pro && publicPrice !== null && publicPrice !== line.unit_price_ttc_cents && (
-              <span className="mr-1 line-through">{formatEurCents(publicPrice)}</span>
+              <span className="line-through">{formatEurCents(publicPrice)}</span>
             )}
             {formatEurCents(line.unit_price_ttc_cents)} / u
+            <Pencil className="h-3 w-3" aria-hidden />
           </p>
-        </div>
+        </button>
       </div>
       <div className="flex items-center gap-1.5">
         <Button
@@ -145,6 +163,7 @@ export function CartPanel({
   const remove = useCartStore((s) => s.remove);
   const clear = useCartStore((s) => s.clear);
   const [discountLine, setDiscountLine] = useState<CartLine | null>(null);
+  const [discountMode, setDiscountMode] = useState<LineDialogMode>('percent');
   const [qtyLine, setQtyLine] = useState<CartLine | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
   const maxDiscountPercent = useSettingsStore((s) => s.maxDiscountPercent);
@@ -228,7 +247,14 @@ export function CartPanel({
             computed={computedByKey.get(line.key)}
             onQty={setQty}
             onRemove={remove}
-            onDiscount={setDiscountLine}
+            onDiscount={(l) => {
+              setDiscountMode('percent');
+              setDiscountLine(l);
+            }}
+            onEditPrice={(l) => {
+              setDiscountMode('price');
+              setDiscountLine(l);
+            }}
             onEditQty={setQtyLine}
           />
         ))}
@@ -297,6 +323,7 @@ export function CartPanel({
         onUnitPrice={setUnitPrice}
         maxPercent={maxDiscountPercent}
         isAdmin={isAdmin}
+        mode={discountMode}
       />
       <QtyDialog line={qtyLine} onClose={() => setQtyLine(null)} onQty={setQty} />
       <ConfirmDialog
