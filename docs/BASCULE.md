@@ -86,16 +86,22 @@ resterait définitivement).
 
 ## J-1 (soir, après la dernière vente Shopify POS)
 
-- [ ] **(P)** Clés Fiskaly **LIVE** dans les secrets Edge (`FISKALY_BASE_URL`, `FISKALY_API_KEY`,
-      `FISKALY_API_SECRET`).
+- [ ] **(P)** Clés Fiskaly **LIVE** dans les secrets Edge : `FISKALY_MODE=live`,
+      `FISKALY_BASE_URL=https://live.api.fiskaly.com` (obligatoire, aucune valeur par défaut depuis
+      0.4.0 ; une URL de test est refusée pour une caisse live), `FISKALY_API_KEY`,
+      `FISKALY_API_SECRET`. Sans eux, les ventes de la caisse live restent `pending_signature`
+      (`FISKALY_NOT_CONFIGURED`), jamais signées par le mock.
 - [ ] Caisse de production vierge : `select count(*) from pos_transactions t join pos_registers r on r.id = t.register_id where r.code = 'CHAUMONT-01';` → **0**.
       Sinon, ne rien supprimer : créer une nouvelle caisse (`CHAUMONT-02`) et l'utiliser.
-- [ ] `update pos_registers set fiskaly_env = 'live', fiskaly_system_id = null where code = 'CHAUMONT-01';`
-      (mise en service du système LIVE à la première vente) ; désactiver `TEST-01` :
-      `update pos_registers set is_active = false where code = 'TEST-01';`
-- [ ] Version : `update pos_settings set value = '{"name":"Ma Papeterie POS","version":"1.0.0"}' where key = 'software';`
-      et `VITE_APP_VERSION=1.0.0` (redéployer Netlify). Mentions légales (`legal` : SIRET, TVA,
-      téléphone) complétées dans `pos_settings`.
+- [ ] Mise en service du système LIVE (à la première vente), **par RPC tracée** (JET
+      `register_change`, motif) :
+      `select pos_admin_update_register((select id from pos_registers where code = 'CHAUMONT-01'), '{"fiskaly_env":"live","fiskaly_system_id":null}', 'Mise en service LIVE 1.0.0');`
+      puis désactiver `TEST-01` :
+      `select pos_admin_update_register((select id from pos_registers where code = 'TEST-01'), '{"is_active":false}', 'Caisse de test désactivée à la bascule');`
+      (après une vente live, le retour `live → test` est refusé : `REGISTER_LIVE_LOCKED`).
+- [ ] Version 1.0.0 : migration dédiée (modèle `…_pos_version_0_4_0.sql`, tracée au JET) fusionnée
+      par PR, et `VITE_APP_VERSION=1.0.0` (redéployer Netlify). Mentions légales :
+      `select pos_admin_set_setting('legal', '{…SIRET, TVA, téléphone…}', 'Mentions légales de mise en service');`
 - [ ] **Inventaire initial** via `/inventory` (compte admin) : compter le stock boutique, envoyer
       par lots ; toutes les lignes confirmées, aucune erreur. Le stock ma-papeterie devient la
       référence de départ.

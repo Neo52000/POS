@@ -25,7 +25,16 @@ select id, code, label, fiskaly_env, is_active from pos_registers;
   clôtures et les archives. Toute correction se fait par **remboursement** (nouveau ticket
   négatif lié à l'original), jamais par modification.
 - Horodatage contrôlé par le serveur (`clock_tolerance`) : pas d'antidatage au-delà de 10 min en
-  ligne, 72 h hors ligne (`docs/HORS-LIGNE.md`).
+  ligne, 72 h hors ligne (`docs/HORS-LIGNE.md`) ; plafonds non relevables (0.4.0).
+- `TRUNCATE` interdit par trigger sur toutes les tables fiscales (même `service_role`, privilège
+  retiré) ; compteurs `pos_counters` modifiables uniquement par `+1`, jamais supprimés (0.4.0).
+- Paramétrage fiscal (`pos_settings`, `pos_registers`) : écriture uniquement par RPC admin avec
+  motif (`pos_admin_set_setting`, `pos_admin_update_register`) ; tout changement, quel que soit le
+  chemin (RPC, service role, migration), est journalisé au JET (`settings_change` sur chaque caisse
+  active, `register_change`) avec ancienne et nouvelle valeur, auteur et motif ; code de caisse
+  immuable ; retour `live → test` interdit après une vente live (0.4.0).
+- Clôtures en hash `v2` (0.4.0) : chaque clôture ancre la tête du JET et la dernière archive ; une
+  réécriture du JET, même rechaînée, rompt la vérification des clôtures.
 
 **Preuve**
 
@@ -36,6 +45,22 @@ select * from pos_verify_closings_chain('<register_id>');  -- clôtures
 select * from pos_verify_archives_chain('<register_id>');  -- archives
 ```
 
+Preuves 0.4.0 :
+
+```sql
+-- Garde-fous TRUNCATE présents (une ligne par table fiscale)
+select c.relname from pg_trigger t join pg_class c on c.oid = t.tgrelid
+where t.tgname like 'trg\_%\_no\_truncate' order by 1;
+-- Historique du paramétrage fiscal (ancienne / nouvelle valeur, auteur, motif)
+select created_at, event_type, payload ->> 'key' as cle, payload -> 'old' as avant,
+       payload -> 'new' as apres, payload -> 'actor' as auteur
+from pos_events where register_id = '<register_id>'
+  and event_type in ('settings_change', 'register_change') order by id;
+-- Clôtures : version de hash et têtes ancrées
+select closing_number, period_type, hash_version, jet_head_event_id, archive_head_id
+from pos_closings where register_id = '<register_id>' order by closing_number;
+```
+
 Recalcul indépendant, hors base (implémentation TypeScript distincte du SQL, mêmes vecteurs de
 test `packages/core/src/__fixtures__/hash-vectors.json`) :
 
@@ -43,8 +68,10 @@ test `packages/core/src/__fixtures__/hash-vectors.json`) :
 SUPABASE_URL=https://jntngwbdsaexustzmaii.supabase.co SUPABASE_SERVICE_ROLE_KEY=… pnpm verify-chain [CHAUMONT-01]
 ```
 
-Sortie : un tableau (tickets @pos/core, tickets SQL, JET, clôtures, archives) ; code de sortie
-`0` si tout est intègre, `1` à la première rupture (numéro et raison affichés).
+Sortie : un tableau (tickets @pos/core, tickets SQL, JET, clôtures @pos/core v1/v2, clôtures SQL,
+archives) ; code de sortie `0` si tout est intègre, `1` à la première rupture (numéro et raison
+affichés : `HASH_MISMATCH`, `JET_HEAD_MISMATCH`, `ARCHIVE_HEAD_MISMATCH`…). Les caisses d'essai
+(`is_test`) sont marquées `[ESSAI]`.
 
 **Procédure exploitant** : une fois par semaine, le responsable lance `pnpm verify-chain` (ou
 les quatre requêtes ci-dessus). Une rupture n'est **jamais** corrigée en base :
@@ -61,15 +88,28 @@ archivage (automatique, voir §4).
 - Signature électronique Fiskaly SIGN FR de chaque ticket et de chaque clôture
   (`pos_transactions.fiskaly_signature`, `pos_closings.fiskaly_closing_id`). Un échec de signature
   n'empêche pas la vente : statut `pending_signature`, rejoué toutes les 2 min (`pos-sign-pending`).
+  Caisse `live` (0.4.0) : jamais de signature simulée — sans `FISKALY_MODE=live`, clés et
+  `FISKALY_BASE_URL` LIVE, le ticket reste `pending_signature` (`FISKALY_NOT_CONFIGURED`) ; la base
+  refuse une signature mock (`FISKALY_MOCK_FOR_LIVE_REGISTER`).
+- Z journalier garanti (0.4.0) : une session ouverte un jour précédent (heure de Paris) refuse
+  toute vente (`SESSION_STALE`) jusqu'à son Z1 ; chaque nuit à 03:05 (Paris), le JET reçoit
+  `session_stale` pour toute session non clôturée.
+- File hors ligne vérifiable (0.4.0) : chaque référence `OFF-…` rejouée ou abandonnée est inscrite
+  (`pos_offline_refs`) ; un numéro sauté produit `offline_gap` ; `offline_exit` déclare le dernier
+  numéro du jour (suppression en fin de file) ; chaînage SHA-256 local de la file transmis au JET ;
+  trous non résolus figés sur le Z1 (`pos_closings.offline_gaps`, section « Hors ligne »).
+- Duplicata (0.4.0) : `pos_reprint` journalise la réimpression avant l'impression « DUPLICATA n°X » ;
+  impossible hors ligne.
 - Clôtures : Z1 à chaque fermeture de session (`daily`), Z2 mensuelle et Z3 annuelle établies
   par cron dès la fin de la période (tentative quotidienne à 03:10 UTC, et 03:20 UTC en janvier,
   idempotente) ou à la demande (écran Rapports, `pos_close_period`), jamais sur une période non
   terminée ni avant le Z1 d'une session encore ouverte ; bornes en heure de Paris
   (`pos_period_bounds`) ; grand total perpétuel cumulé depuis l'origine. Lecture X intermédiaire
   sans remise à zéro, tracée au JET (`x_report`).
-- Mode formation : aucune donnée envoyée au serveur (ni ticket, ni JET, ni stock), TPE simulé,
-  tickets imprimés « FORMATION — sans valeur » ; entrée et sortie du mode tracées au JET
-  (`training_mode_start` / `training_mode_end`).
+- Mode formation : aucun ticket ni numéro fiscal, aucun stock, TPE simulé, tickets imprimés
+  « FORMATION — sans valeur » ; activation réservée à un administrateur, en ligne ; entrée, sortie
+  et chaque vente de formation tracées au JET (`training_mode_start`, `training_sale`,
+  `training_mode_end`).
 - JET (`pos_events`) : connexions, ouvertures/fermetures, abandons, suppressions de ligne,
   modifications de prix, ouvertures de tiroir, réimpressions, passages hors ligne
   (`offline_enter`/`offline_exit`/`offline_reattached`/`offline_replay_failed`), abandons tracés
@@ -96,9 +136,39 @@ from pos_events where register_id = '<register_id>'
   and created_at >= '2026-10-01' and created_at < '2026-10-02' order by id;
 ```
 
-**Procédure exploitant** : Z obligatoire chaque soir (fermeture de session) ; vérifier chaque
-matin l'absence de ticket `pending_signature` de plus de 24 h (sinon : état Fiskaly, secrets,
-journal de `pos-sign-pending`). Les comptes vendeurs sont nominatifs ; un départ = suppression du
+Preuves 0.4.0 :
+
+```sql
+-- Sessions laissées ouvertes la veille (doit être vide ; sinon Z1 immédiat)
+select created_at, payload ->> 'session_number' as session, payload ->> 'opened_at' as ouverte
+from pos_events where register_id = '<register_id>' and event_type = 'session_stale' order by id desc;
+-- Aucune signature simulée sur une caisse live (doit être vide)
+select t.ticket_number from pos_transactions t join pos_registers r on r.id = t.register_id
+where r.fiskaly_env = 'live' and t.signature_status = 'signed'
+  and pos_signature_is_mock(t.fiskaly_record_id, t.fiskaly_payload);
+-- Trous de numérotation hors ligne non résolus et maillons manquants (doit être vide / 0)
+select * from pos_offline_gaps('<register_id>');
+select * from pos_offline_chain_breaks('<register_id>');
+select created_at, payload from pos_events
+where register_id = '<register_id>' and event_type = 'offline_gap' order by id;
+-- Trous constatés à chaque Z1
+select closing_number, period_start, offline_gaps from pos_closings
+where register_id = '<register_id>' and period_type = 'daily' and offline_gaps is not null
+order by closing_number;
+-- Duplicatas (rang par ticket) et ventes de formation
+select created_at, payload ->> 'ticket_number' as ticket, payload ->> 'duplicate_number' as duplicata
+from pos_events where register_id = '<register_id>' and event_type = 'reprint' order by id;
+select created_at, payload ->> 'training_code' as code, payload ->> 'total_ttc_cents' as total
+from pos_events where register_id = '<register_id>' and event_type = 'training_sale' order by id;
+```
+
+**Procédure exploitant** : Z obligatoire chaque soir (fermeture de session) ; une session non
+clôturée bloque la vente le lendemain (écran « Clôture Z de la veille obligatoire ») : compter le
+tiroir, faire le Z, rouvrir. Vérifier chaque matin l'absence de ticket `pending_signature` de plus
+de 24 h (sinon : état Fiskaly, secrets `FISKALY_*`, journal de `pos-sign-pending`) et l'absence de
+`session_stale` de la nuit. Chaque semaine : `pos_offline_gaps` vide ; tout trou est analysé
+(ressaisie en ligne puis abandon tracé de l'élément). Tout changement de paramétrage passe par
+`pos_admin_set_setting` / `pos_admin_update_register` avec un motif explicite. Les comptes vendeurs sont nominatifs ; un départ = suppression du
 rôle dans `pos_user_roles`.
 
 **Fréquence** : quotidienne (Z, signatures), mensuelle et annuelle (clôtures automatiques).
@@ -186,5 +256,11 @@ mois précédent, la télécharger, lancer `pnpm verify-archive`, puis la copier
 | Les clôtures sont-elles intactes ?              | `pos_verify_closings_chain`, grand total perpétuel croissant et cohérent     |
 | Les archives sont-elles intègres et chaînées ?  | `pnpm verify-archive <zip>` + `pos_verify_archives_chain`                    |
 | Quelle version du logiciel ?                    | `select value from pos_settings where key = 'software'` ; ticket ; manifeste |
+| Le paramétrage fiscal a-t-il changé ?           | JET `settings_change` / `register_change` (ancienne, nouvelle valeur, motif) |
+| Le Z a-t-il été fait chaque jour ?              | JET `session_stale` (vide attendu) ; `SESSION_STALE` bloque la vente         |
+| Des ventes hors ligne ont-elles disparu ?       | `pos_offline_gaps`, `pos_offline_chain_breaks`, JET `offline_gap`, Z1        |
+| Le JET a-t-il été réécrit ?                     | `pos_verify_closings_chain` (v2 : `JET_HEAD_MISMATCH`)                       |
+| Combien de duplicatas d'un ticket ?             | JET `reprint` (`duplicate_number`)                                           |
+| Caisse d'essai ?                                | `pos_registers.is_test` ; `[ESSAI]` dans `pnpm verify-chain`                 |
 | Signatures                                      | `pos_transactions.fiskaly_signature`, tableau de bord Fiskaly                |
 | Attestation                                     | `docs/ATTESTATION-EDITEUR.md` signée (version majeure en cours)              |
