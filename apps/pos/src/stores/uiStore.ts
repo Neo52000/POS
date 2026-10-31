@@ -5,7 +5,7 @@ export type BridgeStatus = 'unknown' | 'ok' | 'ko';
 /** `replaying` : en ligne, rejeu de la file hors ligne en cours. */
 export type Connectivity = 'online' | 'offline' | 'replaying';
 /** Raison d'arrêt du rejeu nécessitant une action humaine. */
-export type ReplayBlock = 'session_not_open' | 'unauthorized' | null;
+export type ReplayBlock = 'session_not_open' | 'session_stale' | 'unauthorized' | null;
 export type ToastVariant = 'default' | 'success' | 'warning' | 'danger';
 
 export interface ToastItem {
@@ -30,6 +30,8 @@ interface UiState {
   /** Début réel de la période hors ligne (ISO), `null` en ligne. */
   offlineSince: string | null;
   replayBlock: ReplayBlock;
+  /** Session signalée périmée par le serveur (`SESSION_STALE`) : Z1 de la veille obligatoire. */
+  staleSessionId: string | null;
   bridgeStatus: BridgeStatus;
   bridgeVersion: string | null;
   tpeReachable: boolean | null;
@@ -43,6 +45,7 @@ interface UiState {
   setOnline: (online: boolean) => void;
   setConnectivity: (c: Connectivity, offlineSince?: string | null) => void;
   setReplayBlock: (b: ReplayBlock) => void;
+  setStaleSession: (sessionId: string | null) => void;
   setBridgeHealth: (
     h: {
       ok: boolean;
@@ -69,6 +72,7 @@ export const useUiStore = create<UiState>()((set) => ({
   offlineSince:
     typeof navigator === 'undefined' || navigator.onLine ? null : new Date().toISOString(),
   replayBlock: null,
+  staleSessionId: null,
   bridgeStatus: 'unknown',
   bridgeVersion: null,
   tpeReachable: null,
@@ -97,6 +101,7 @@ export const useUiStore = create<UiState>()((set) => ({
           : null,
     })),
   setReplayBlock: (replayBlock) => set({ replayBlock }),
+  setStaleSession: (staleSessionId) => set({ staleSessionId }),
   setBridgeHealth: (h) =>
     set(
       h

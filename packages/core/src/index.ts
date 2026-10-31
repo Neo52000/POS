@@ -8,3 +8,5 @@ export * from './ticket.js';
 export * from './types.js';
 export * from './archive.js';
 export * from './report.js';
+export * from './offlineChain.js';
+export * from './closing.js';

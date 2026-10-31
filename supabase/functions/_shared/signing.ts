@@ -1,5 +1,10 @@
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
-import { getFiskalyClient, type FiskalyRegister, type TransactionForSigning } from './fiskaly/index.ts';
+import {
+  getFiskalyClient,
+  isFiskalyNotConfigured,
+  type FiskalyRegister,
+  type TransactionForSigning,
+} from './fiskaly/index.ts';
 import { ticketCode } from './ticket.ts';
 
 // deno-lint-ignore no-explicit-any
@@ -21,7 +26,7 @@ export async function loadTransactionFull(db: SupabaseClient, transactionId: str
 
 async function ensureSystemId(db: SupabaseClient, register: Json): Promise<string> {
   if (register.fiskaly_system_id) return String(register.fiskaly_system_id);
-  const fiskaly = getFiskalyClient();
+  const fiskaly = getFiskalyClient(register);
   const reg: FiskalyRegister = {
     id: String(register.id),
     code: String(register.code),
@@ -30,11 +35,13 @@ async function ensureSystemId(db: SupabaseClient, register: Json): Promise<strin
     fiskaly_system_id: null,
   };
   const systemId = await fiskaly.commissionSystem(reg);
-  const { error } = await db
-    .from('pos_registers')
-    .update({ fiskaly_system_id: systemId })
-    .eq('id', register.id);
-  if (error) throw new Error(`pos_registers.fiskaly_system_id: ${error.message}`);
+  // Écriture tracée (0.4.0 lot 3) : RPC admin, JET register_change avec motif.
+  const { error } = await db.rpc('pos_admin_update_register', {
+    p_register_id: register.id,
+    p_patch: { fiskaly_system_id: systemId },
+    p_reason: 'Commissionnement Fiskaly automatique (System SIGN FR)',
+  });
+  if (error) throw new Error(`pos_admin_update_register(fiskaly_system_id): ${error.message}`);
   return systemId;
 }
 
@@ -87,8 +94,9 @@ export async function signTransaction(db: SupabaseClient, transactionId: string)
   const t: Json = full.transaction;
   if (t.signature_status === 'signed') return { transaction_id: transactionId, status: 'signed' };
   try {
+    // Lève FISKALY_NOT_CONFIGURED pour une caisse live sans client réel (jamais de mock).
+    const fiskaly = getFiskalyClient(full.register ?? {});
     const systemId = await ensureSystemId(db, full.register ?? {});
-    const fiskaly = getFiskalyClient();
     const sig = await fiskaly.createTransactionRecord(systemId, toSigningInput(full));
     const { error } = await db.rpc('pos_mark_signature', {
       p_transaction_id: transactionId,
@@ -103,6 +111,23 @@ export async function signTransaction(db: SupabaseClient, transactionId: string)
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     console.error(`[signing] ${transactionId}: ${message}`);
+    if (isFiskalyNotConfigured(e)) {
+      // Caisse live sans configuration Fiskaly : le ticket reste pending_signature, sans
+      // consommer le quota de tentatives (sinon il passerait `failed` et ne serait plus rejoué).
+      // Une seule trace JET (première tentative) ; pos-sign-pending rejoue à chaque passage.
+      if (Number(t.signature_attempts ?? 0) === 0) {
+        const { error } = await db.rpc('pos_mark_signature', {
+          p_transaction_id: transactionId,
+          p_status: 'pending_signature',
+          p_record_id: null,
+          p_signature: null,
+          p_payload: null,
+          p_error: message.slice(0, 500),
+        });
+        if (error) console.error(`[signing] pos_mark_signature(not configured) ${transactionId}: ${error.message}`);
+      }
+      return { transaction_id: transactionId, status: 'pending_signature', error: message };
+    }
     const attempts = Number(t.signature_attempts ?? 0) + 1;
     const status = attempts >= 50 ? 'failed' : 'pending_signature';
     const { error } = await db.rpc('pos_mark_signature', {

@@ -1,6 +1,6 @@
 {
   "name": "@pos/tpe-bridge",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
   "description": "Pont local HTTP ↔ TPE Caisse-AP (TCP) + impression ESC/POS et Star (mPOP) pour Ma Papeterie POS",

@@ -89,6 +89,11 @@ Détail opérationnel : `docs/HORS-LIGNE.md`.
   (`pos_close_period`), écran Rapports, document imprimable commun `ReportPayload` (`@pos/core`),
   mode formation 100 % local, thème clair / sombre, mode tactile avec clavier virtuel, pont Star
   mPOP (SPEC §13).
+- v0.4.0 (attestabilité, SPEC §14) : signature Fiskaly sans repli mock pour une caisse live,
+  `SESSION_STALE` (Z journalier garanti, JET `session_stale`), paramétrage par RPC tracées
+  (`settings_change` / `register_change`), TRUNCATE interdit et compteurs +1, file hors ligne
+  vérifiable (`pos_offline_refs`, `offline_gap`, chaînage local), hash de clôture `v2` ancrant le
+  JET et les archives, duplicatas numérotés (`pos_reprint`), formation tracée, caisses d'essai.
 - `pos-export-archive` (cron le 1er à 04:00 UTC) : pour chaque caisse, partition contiguë depuis
   l'archive précédente (`pos_archive_data`) → fichiers `pos-archive/v1` (`@pos/core`
   `buildArchiveFiles`, miroir Deno) → ZIP fflate → bucket privé `pos-archives/<caisse>/<AAAA-MM>.zip`

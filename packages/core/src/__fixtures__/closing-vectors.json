@@ -1,0 +1,48 @@
+[
+  {
+    "name": "v1 premier Z (historique)",
+    "hash_version": 1,
+    "closing_number": 1,
+    "period_type": "daily",
+    "period_start": "2026-10-30T23:00:00.000Z",
+    "period_end": "2026-10-31T18:42:07.123Z",
+    "txn_count": 12,
+    "total_ttc_cents": 45678,
+    "grand_total_perpetual_cents": 1234567,
+    "prev_hash": "",
+    "canonical": "v1|closing|1|daily|2026-10-30T23:00:00.000Z|2026-10-31T18:42:07.123Z|12|45678|1234567|",
+    "hash": "900f274fd69b57a38614e391c27676a6021cfd80c41cc03ac8eb2d1272dc78d8"
+  },
+  {
+    "name": "v2 avec têtes JET et archive",
+    "hash_version": 2,
+    "closing_number": 2,
+    "period_type": "monthly",
+    "period_start": "2026-09-30T22:00:00.000Z",
+    "period_end": "2026-10-31T23:00:00.000Z",
+    "txn_count": 340,
+    "total_ttc_cents": 987654,
+    "grand_total_perpetual_cents": 2222221,
+    "jet_head_hash": "10bbd657c28529b5fc6ace9c0248ba5140b07ef30cd606d3c49cc9d5504d792e",
+    "archive_head_hash": "a78c1be1e33f454618db26c891dc1d2efd8fb24c7cce5d0678ee9a846df11c54",
+    "prev_hash": "900f274fd69b57a38614e391c27676a6021cfd80c41cc03ac8eb2d1272dc78d8",
+    "canonical": "v2|closing|2|monthly|2026-09-30T22:00:00.000Z|2026-10-31T23:00:00.000Z|340|987654|2222221|10bbd657c28529b5fc6ace9c0248ba5140b07ef30cd606d3c49cc9d5504d792e|a78c1be1e33f454618db26c891dc1d2efd8fb24c7cce5d0678ee9a846df11c54|900f274fd69b57a38614e391c27676a6021cfd80c41cc03ac8eb2d1272dc78d8",
+    "hash": "db91dbcf57ffa5274cc9a18e8c104a02b4cbb99ca0ca33a7f5e61f9b2a08cb29"
+  },
+  {
+    "name": "v2 sans archive (têtes vides)",
+    "hash_version": 2,
+    "closing_number": 3,
+    "period_type": "daily",
+    "period_start": "2026-10-31T23:00:00.000Z",
+    "period_end": "2026-11-01T17:00:00.000Z",
+    "txn_count": 0,
+    "total_ttc_cents": 0,
+    "grand_total_perpetual_cents": 2222221,
+    "jet_head_hash": "10bbd657c28529b5fc6ace9c0248ba5140b07ef30cd606d3c49cc9d5504d792e",
+    "archive_head_hash": null,
+    "prev_hash": "db91dbcf57ffa5274cc9a18e8c104a02b4cbb99ca0ca33a7f5e61f9b2a08cb29",
+    "canonical": "v2|closing|3|daily|2026-10-31T23:00:00.000Z|2026-11-01T17:00:00.000Z|0|0|2222221|10bbd657c28529b5fc6ace9c0248ba5140b07ef30cd606d3c49cc9d5504d792e||db91dbcf57ffa5274cc9a18e8c104a02b4cbb99ca0ca33a7f5e61f9b2a08cb29",
+    "hash": "5131c48c6c3156952381e38a3fd8ed322ce3a70f0c35b65930beb57587db67b3"
+  }
+]

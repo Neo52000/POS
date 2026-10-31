@@ -5,6 +5,7 @@ export type ErrorCode =
   | 'FORBIDDEN_ROLE'
   | 'VALIDATION'
   | 'SESSION_NOT_OPEN'
+  | 'SESSION_STALE'
   | 'SESSION_ALREADY_OPEN'
   | 'TOTALS_MISMATCH'
   | 'PAYMENTS_MISMATCH'
@@ -28,6 +29,8 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
   FORBIDDEN_ROLE: 403,
   VALIDATION: 400,
   SESSION_NOT_OPEN: 409,
+  // Session ouverte avant le jour courant (Europe/Paris) : Z1 de la veille obligatoire (0.4.0).
+  SESSION_STALE: 409,
   SESSION_ALREADY_OPEN: 409,
   TOTALS_MISMATCH: 422,
   PAYMENTS_MISMATCH: 422,

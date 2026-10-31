@@ -34,6 +34,7 @@ export const TicketPayloadSchema = z.object({
   ticket_number: z.number().int().nullable(),
   ticket_code: nonEmpty,
   duplicate: z.boolean(),
+  duplicate_number: z.number().int().positive().optional(),
   kind: z.enum(['sale', 'refund']),
   refund_of_ticket_code: z.string().optional(),
   business_at: nonEmpty,

@@ -27,7 +27,7 @@ DECLARE
   v_n         int;
 BEGIN
   -- ---------------------------------------------------------------- setup
-  INSERT INTO public.pos_registers (code, label) VALUES ('TEST-01', 'Caisse de test SQL') ON CONFLICT (code) DO NOTHING;
+  INSERT INTO public.pos_registers (code, label, is_test) VALUES ('TEST-01', 'Caisse de test SQL', true) ON CONFLICT (code) DO NOTHING;
   SELECT id INTO v_reg FROM public.pos_registers WHERE code = 'TEST-01';
   SELECT id INTO v_open FROM public.pos_sessions WHERE register_id = v_reg AND status = 'open';
   IF v_open IS NOT NULL THEN
@@ -105,8 +105,13 @@ BEGIN
   IF coalesce(v_closing.prev_hash, '') <> coalesce(v_prev_hash, '') OR v_closing.closing_number <> coalesce(v_prev_no, 0) + 1 THEN
     RAISE EXCEPTION 'clôture Z : chaînage / numérotation';
   END IF;
-  IF v_closing.hash <> public.pos_sha256('v1|closing|' || v_closing.closing_number || '|daily|' || public.pos_canonical_ts(v_closing.period_start)
-       || '|' || public.pos_canonical_ts(v_closing.period_end) || '|2|3500|' || v_closing.grand_total_perpetual_cents || '|' || coalesce(v_closing.prev_hash, '')) THEN
+  -- 0.4.0 (lot 6) : hash de clôture v2 = v1 + têtes JET et archive, avant prev_hash.
+  IF v_closing.hash_version <> 2
+     OR v_closing.hash <> public.pos_sha256('v2|closing|' || v_closing.closing_number || '|daily|' || public.pos_canonical_ts(v_closing.period_start)
+       || '|' || public.pos_canonical_ts(v_closing.period_end) || '|2|3500|' || v_closing.grand_total_perpetual_cents
+       || '|' || coalesce(v_closing.jet_head_hash, '') || '|' || coalesce(v_closing.archive_head_hash, '')
+       || '|' || coalesce(v_closing.prev_hash, ''))
+     OR v_closing.jet_head_hash IS DISTINCT FROM (SELECT e.hash FROM public.pos_events e WHERE e.id = v_closing.jet_head_event_id) THEN
     RAISE EXCEPTION 'clôture Z : hash non reproductible';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM public.pos_events WHERE event_type = 'closing' AND (payload ->> 'closing_id')::uuid = v_closing.id)

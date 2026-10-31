@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { GraduationCap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { useIsAdmin } from '@/hooks/useIsAdmin';
+import { describeApiError } from '@/lib/apiError';
 import { formatDateTime, formatEurCents } from '@/lib/format';
 import { startTraining, stopTraining, trainingSwitchBlocker } from '@/lib/training';
 import { useTrainingStore } from '@/stores/trainingStore';
@@ -16,10 +18,11 @@ export function TrainingSection() {
   const tickets = useTrainingStore((s) => s.tickets);
   const toast = useUiStore((s) => s.toast);
   const [confirm, setConfirm] = useState(false);
+  const { isAdmin } = useIsAdmin();
 
-  const start = (): void => {
+  const start = async (): Promise<void> => {
     try {
-      startTraining();
+      await startTraining({ isAdmin });
       toast({
         title: 'Mode formation activé',
         description: 'Aucune vente ne sera enregistrée ; le TPE est simulé.',
@@ -29,7 +32,10 @@ export function TrainingSection() {
     } catch (e) {
       toast({
         title: 'Mode formation impossible',
-        description: e instanceof Error ? e.message : String(e),
+        description:
+          e instanceof Error && e.message && e.message !== (e as { code?: string }).code
+            ? e.message
+            : describeApiError(e),
         variant: 'danger',
       });
     }
@@ -51,7 +57,8 @@ export function TrainingSection() {
         attente et lecture X fonctionnent normalement, mais <strong>rien n’est enregistré</strong>{' '}
         (ni ticket fiscal, ni journal, ni stock), le TPE est simulé et chaque ticket imprimé porte
         la mention « FORMATION — sans valeur ». Seuls l’entrée et la sortie du mode, l’ouverture du
-        tiroir et les duplicatas de tickets réels sont tracés au journal.
+        tiroir, chaque vente de formation (sans numéro fiscal) et les duplicatas de tickets réels
+        sont tracés au journal. Activation réservée à un administrateur, en ligne.
       </p>
       {active ? (
         <>
@@ -75,6 +82,8 @@ export function TrainingSection() {
         <Button
           variant="secondary"
           size="touch"
+          disabled={!isAdmin}
+          title={isAdmin ? undefined : 'Réservé à un administrateur'}
           onClick={() => {
             const blocker = trainingSwitchBlocker();
             if (blocker) {
@@ -100,7 +109,7 @@ export function TrainingSection() {
         confirmLabel="Démarrer la formation"
         onConfirm={() => {
           setConfirm(false);
-          start();
+          void start();
         }}
       />
     </section>

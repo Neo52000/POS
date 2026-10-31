@@ -60,6 +60,11 @@ export interface TicketPayload {
   /** `T-2026-000123` ou `provisional_ref`. */
   ticket_code: string;
   duplicate: boolean;
+  /**
+   * Rang du duplicata (0.4.0) renvoyé par `pos_reprint` après journalisation synchrone ; imprimé
+   * « DUPLICATA n°X ». Absent : « DUPLICATA » seul (ticket provisoire, formation).
+   */
+  duplicate_number?: number;
   kind: TransactionKind;
   refund_of_ticket_code?: string;
   business_at: string;
@@ -98,4 +103,14 @@ export function paymentMethodLabel(method: PaymentMethod): string {
 /** 8 premiers caractères hex du hash, pour `compliance.hash_short`. */
 export function hashShort(hash: string): string {
   return hash.slice(0, 8).toLowerCase();
+}
+
+/** Mention imprimée d'un duplicata : `DUPLICATA n°X` (0.4.0) ou `DUPLICATA`. */
+export function duplicateLabel(
+  t: Pick<TicketPayload, 'duplicate' | 'duplicate_number'>,
+): string | null {
+  if (!t.duplicate) return null;
+  return t.duplicate_number != null && t.duplicate_number > 0
+    ? `DUPLICATA n°${t.duplicate_number}`
+    : 'DUPLICATA';
 }

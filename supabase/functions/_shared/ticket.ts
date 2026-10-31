@@ -6,6 +6,8 @@ export interface TicketPayload {
   ticket_number: number | null;
   ticket_code: string;
   duplicate: boolean;
+  /** Rang du duplicata renvoyé par pos_reprint (0.4.0). */
+  duplicate_number?: number;
   kind: 'sale' | 'refund';
   refund_of_ticket_code?: string;
   business_at: string;
@@ -136,7 +138,7 @@ export function buildTicketPayload(full: Json, opts: { duplicate?: boolean } = {
       signature_status: String(t.signature_status ?? 'pending_signature'),
       ...(t.fiskaly_signature ? { fiskaly_signature_short: String(t.fiskaly_signature).slice(0, 16) } : {}),
       software: 'Ma Papeterie POS',
-      version: String(software.version ?? '0.3.0'),
+      version: String(software.version ?? '0.4.0'),
       ...(t.offline_queued ? { provisional: true } : {}),
     },
     invoice_requested: t.invoice_requested === true,

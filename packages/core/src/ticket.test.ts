@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildTicketCode, hashShort, paymentMethodLabel } from './ticket.js';
+import { buildTicketCode, duplicateLabel, hashShort, paymentMethodLabel } from './ticket.js';
 
 describe('buildTicketCode', () => {
   it('pads the number on 6 digits', () => {
@@ -28,5 +28,13 @@ describe('paymentMethodLabel', () => {
 describe('hashShort', () => {
   it('returns the first 8 hex characters', () => {
     expect(hashShort('ABCDEF0123456789')).toBe('abcdef01');
+  });
+});
+
+describe('duplicateLabel (0.4.0)', () => {
+  it('DUPLICATA n°X après pos_reprint, DUPLICATA seul sinon', () => {
+    expect(duplicateLabel({ duplicate: true, duplicate_number: 3 })).toBe('DUPLICATA n°3');
+    expect(duplicateLabel({ duplicate: true })).toBe('DUPLICATA');
+    expect(duplicateLabel({ duplicate: false, duplicate_number: 3 })).toBeNull();
   });
 });

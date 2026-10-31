@@ -126,7 +126,7 @@ Port 8787, JSON, header `X-Bridge-Token` obligatoire (sauf `/health`), CORS stri
 - **Projet `ma-papeterie`** (données métier) : la PWA lit le catalogue directement (clé anon `VITE_CATALOG_SUPABASE_URL` / `VITE_CATALOG_SUPABASE_ANON_KEY`, RPC `pos_search_products`, `pos_product_by_ean`, SECURITY INVOKER). Les données protégées passent par les Edge Functions de Pos qui appellent les RPC ma-papeterie (`pos_customer_lookup`, `pos_customer_open_quotes`, `pos_resolve_cart_prices`, `pos_apply_stock_movements`) avec le secret `MAPAP_SERVICE_ROLE_KEY` (+ `MAPAP_SUPABASE_URL`).
 - **Stock** : `pos_finalize_sale` écrit une file `pos_stock_sync` (une ligne par ligne de vente, `idempotency_key = transaction_id:line_no`). `pos-checkout` tente l'application immédiate via `pos_apply_stock_movements` ; le cron `pos-stock-sync` (1 min) rejoue les lignes `pending`. Le stock n'est pas une donnée fiscale : un retard est toléré, jamais une double application.
 - **Auth** : header `Authorization: Bearer <JWT utilisateur Pos>` ; la fonction appelle `auth.getUser(jwt)` puis `rpc('is_pos')` (`pos_user_roles`). Les crons appellent avec le service role de Pos (comparaison stricte).
-- Secrets Pos (Edge) : `FISKALY_MODE` (`mock` | `live`), `FISKALY_BASE_URL`, `FISKALY_API_KEY`, `FISKALY_API_SECRET`, `MAPAP_SUPABASE_URL`, `MAPAP_SERVICE_ROLE_KEY` (+ `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY` fournis par la plateforme).
+- Secrets Pos (Edge) : `FISKALY_MODE` (`mock` | `live`), `FISKALY_BASE_URL` (obligatoire en `live`, aucune valeur par défaut ; LIVE exigée pour une caisse `live`, refusée pour une caisse `test` — §14.1), `FISKALY_API_KEY`, `FISKALY_API_SECRET`, `MAPAP_SUPABASE_URL`, `MAPAP_SERVICE_ROLE_KEY` (+ `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY` fournis par la plateforme).
 - Edge Function supplémentaire `pos-resolve-prices` : `{account_id, lines:[{product_id, qty}]}` → `{prices:[...]}` (proxy de `pos_resolve_cart_prices`).
 
 ## 10. Design (PWA)
@@ -142,6 +142,7 @@ Palette Data Noir : `bg #0a0a0f`, `surface #111118`, `border #1e1e2e`, `text #e2
 | `BUSINESS_AT_OUT_OF_RANGE` | 422  | `business_at` hors `pos_settings.clock_tolerance` (§11.2)                         |
 | `CHAIN_INCONSISTENT`       | 409  | ticket précédent introuvable au chaînage ; ZIP d'archive existant et différent    |
 | `REGISTER_NOT_FOUND`       | 404  | caisse inconnue                                                                   |
+| `SESSION_STALE`            | 409  | session ouverte avant le jour courant (Europe/Paris) : Z1 de la veille (0.4.0)    |
 | `PERIOD_NOT_ENDED`         | 409  | archive demandée pour une période non terminée (ignorée par `pos-export-archive`) |
 
 ### 11.2 Hors ligne (lot 4) — détail : `docs/HORS-LIGNE.md`
@@ -169,7 +170,7 @@ Palette Data Noir : `bg #0a0a0f`, `surface #111118`, `border #1e1e2e`, `text #e2
   `period_start − 1 ms` de la période courante.
 - `pos-closing` : sans `period_start` (cron) → période précédente ; avec `period_start` → période
   qui le contient. Plus aucun calcul de fuseau en TypeScript (`_shared/periods.ts`).
-- `pos_verify_closings_chain(register) → (ok, checked, first_break_number, reason)`.
+- `pos_verify_closings_chain(register) → (ok, checked, first_break_number, reason)` (v1 et v2 depuis 0.4.0, §14.6).
 
 ### 11.4 Archives (lot 5) — `pos-archive/v1`
 
@@ -419,9 +420,11 @@ n'est jamais tronqué.
 - TPE simulé (`useTpePayment`) : jamais d'appel `/payment` au pont, donc jamais de débit réel.
 - Session de caisse non requise (`session_id` fictif `00000000-0000-4000-8000-000000000000`) ;
   ouverture / clôture de session, Z2 / Z3 et inventaire sont désactivés.
-- JET : rien n'est journalisé **sauf** `training_mode_start`, `training_mode_end` (nombre et total
-  des tickets de formation) et les actes réels toujours possibles, marqués `training: true` :
-  `drawer_opened`, `reprint` (duplicata d'un vrai ticket ou d'une clôture).
+- JET : rien n'est journalisé **sauf** `training_mode_start` (administrateur, en ligne, enregistré
+  avant l'activation — 0.4.0), `training_sale` (chaque vente de formation, 0.4.0),
+  `training_mode_end` (nombre et total des tickets de formation) et les actes réels toujours
+  possibles, marqués `training: true` : `drawer_opened`, `reprint` (duplicata d'un vrai ticket ou
+  d'une clôture).
 - Ticket et rapport imprimés : « FORMATION — Ticket sans valeur - non enregistré », pas d'empreinte
   ni de signature. Lecture X de formation calculée sur les tickets locaux (`summarizeTickets`).
 - Sortie : panier, encaissement interrompu et tickets de formation effacés ; tickets en attente
@@ -461,3 +464,149 @@ massicot), tiroir `BEL` (périphérique 1) / `SUB`. Sans massicot : 5 sauts de l
 découpe. En dessous de 40 colonnes, la ventilation TVA du ticket passe sur deux lignes par taux.
 `GET /health` expose `printer.command_set` et `printer.width` : l'aperçu PWA adopte la largeur de
 l'imprimante. Mise en service : `docs/IMPRIMANTE-STAR-MPOP.md`.
+
+## 14. Attestabilité NF525 (v0.4.0)
+
+### 14.1 Signature Fiskaly sans repli silencieux (lot 1)
+
+- `getFiskalyClient(caisse)` (`_shared/fiskaly/config.ts`, `resolveFiskalyConfig`) :
+
+  | Caisse | Configuration                                                          | Client                          |
+  | ------ | ---------------------------------------------------------------------- | ------------------------------- |
+  | `live` | `FISKALY_MODE=live`, clés, `FISKALY_BASE_URL` LIVE                     | réel                            |
+  | `live` | toute autre (mode mock, clés ou URL absentes, URL de test ou inconnue) | `FISKALY_NOT_CONFIGURED` levée  |
+  | `test` | mode ≠ `live` ou clés absentes                                         | mock                            |
+  | `test` | `FISKALY_MODE=live` + clés : URL obligatoire, URL LIVE refusée         | réel (TEST) ou `NOT_CONFIGURED` |
+
+- `FISKALY_NOT_CONFIGURED` : la vente est enregistrée (`pending_signature`), une trace
+  `signature_failed` au JET à la première tentative, aucune tentative consommée ensuite :
+  `pos-sign-pending` rejoue jusqu'à configuration. `pos-closings-sync` ignore la caisse et la
+  liste dans `not_configured`.
+- Défense en base : `pos_mark_signature(…, 'signed', …)` sur une caisse `live` avec une signature
+  simulée (`pos_signature_is_mock` : record `mock-…`, payload `mock: true` ou `mode: 'mock'`) →
+  `FISKALY_MOCK_FOR_LIVE_REGISTER`, ticket inchangé.
+- Tests : `scripts/fiskaly/config.test.ts` (Vitest), `scripts/sql-tests/pos/13_fiskaly_live_guard.sql`.
+
+### 14.2 Clôture Z journalière garantie (lot 2)
+
+- `pos_finalize_sale` : session (d'origine ou de rattachement) ouverte avant
+  `pos_period_bounds('daily', now()).period_start` → `SESSION_STALE` (409), vente comme
+  remboursement, en ligne comme rejouée. Contrôle placé après l'idempotence.
+- `pos_flag_stale_sessions()` (service role) : JET `session_stale` `{session_id, session_number,
+opened_at, business_date, day_start}`, au plus un par session et par jour. Cron
+  `pos-session-stale` `5 1,2 * * *` UTC (= 03:05 Europe/Paris été comme hiver, second passage sans
+  effet).
+- PWA : `useSessionStale()` (date métier du poste réévaluée chaque minute, ou refus serveur
+  `SESSION_STALE` mémorisé par session) → écran bloquant « Clôture Z de la veille obligatoire »
+  (`StaleSessionBlock`) qui mène à `/closing`. Sur session périmée, la file hors ligne en attente et
+  un encaissement interrompu ne bloquent pas le Z (ils rejoignent la session suivante) ; les
+  éléments en échec bloquent toujours. Rejeu : `SESSION_STALE` → élément `pending`, arrêt
+  `session_stale`.
+- Tests : `scripts/sql-tests/pos/14_session_stale.sql`, `apps/pos/src/lib/sessionStale.test.ts`,
+  `offlineQueue.test.ts` (SESSION_STALE).
+
+### 14.3 Paramétrage fiscal tracé (lot 3)
+
+- `authenticated` n'a plus `INSERT` / `UPDATE` sur `pos_settings` ni `pos_registers` (policies
+  d'écriture supprimées) ; `DELETE` interdit par trigger sur les deux tables.
+- RPC (`is_pos_admin()`, motif ≥ 10 caractères, sinon `VALIDATION`) :
+  - `pos_admin_set_setting(p_key, p_value, p_reason)` — clés `legal`, `ticket_footer`,
+    `offline_max_txns`, `offline_max_hours`, `clock_tolerance` (`software` : migration seulement) ;
+  - `pos_admin_update_register(p_register_id, p_patch, p_reason)` — colonnes `label`, `is_active`,
+    `fiskaly_env`, `fiskaly_system_id` (`code` → `REGISTER_CODE_IMMUTABLE`).
+- Triggers AFTER (tous chemins : RPC, service role, migration) : JET `settings_change` `{key, op,
+old, new, actor:{user_id, role, via, reason}}` sur **chaque caisse active** (le JET global n'est
+  ni archivé par caisse ni ancré dans les clôtures) ; JET `register_change` `{register_id, code, op,
+changed, old, new, actor}` sur la caisse. Le motif est transmis par `pos.change_reason`
+  (`set_config` local à la transaction) ; `via: 'direct'` signale une écriture hors RPC.
+- Garde-fous BEFORE : `REGISTER_CODE_IMMUTABLE` ; `REGISTER_LIVE_LOCKED` (live → test après une
+  transaction enregistrée depuis le passage en live, `pos_register_has_live_txn`) ;
+  `CLOCK_TOLERANCE_OUT_OF_RANGE` (`online_minutes` 1..10, `offline_hours` 1..72,
+  `future_minutes` 0..10).
+- `signing.ts` enregistre le `fiskaly_system_id` par `pos_admin_update_register` (motif
+  « Commissionnement Fiskaly automatique »). La PWA n'écrivait pas ces tables (lectures seules).
+- Tests : `scripts/sql-tests/pos/15_fiscal_settings.sql` (`settings_change` exercé en base locale
+  seulement : `PGOPTIONS='-c pos.test_local=on'`).
+
+### 14.4 TRUNCATE et compteurs (lot 4)
+
+- `pos_forbid_truncate()` : trigger `BEFORE TRUNCATE FOR EACH STATEMENT` (`trg_<table>_no_truncate`,
+  « NF525: … is immutable ») sur `pos_transactions`, `pos_transaction_lines`, `pos_payments`,
+  `pos_events`, `pos_closings`, `pos_sessions`, `pos_archives`, `pos_counters`, `pos_stock_sync`,
+  `pos_order_settlements`, `pos_document_settlements`, `pos_transaction_passage_contacts`,
+  `pos_settings`, `pos_registers` (et `pos_offline_refs`, lot 5). `TRUNCATE … CASCADE` est couvert.
+- `REVOKE TRUNCATE` de `service_role`, `authenticated`, `anon` sur ces tables.
+- `pos_counters` : `DELETE` interdit ; `UPDATE` seulement `value = value + 1` (même caisse, même type).
+- Test : `scripts/sql-tests/pos/16_truncate_counters.sql`.
+
+### 14.5 File hors ligne vérifiable (lot 5)
+
+- `pos_offline_refs` (immuable, `UNIQUE (register_id, business_day, seq)`, `client_txn_id`
+  unique) : référence `OFF-<caisse>-<AAAAMMJJ>-<nnn>` reçue, `source` `sale` (vente rejouée,
+  `pos_finalize_sale`) ou `abandoned` (JET `offline_sale_abandoned`, trigger sur `pos_events`).
+- Au rejeu, numéro > maximum connu du jour + 1 → JET `offline_gap` `{detected_by: 'replay',
+business_day, provisional_ref, previous_max_seq, missing}`. Référence mal formée ou d'une autre
+  caisse → `offline_ref_invalid` ; numéro déjà reçu → `offline_ref_duplicate` (la vente est
+  enregistrée dans tous les cas : elle a été payée).
+- Fin de file : `offline_exit` porte `register_code` et `last_seq_by_day` `{"AAAAMMJJ": n}`
+  (`lastProvisionalSeqByDay`, file tous statuts + compteur du jour). `pos_offline_gaps(caisse)` =
+  numéros `1..max(reçu, déclaré)` absents ; `pos_offline_gaps_summary` →
+  `{count, days:[{business_day, missing}], chain_breaks}`.
+- Chaînage local (`@pos/core` `offlineChain.ts`) : `offline_chain_hash = SHA-256("offline-chain/v1|"
+  - prev + "|" + canonicalJson(payload sans offline_chain_prev / offline_chain_hash))`,
+`offline_chain_prev` = empreinte de l'élément précédent (`''`au départ, tête en`meta`
+`offline_chain_head`). Champs optionnels du `CheckoutPayload`(validateur, zod`pos-checkout`),
+recopiés dans le payload JET de la vente ; **jamais dans le hash v1**.
+`pos_offline_chain_breaks(caisse)` : maillons dont le prédécesseur n'a jamais été reçu ni tracé.
+- Z1 : `pos_compute_closing` (daily) journalise `offline_gap` `{detected_by: 'closing', count,
+days}` s'il reste des trous, fige `pos_closings.offline_gaps` et ajoute
+  `offline_gaps_unresolved` à l'événement `closing`. Rapport Z1 : section « Hors ligne » (trous non
+  résolus, maillons manquants). Hash de clôture inchangé par ce lot.
+- Tests : `scripts/sql-tests/pos/17_offline_refs.sql`, `packages/core/src/offlineChain.test.ts`,
+  `report.test.ts`, `apps/pos/src/lib/offlineQueue.test.ts` (chaînage, `last_seq_by_day`).
+
+### 14.6 Ancrage du JET et des archives dans la clôture (lot 6)
+
+- Hash de clôture **v2** (toute clôture créée à partir de 0.4.0, `pos_closings.hash_version = 2`) :
+  `SHA-256("v2|closing|numéro|type|début|fin|nb tickets|total TTC|GTP|tête JET|hash dernière
+archive|prev_hash")`. Tête JET = hash du dernier événement de la caisse créé avant la fin de
+  période (`jet_head_event_id`, `jet_head_hash`, après le `offline_gap` éventuel du Z1) ; dernière
+  archive = archive de la caisse la plus récente créée avant la fin de période
+  (`archive_head_id`, `archive_head_hash`) ; `''` si absent. Les clôtures existantes restent
+  **v1** (formule inchangée, toujours vérifiable).
+- `pos_closing_canonical` / `pos_closing_hash(version, …)` (SQL) ≡ `@pos/core` `closing.ts`
+  (`closingCanonical`, `closingHash`, `verifyClosingsChain`), vecteurs figés
+  `packages/core/src/__fixtures__/closing-vectors.json` (v1, v2, v2 sans archive).
+- `pos_verify_closings_chain` : v1 et v2 ; en v2, contrôle en plus que les têtes stockées sont
+  toujours le hash de l'événement / de l'archive référencés → `JET_HEAD_MISMATCH`,
+  `ARCHIVE_HEAD_MISMATCH` (falsification du JET même rechaîné). `pnpm verify-chain` recalcule la
+  chaîne des clôtures hors base (`@pos/core`, têtes relues) en plus du contrôle SQL.
+- L'événement JET `closing` porte `hash_version`, `hash` et les deux têtes.
+- Fiskaly : aucune clôture n'est envoyée par le dépôt (les clôtures Fiskaly sont produites par
+  Fiskaly et seulement rapprochées par `pos-closings-sync`) ; les têtes ne peuvent donc pas partir
+  dans un « payload de clôture Fiskaly » (écart documenté, voir PR 0.4.0).
+- Tests : `scripts/sql-tests/pos/18_closings_v2.sql` (vecteurs, falsification du JET détectée),
+  `packages/core/src/closing.test.ts`.
+
+### 14.7 Duplicatas, mode formation, caisses d'essai (lot 7)
+
+- `pos_reprint(p_transaction_id, p_training default false)` → `{duplicate_number, event_id,
+transaction_id, ticket_number}` : JET `reprint` `{document: 'ticket', transaction_id,
+ticket_number, duplicate_number, synchronous: true}` écrit **avant** l'impression ; rang =
+  réimpressions déjà tracées du ticket + 1 (verrou par ticket). `TicketPayload.duplicate_number`
+  (optionnel) → « DUPLICATA n°X » (aperçu PWA, pont 0.2.1). Historique : duplicata imprimé
+  seulement après succès ; refusé hors ligne. Le best effort `logEvent('reprint')` de l'historique
+  est supprimé (les duplicatas de clôture de l'écran Rapports restent journalisés par `logEvent`).
+- Mode formation : activation réservée à un administrateur (`useIsAdmin` côté PWA ;
+  `pos_log_event('training_mode_start')` → `FORBIDDEN_ROLE` sinon), en ligne, `training_mode_start`
+  enregistré avant l'activation. Chaque vente de formation → JET `training_sale` `{training: true,
+training_code: 'FORM-nnnn', kind, business_at, lines, total_ttc_cents, payments}` ; le serveur
+  refuse un `training_sale` sans `training: true` ou portant `ticket_number`, `hash` ou
+  `transaction_id`.
+- `pos_registers.is_test` (défaut `false`) : `TEST-01`, `TEST-10`, `T08-*`, `TESTVEC-*` marquées
+  par la migration (tracé `register_change`, `via: 'migration'`) ; modifiable par
+  `pos_admin_update_register`. `pnpm verify-chain` affiche `[ESSAI]` ; les rapports X / Z portent
+  « CAISSE D'ESSAI - HORS EXPLOITATION » (`ReportContext.test_register`). Les tests SQL créent leurs
+  caisses avec `is_test = true`.
+- Tests : `scripts/sql-tests/pos/19_reprint_training.sql`, `apps/pos/src/lib/training.test.ts`,
+  `packages/core/src/ticket.test.ts`, `report.test.ts`, `services/tpe-bridge/test/renderer.test.ts`.

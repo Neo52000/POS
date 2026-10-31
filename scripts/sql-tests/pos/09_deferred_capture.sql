@@ -29,7 +29,7 @@ DECLARE
   v_cb       jsonb := '[{"method":"cb","amount_cents":1500,"tpe_response":{"AE":"10"}}]'::jsonb;
   v_rcb      jsonb := '[{"method":"cb","amount_cents":-1500,"tpe_response":{"AE":"10"}}]'::jsonb;
 BEGIN
-  INSERT INTO public.pos_registers (code, label) VALUES ('TEST-01', 'Caisse de test SQL') ON CONFLICT (code) DO NOTHING;
+  INSERT INTO public.pos_registers (code, label, is_test) VALUES ('TEST-01', 'Caisse de test SQL', true) ON CONFLICT (code) DO NOTHING;
   SELECT id INTO v_reg FROM public.pos_registers WHERE code = 'TEST-01';
   SELECT id INTO v_open FROM public.pos_sessions WHERE register_id = v_reg AND status = 'open';
   IF v_open IS NOT NULL THEN

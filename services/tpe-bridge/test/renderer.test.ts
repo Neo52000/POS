@@ -63,6 +63,13 @@ describe('renderTicket', () => {
     expect(text.endsWith('\n\n\n\n\x1dVB\x00')).toBe(true);
   });
 
+  it('DUPLICATA n°X : rang renvoyé par pos_reprint (0.4.0)', () => {
+    const buf = renderTicket(referenceTicket({ duplicate: true, duplicate_number: 2 }));
+    expect(textOf(buf)).toContain('DUPLICATA');
+    // « n°2 » en CP858 : « ° » = 0xF8.
+    expect(buf.includes(Buffer.from([0x6e, 0xf8, 0x32]))).toBe(true);
+  });
+
   it('DUPLICATA en grand quand duplicate=true', () => {
     const buf = renderTicket(referenceTicket({ duplicate: true }));
     const text = textOf(buf);

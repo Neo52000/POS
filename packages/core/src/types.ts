@@ -48,6 +48,13 @@ export interface CheckoutPayload {
    * Ventes uniquement ; exige `customer_account_id`.
    */
   settlement_lines?: SettlementLine[];
+  /**
+   * Chaînage local de la file hors ligne (0.4.0) : SHA-256 de l'élément précédent de la file
+   * (`''` pour le premier) et de l'élément lui-même (`offlineChainHash`). Tracé au JET de la vente,
+   * jamais dans le hash ticket v1.
+   */
+  offline_chain_prev?: string;
+  offline_chain_hash?: string;
   invoice_requested: boolean;
   lines: CartLineInput[];
   payments: CheckoutPayment[];
@@ -78,6 +85,8 @@ export const CHECKOUT_ERROR_CODES = [
   'FORBIDDEN_ROLE',
   'VALIDATION',
   'SESSION_NOT_OPEN',
+  /** Session ouverte avant le jour courant (Europe/Paris) : Z1 de la veille obligatoire (0.4.0). */
+  'SESSION_STALE',
   'TOTALS_MISMATCH',
   'PAYMENTS_MISMATCH',
   'REFUND_EXCEEDS_SOLD',
@@ -346,6 +355,15 @@ export function validateCheckoutPayload(payload: unknown): CheckoutValidation {
     c.fail(`${root}.passage_contact_id`, 'requires customer_account_id (Client passage)');
   }
   validateSettlementLines(c, p, root, kind);
+  for (const key of ['offline_chain_prev', 'offline_chain_hash'] as const) {
+    const v = p[key];
+    if (v !== undefined && (typeof v !== 'string' || !/^([0-9a-f]{64})?$/.test(v))) {
+      c.fail(`${root}.${key}`, 'must be a lowercase SHA-256 hex digest');
+    }
+  }
+  if (typeof p['offline_chain_hash'] === 'string' && p['offline_chain_hash'] === '') {
+    c.fail(`${root}.offline_chain_hash`, 'must not be empty');
+  }
   c.boolean(p, 'invoice_requested', root, true);
 
   const lines = p['lines'];

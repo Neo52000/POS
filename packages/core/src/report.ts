@@ -98,6 +98,11 @@ export interface ReportFigures {
   };
   /** Grand total perpétuel (Z) ou projeté (X : dernier Z1 + période en cours). */
   grand_total_perpetual_cents?: number | null;
+  /**
+   * Z1 (0.4.0) : trous de numérotation hors ligne non résolus à la clôture
+   * (`pos_closings.offline_gaps`) et maillons manquants du chaînage local de la file.
+   */
+  offline_gaps?: { count: number; chain_breaks?: number } | null;
 }
 
 export interface ReportContext {
@@ -117,6 +122,8 @@ export interface ReportContext {
   hash?: string | null;
   training?: boolean;
   duplicate?: boolean;
+  /** Caisse d'essai (`pos_registers.is_test`, 0.4.0) : mention en pied de rapport. */
+  test_register?: boolean;
 }
 
 const money = (cents: number): string => formatEurCents(cents);
@@ -287,6 +294,25 @@ export function buildReport(figures: ReportFigures, ctx: ReportContext): ReportP
     });
   }
 
+  if (figures.offline_gaps) {
+    const g = figures.offline_gaps;
+    sections.push({
+      title: 'Hors ligne',
+      rows: [
+        { label: 'Trous non résolus', value: String(g.count), bold: g.count > 0 },
+        ...(g.chain_breaks != null
+          ? [
+              {
+                label: 'Maillons manquants',
+                value: String(g.chain_breaks),
+                bold: g.chain_breaks > 0,
+              },
+            ]
+          : []),
+      ],
+    });
+  }
+
   const footer: string[] = [];
   if (isX) {
     footer.push('Lecture intermédiaire sans remise à zéro.');
@@ -295,6 +321,7 @@ export function buildReport(figures: ReportFigures, ctx: ReportContext): ReportP
     footer.push(`Empreinte ${ctx.hash.slice(0, 16)}`);
   }
   if (ctx.training) footer.push('MODE FORMATION - AUCUNE VENTE ENREGISTRÉE');
+  if (ctx.test_register) footer.push("CAISSE D'ESSAI - HORS EXPLOITATION");
 
   return {
     version: REPORT_PAYLOAD_VERSION,

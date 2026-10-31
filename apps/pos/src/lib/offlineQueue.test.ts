@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { verifyOfflineChain } from '@pos/core';
 import type { CheckoutPayload } from '@pos/core';
 
 const checkoutMock = vi.fn();
@@ -26,7 +27,9 @@ import { clearDb, db, setMeta } from './db';
 import {
   abandonQueueItem,
   evaluateOfflineLimits,
+  lastProvisionalSeqByDay,
   nextProvisionalRef,
+  offlineChainHead,
   queueOfflineSale,
   queueStats,
   replayQueue,
@@ -243,6 +246,48 @@ describe('offlineQueue', () => {
     checkoutMock.mockImplementation(async (p: CheckoutPayload) => okResult(p, ++n));
     expect(await replayQueue()).toMatchObject({ done: 2, stopped: null });
     expect(useUiStore.getState().replayBlock).toBeNull();
+  });
+
+  it('chaînage local : chaque élément porte le SHA-256 du précédent (0.4.0)', async () => {
+    const queued = await queueN(3);
+    expect(queued[0]?.offline_chain_prev).toBe('');
+    expect(queued[1]?.offline_chain_prev).toBe(queued[0]?.offline_chain_hash);
+    expect(queued[2]?.offline_chain_prev).toBe(queued[1]?.offline_chain_hash);
+    const items = await db.queue.orderBy('local_seq').toArray();
+    const v = await verifyOfflineChain(items.map((i) => i.payload));
+    expect(v).toEqual({ ok: true, checked: 3, head: queued[2]?.offline_chain_hash });
+    expect(await offlineChainHead()).toBe(queued[2]?.offline_chain_hash);
+    // Suppression d'un élément au milieu : rupture détectée.
+    const broken = await verifyOfflineChain([items[0]!.payload, items[2]!.payload]);
+    expect(broken).toMatchObject({ ok: false, index: 1, reason: 'PREV_MISMATCH' });
+  });
+
+  it('mises en file simultanées : la chaîne reste linéaire', async () => {
+    await Promise.all([1, 2, 3, 4].map(() => queueOfflineSale(payload(), CTX)));
+    const items = await db.queue.orderBy('local_seq').toArray();
+    expect(await verifyOfflineChain(items.map((i) => i.payload))).toMatchObject({
+      ok: true,
+      checked: 4,
+    });
+  });
+
+  it('last_seq_by_day : dernier numéro OFF-… attribué par jour (offline_exit)', async () => {
+    await queueN(3);
+    const day = Object.keys(await lastProvisionalSeqByDay('TEST-01'));
+    expect(day).toHaveLength(1);
+    expect((await lastProvisionalSeqByDay('TEST-01'))[day[0]!]).toBe(3);
+    expect(await lastProvisionalSeqByDay('AUTRE')).toEqual({});
+  });
+
+  it('SESSION_STALE : la vente reste en attente et le rejeu exige le Z de la veille', async () => {
+    await queueN(2);
+    checkoutMock.mockRejectedValue(new ApiError('SESSION_STALE', 'SESSION_STALE', null, 409));
+    const report = await replayQueue();
+    expect(report).toMatchObject({ attempted: 1, failed: 0, stopped: 'session_stale' });
+    const items = await db.queue.orderBy('local_seq').toArray();
+    expect(items.map((i) => i.status)).toEqual(['pending', 'pending']);
+    expect(items[0]?.last_error_code).toBe('SESSION_STALE');
+    expect(useUiStore.getState().replayBlock).toBe('session_stale');
   });
 
   it('événements JET hors ligne : mis en file puis rejoués en FIFO avec leur client_at', async () => {

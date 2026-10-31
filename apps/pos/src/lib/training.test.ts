@@ -73,17 +73,31 @@ beforeEach(() => {
 });
 
 describe('mode formation', () => {
-  it('refuse d’entrer avec un panier non vide', () => {
+  it('refuse d’entrer avec un panier non vide', async () => {
     useCartStore.setState({ lines: [{ key: 'x' } as never] });
     expect(trainingSwitchBlocker()).toMatch(/panier/);
-    expect(() => startTraining()).toThrow(/panier/);
+    await expect(startTraining({ isAdmin: true })).rejects.toThrow(/panier/);
     expect(useTrainingStore.getState().active).toBe(false);
   });
 
-  it('vente locale FORM-0001, jamais envoyée, TPE simulé, journal muet', async () => {
+  it('activation réservée à un administrateur (0.4.0)', async () => {
+    await expect(startTraining({ isAdmin: false })).rejects.toMatchObject({
+      code: 'FORBIDDEN_ROLE',
+    });
+    expect(useTrainingStore.getState().active).toBe(false);
+    expect(eventTypes()).toEqual([]);
+  });
+
+  it('refus serveur de training_mode_start : le mode reste inactif', async () => {
+    rpcMock.mockResolvedValueOnce({ data: null, error: { message: 'FORBIDDEN_ROLE' } } as never);
+    await expect(startTraining({ isAdmin: true })).rejects.toBeTruthy();
+    expect(useTrainingStore.getState().active).toBe(false);
+  });
+
+  it('vente locale FORM-0001, jamais envoyée, TPE simulé, vente tracée sans numéro', async () => {
     const parked = [{ id: 'p1' } as ParkedCart];
     useParkedStore.setState({ parked });
-    startTraining();
+    await startTraining({ isAdmin: true });
     await vi.waitFor(() => expect(eventTypes()).toEqual(['training_mode_start']));
     expect(useTrainingStore.getState().active).toBe(true);
     expect(useParkedStore.getState().parked).toEqual([]);
@@ -94,6 +108,19 @@ describe('mode formation', () => {
     expect(outcome.ticket.compliance).toMatchObject({ training: true, hash_short: '' });
     expect(outcome.ticket.total_ttc_cents).toBe(300);
     expect(checkoutMock).not.toHaveBeenCalled();
+    // 0.4.0 : vente de formation tracée au JET (training_sale), sans numéro fiscal.
+    await vi.waitFor(() => expect(eventTypes()).toEqual(['training_mode_start', 'training_sale']));
+    const sale = rpcMock.mock.calls.find(
+      (c) => (c[1] as { p_event_type: string }).p_event_type === 'training_sale',
+    );
+    const salePayload = (sale?.[1] as { p_payload: Record<string, unknown> }).p_payload;
+    expect(salePayload).toMatchObject({
+      training: true,
+      training_code: 'FORM-0001',
+      total_ttc_cents: 300,
+    });
+    expect(salePayload).not.toHaveProperty('ticket_number');
+    expect(salePayload).not.toHaveProperty('hash');
 
     const { result } = renderHook(() => useTpePayment());
     let tpe: Awaited<ReturnType<typeof result.current.pay>> | undefined;
@@ -105,7 +132,7 @@ describe('mode formation', () => {
 
     await logEvent('line_discount', { x: 1 });
     await logEvent('drawer_opened', { reason: 'test' });
-    expect(eventTypes()).toEqual(['training_mode_start', 'drawer_opened']);
+    expect(eventTypes()).toEqual(['training_mode_start', 'training_sale', 'drawer_opened']);
     const drawer = rpcMock.mock.calls.find(
       (c) => (c[1] as { p_event_type: string }).p_event_type === 'drawer_opened',
     );
@@ -122,7 +149,12 @@ describe('mode formation', () => {
     expect(useTrainingStore.getState()).toMatchObject({ active: false, tickets: [] });
     expect(useParkedStore.getState().parked).toEqual(parked);
     await vi.waitFor(() =>
-      expect(eventTypes()).toEqual(['training_mode_start', 'drawer_opened', 'training_mode_end']),
+      expect(eventTypes()).toEqual([
+        'training_mode_start',
+        'training_sale',
+        'drawer_opened',
+        'training_mode_end',
+      ]),
     );
   });
 });

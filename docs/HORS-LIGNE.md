@@ -33,7 +33,13 @@ La barre d'état affiche `Hors ligne` (rouge) ou `Synchronisation…` pendant le
    **référence provisoire** `OFF-<code caisse>-<YYYYMMDD>-<nnn>` (ex. `OFF-CHAUMONT-01-20260924-007`) :
    compteur local par caisse remis à 1 chaque jour (date Europe/Paris), jamais réutilisé tant que
    la file contient une référence du jour.
-3. La vente est écrite dans IndexedDB (table `queue`, clé `client_txn_id`, ordre `local_seq`) et
+3. La vente est **chaînée** à la file (0.4.0) : elle porte le SHA-256 de l'élément précédent
+   (`offline_chain_prev`) et le sien (`offline_chain_hash`), transmis au JET de la vente au rejeu
+   (jamais dans le hash du ticket). Le serveur inscrit chaque référence `OFF-…` reçue
+   (`pos_offline_refs`) et journalise `offline_gap` pour tout numéro sauté ; `offline_exit`
+   déclare le dernier numéro attribué par jour, ce qui révèle une suppression en fin de file. Les
+   trous non résolus figurent sur le Z1 (section « Hors ligne »).
+4. La vente est écrite dans IndexedDB (table `queue`, clé `client_txn_id`, ordre `local_seq`) et
    un **ticket provisoire** est imprimé : mention « provisoire », pas de numéro de ticket, pas
    de hash ni de signature.
 
@@ -45,7 +51,7 @@ Lues par `pos_client_settings()` à chaque retour en ligne et mises en cache sur
 | -------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------ |
 | `offline_max_txns`         | 50                                                            | au-delà de 50 ventes en attente, nouvelle vente hors ligne refusée |
 | `offline_max_hours`        | 24                                                            | si la plus ancienne vente en attente a plus de 24 h, vente refusée |
-| `clock_tolerance`          | `{"online_minutes":10,"offline_hours":72,"future_minutes":5}` | contrôle serveur de `business_at` (§4)                             |
+| `clock_tolerance`          | `{"online_minutes":10,"offline_hours":72,"future_minutes":5}` | contrôle serveur de `business_at` (§4) ; plafonds 10 / 72 / 10     |
 
 Une vente déjà débitée par CB alors que la limite vient d'être atteinte est quand même mise en
 file (le client a payé) ; la limite bloque la vente **suivante**.
@@ -80,13 +86,16 @@ ouverte** de la caisse (elle entre dans le Z suivant ; `business_date` d'origine
 déjà calculé n'est jamais modifié) et journalise `offline_reattached`
 (`original_session_id`, `session_id`, `provisional_ref`). Sans session ouverte :
 `SESSION_NOT_OPEN` (409) → la vente reste en file et le rejeu reprend après l'ouverture.
+Session cible ouverte un jour précédent (heure de Paris) : `SESSION_STALE` (409, 0.4.0) → la vente
+reste en file ; le Z1 de cette session est alors autorisé malgré la file (les ventes rejoindront la
+session suivante), puis le rejeu reprend à l'ouverture.
 
 ### Échecs
 
 | Réponse                                                                            | Traitement                                                    |
 | ---------------------------------------------------------------------------------- | ------------------------------------------------------------- |
 | Erreur réseau                                                                      | élément remis `pending`, retour hors ligne, rejeu interrompu  |
-| `SESSION_NOT_OPEN`, `UNAUTHORIZED`                                                 | élément remis `pending`, rejeu suspendu (bandeau d'action)    |
+| `SESSION_NOT_OPEN`, `SESSION_STALE`, `UNAUTHORIZED`                                | élément remis `pending`, rejeu suspendu (bandeau d'action)    |
 | Autre erreur métier (`BUSINESS_AT_OUT_OF_RANGE`, `TOTALS_MISMATCH`, `VALIDATION`…) | élément `failed`, JET `offline_replay_failed`, rejeu continue |
 
 **Un élément en attente ou en échec bloque la clôture (Z)** : l'écran de clôture refuse tant que
@@ -140,14 +149,14 @@ rejouée **dans les 72 h** ; au-delà elle ne peut plus être enregistrée autom
 
 ## 6. Dépannage
 
-| Symptôme                                          | Cause probable / action                                                                                                                                                                                               |
-| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Reste « Hors ligne » alors qu'Internet fonctionne | sonde `auth/v1/health` bloquée (pare-feu, DNS) : ouvrir l'URL Supabase dans le navigateur ; recharger la PWA                                                                                                          |
-| « Synchronisation » bloquée, message session      | aucune session ouverte : ouvrir la session, le rejeu reprend                                                                                                                                                          |
-| Élément `failed` `BUSINESS_AT_OUT_OF_RANGE`       | horloge du poste fausse ou vente de plus de 72 h : corriger l'heure du poste ; au-delà de 72 h, l'administrateur relève temporairement `clock_tolerance.offline_hours` (SQL, tracé), relance, puis rétablit la valeur |
-| Élément `failed` `TOTALS_MISMATCH` / `VALIDATION` | écart de calcul client/serveur : exporter la file, ouvrir un incident ; après analyse, ressaisir en ligne si nécessaire puis abandonner l'élément (admin, motif, trace JET)                                           |
-| Nouvelle vente refusée « maximum 50 »             | limite atteinte : rétablir la connexion (partage 4G) et synchroniser                                                                                                                                                  |
-| Ticket provisoire à rapprocher                    | `select ticket_number, provisional_ref from pos_transactions where provisional_ref = 'OFF-…'`                                                                                                                         |
+| Symptôme                                          | Cause probable / action                                                                                                                                                                                              |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Reste « Hors ligne » alors qu'Internet fonctionne | sonde `auth/v1/health` bloquée (pare-feu, DNS) : ouvrir l'URL Supabase dans le navigateur ; recharger la PWA                                                                                                         |
+| « Synchronisation » bloquée, message session      | aucune session ouverte : ouvrir la session, le rejeu reprend                                                                                                                                                         |
+| Élément `failed` `BUSINESS_AT_OUT_OF_RANGE`       | horloge du poste fausse ou vente de plus de 72 h : corriger l'heure du poste ; au-delà de 72 h (plafond non relevable depuis 0.4.0), ressaisir la vente en ligne puis abandonner l'élément (admin, motif, trace JET) |
+| Élément `failed` `TOTALS_MISMATCH` / `VALIDATION` | écart de calcul client/serveur : exporter la file, ouvrir un incident ; après analyse, ressaisir en ligne si nécessaire puis abandonner l'élément (admin, motif, trace JET)                                          |
+| Nouvelle vente refusée « maximum 50 »             | limite atteinte : rétablir la connexion (partage 4G) et synchroniser                                                                                                                                                 |
+| Ticket provisoire à rapprocher                    | `select ticket_number, provisional_ref from pos_transactions where provisional_ref = 'OFF-…'`                                                                                                                        |
 
 Une vente hors ligne n'est jamais supprimée du poste avant confirmation serveur. Vider les
 données du navigateur avec une file non vide fait perdre ces ventes : **interdit**.

@@ -25,7 +25,7 @@ DECLARE
   v_counter    bigint;
   v_prev_gtp   bigint;
 BEGIN
-  INSERT INTO public.pos_registers (code, label) VALUES ('TEST-01', 'Caisse de test SQL') ON CONFLICT (code) DO NOTHING;
+  INSERT INTO public.pos_registers (code, label, is_test) VALUES ('TEST-01', 'Caisse de test SQL', true) ON CONFLICT (code) DO NOTHING;
   SELECT id INTO v_reg FROM public.pos_registers WHERE code = 'TEST-01';
   SELECT id INTO v_open FROM public.pos_sessions WHERE register_id = v_reg AND status = 'open';
   IF v_open IS NOT NULL THEN
@@ -120,7 +120,7 @@ BEGIN
       v_s10    uuid;
       v_last   public.pos_closings;
     BEGIN
-      INSERT INTO public.pos_registers (code, label) VALUES ('TEST-10', 'Caisse éphémère test 10') RETURNING id INTO v_reg10;
+      INSERT INTO public.pos_registers (code, label, is_test) VALUES ('TEST-10', 'Caisse éphémère test 10', true) RETURNING id INTO v_reg10;
       SELECT * INTO v_bounds FROM public.pos_period_bounds('monthly', v_ref);
 
       BEGIN

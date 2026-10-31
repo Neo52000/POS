@@ -1,7 +1,7 @@
 // Cron nocturne : rapproche les clôtures Fiskaly (produites automatiquement côté Fiskaly)
 // avec pos_closings (renseigne fiskaly_closing_id / fiskaly_payload).
 import { requireService } from '../_shared/auth.ts';
-import { getFiskalyClient } from '../_shared/fiskaly/index.ts';
+import { getFiskalyClient, isFiskalyNotConfigured } from '../_shared/fiskaly/index.ts';
 import { errorResponse, handleOptions, json } from '../_shared/http.ts';
 
 Deno.serve(async (req) => {
@@ -9,19 +9,31 @@ Deno.serve(async (req) => {
   if (pre) return pre;
   try {
     const { db } = requireService(req);
-    const fiskaly = getFiskalyClient();
     const to = new Date();
     const from = new Date(to.getTime() - 3 * 86_400_000);
     const { data: registers, error } = await db
       .from('pos_registers')
-      .select('id, code, fiskaly_system_id')
+      .select('id, code, fiskaly_system_id, fiskaly_env')
       .eq('is_active', true);
     if (error) throw error;
 
     let matched = 0;
     const unmatched: string[] = [];
-    for (const r of (registers ?? []) as Array<{ id: string; code: string; fiskaly_system_id: string | null }>) {
+    const notConfigured: string[] = [];
+    const modes: Record<string, string> = {};
+    type Reg = { id: string; code: string; fiskaly_system_id: string | null; fiskaly_env: string | null };
+    for (const r of (registers ?? []) as Reg[]) {
       if (!r.fiskaly_system_id) continue;
+      let fiskaly;
+      try {
+        // Caisse live : jamais de mock (FISKALY_NOT_CONFIGURED → caisse ignorée, signalée).
+        fiskaly = getFiskalyClient(r);
+      } catch (e) {
+        if (!isFiskalyNotConfigured(e)) throw e;
+        notConfigured.push(r.code);
+        continue;
+      }
+      modes[r.code] = fiskaly.mode;
       const closings = await fiskaly.listClosings(r.fiskaly_system_id, from.toISOString(), to.toISOString());
       for (const c of closings) {
         const { data: rows } = await db
@@ -47,7 +59,7 @@ Deno.serve(async (req) => {
         matched++;
       }
     }
-    return json(200, { mode: fiskaly.mode, matched, unmatched });
+    return json(200, { modes, matched, unmatched, not_configured: notConfigured });
   } catch (e) {
     return errorResponse(e);
   }

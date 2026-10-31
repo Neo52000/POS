@@ -151,6 +151,13 @@ export function renderTicketLines(
   }
   if (payload.duplicate) {
     push(center('DUPLICATA', half), { align: 'center', bold: true, size: [2, 2] });
+    if (payload.duplicate_number) {
+      push(center(`n°${payload.duplicate_number}`, half), {
+        align: 'center',
+        bold: true,
+        size: [2, 2],
+      });
+    }
   }
   if (payload.compliance.provisional) {
     push(center('TICKET PROVISOIRE', width), { align: 'center', bold: true });
@@ -251,7 +258,12 @@ export function renderTicketLines(
   if (payload.compliance.provisional) {
     push(center('TICKET PROVISOIRE - signature différée', width), { align: 'center' });
   }
-  if (payload.duplicate) push(center('DUPLICATA', width), { align: 'center', bold: true });
+  if (payload.duplicate) {
+    const label = payload.duplicate_number
+      ? `DUPLICATA n°${payload.duplicate_number}`
+      : 'DUPLICATA';
+    push(center(label, width), { align: 'center', bold: true });
+  }
   push(
     center(`${payload.compliance.software || SOFTWARE_NAME} v${payload.compliance.version}`, width),
     {

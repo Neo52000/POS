@@ -26,6 +26,8 @@ export interface PosRegister {
   code: string;
   label: string | null;
   is_active: boolean;
+  /** Caisse d'essai (0.4.0) : signalée sur les rapports. */
+  is_test?: boolean;
 }
 
 export type SessionStatus = 'open' | 'closed';
@@ -169,6 +171,14 @@ export interface PosClosing {
   grand_total_perpetual_cents: number;
   hash: string | null;
   created_at: string;
+  /** Z1 (0.4.0) : trous de numérotation hors ligne non résolus à la clôture. */
+  offline_gaps?: OfflineGapsSummary | null;
+}
+
+export interface OfflineGapsSummary {
+  count: number;
+  days: { business_day: string; missing: number[] }[];
+  chain_breaks: number;
 }
 
 /** `pos_x_report(session)` : lecture X (SPEC §13.1). */
@@ -345,6 +355,7 @@ export type PosEventType =
   | 'offline_sale_abandoned'
   | 'training_mode_start'
   | 'training_mode_end'
+  | 'training_sale'
   | 'receipt_delivery';
 
 /** `pos_client_settings()` (lot 4). */

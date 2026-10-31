@@ -8,6 +8,7 @@ import { CustomerSearchDialog } from '@/components/customer/CustomerSearchDialog
 import { OrderImportDialog } from '@/components/customer/OrderImportDialog';
 import { QuoteImportDialog } from '@/components/customer/QuoteImportDialog';
 import { PaymentSheet } from '@/components/payment/PaymentSheet';
+import { StaleSessionBlock } from '@/components/session/StaleSessionBlock';
 import { CameraScannerDialog } from '@/components/sale/CameraScannerDialog';
 import { CartPanel } from '@/components/sale/CartPanel';
 import { FreeLineDialog } from '@/components/sale/FreeLineDialog';
@@ -25,6 +26,7 @@ import { searchProducts } from '@/lib/catalog';
 import { logEvent, logEventNow } from '@/lib/events';
 import { formatEurCents, formatQty } from '@/lib/format';
 import { parseMultiplier } from '@/lib/saleInput';
+import { useSessionStale } from '@/lib/sessionStale';
 import { isValidEan, normalizeScannedCode } from '@/lib/scanner';
 import { describeApiError } from '@/lib/apiError';
 import { errorMessage } from '@/lib/utils';
@@ -61,6 +63,7 @@ export function SalePage() {
   const search = useProductSearch(term);
   const sessionQuery = useSession();
   const session = useSessionStore((s) => s.session);
+  const sessionStale = useSessionStale();
   const training = useTrainingStore((s) => s.active);
   const addProduct = useCartStore((s) => s.addProduct);
   const addFreeLine = useCartStore((s) => s.addFreeLine);
@@ -316,6 +319,12 @@ export function SalePage() {
   // Mode formation : ventes fictives sans session de caisse.
   if (sessionQuery.isSuccess && !session && !training) {
     return <Navigate to="/closing" replace />;
+  }
+  // 0.4.0 lot 2 : session ouverte un jour précédent → Z1 de la veille avant toute vente.
+  if (session && sessionStale) {
+    return (
+      <StaleSessionBlock sessionNumber={session.session_number} openedAt={session.opened_at} />
+    );
   }
 
   const searchReady =
