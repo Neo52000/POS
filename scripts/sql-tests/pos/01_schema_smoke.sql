@@ -136,18 +136,23 @@ BEGIN
      OR has_table_privilege('authenticated', 'public.pos_transaction_lines', 'INSERT')
      OR has_table_privilege('authenticated', 'public.pos_events', 'INSERT')
      OR has_table_privilege('authenticated', 'public.pos_counters', 'UPDATE')
-     OR has_table_privilege('authenticated', 'public.pos_stock_sync', 'UPDATE') THEN
+     OR has_table_privilege('authenticated', 'public.pos_stock_sync', 'UPDATE')
+     -- 0.4.0 lot 3 : paramétrage uniquement par RPC tracée (pos_admin_set_setting / _update_register)
+     OR has_table_privilege('authenticated', 'public.pos_settings', 'INSERT')
+     OR has_table_privilege('authenticated', 'public.pos_settings', 'UPDATE')
+     OR has_table_privilege('authenticated', 'public.pos_registers', 'INSERT')
+     OR has_table_privilege('authenticated', 'public.pos_registers', 'UPDATE') THEN
     RAISE EXCEPTION 'authenticated a des droits d''écriture directe sur des tables pos_*';
   END IF;
   IF has_table_privilege('anon', 'public.pos_transactions', 'SELECT') THEN
     RAISE EXCEPTION 'anon peut lire pos_transactions';
   END IF;
   IF NOT has_table_privilege('authenticated', 'public.pos_transactions', 'SELECT')
-     OR NOT has_table_privilege('authenticated', 'public.pos_settings', 'UPDATE')
+     OR NOT has_table_privilege('authenticated', 'public.pos_settings', 'SELECT')
      OR NOT has_table_privilege('authenticated', 'public.pos_user_roles', 'INSERT') THEN
-    RAISE EXCEPTION 'authenticated devrait pouvoir SELECT pos_transactions, UPDATE pos_settings et INSERT pos_user_roles (RLS admin)';
+    RAISE EXCEPTION 'authenticated devrait pouvoir SELECT pos_transactions / pos_settings et INSERT pos_user_roles (RLS admin)';
   END IF;
-  INSERT INTO pos_test_results VALUES ('grants', true, 'authenticated: SELECT seulement (+ settings/registers/user_roles admin) ; anon: rien');
+  INSERT INTO pos_test_results VALUES ('grants', true, 'authenticated: SELECT seulement (+ user_roles admin ; paramétrage par RPC tracée) ; anon: rien');
 
   -- 8. seed
   IF NOT EXISTS (SELECT 1 FROM public.pos_registers WHERE code = 'CHAUMONT-01') THEN

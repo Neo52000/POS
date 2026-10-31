@@ -5,6 +5,11 @@
 -- Crée une caisse jetable T08-<horodatage> (rejouable sans collision ; données
 -- conservées : immutabilité). Élargit la tolérance d'horloge DANS la transaction
 -- de test pour simuler novembre et décembre 2025, puis la restaure.
+-- 0.4.0 (lot 3) : clock_tolerance est plafonnée et chaque changement est
+-- journalisé sur toutes les caisses actives (dont CHAUMONT-01). Le test suspend
+-- donc, dans sa seule transaction, le garde-fou et la trace (ALTER TABLE …
+-- DISABLE TRIGGER, propriétaire uniquement) : la valeur élargie n'est jamais
+-- visible ni validée hors de la transaction (restaurée avant la fin).
 -- Vérifie : pos_period_bounds (Europe/Paris, heure d'été), Z journaliers par
 -- date, mensuels, annuel (totaux, nombre de tickets, grand total perpétuel),
 -- pos_verify_closings_chain, pos_archive_data (partition contiguë, ancre,
@@ -53,6 +58,8 @@ BEGIN
   -- ---------------------------------------------------------- setup
   INSERT INTO public.pos_registers (code, label) VALUES (v_code, 'Caisse jetable test 08') RETURNING id INTO v_reg;
   SELECT value INTO v_tol_old FROM public.pos_settings WHERE key = 'clock_tolerance';
+  ALTER TABLE public.pos_settings DISABLE TRIGGER trg_pos_settings_guard;
+  ALTER TABLE public.pos_settings DISABLE TRIGGER trg_pos_settings_jet;
   UPDATE public.pos_settings SET value = '{"online_minutes":600000,"offline_hours":72,"future_minutes":5}'::jsonb
   WHERE key = 'clock_tolerance';
   v_session := public.pos_open_session(v_reg, 0, v_cashier);
@@ -85,6 +92,8 @@ BEGIN
     'lines', '[{"line_no":1,"label":"D","qty":-1,"unit_price_ttc_cents":3000,"vat_rate":20}]'::jsonb,
     'payments', '[{"method":"cb","amount_cents":-3000}]'::jsonb));
   UPDATE public.pos_settings SET value = v_tol_old WHERE key = 'clock_tolerance';
+  ALTER TABLE public.pos_settings ENABLE TRIGGER trg_pos_settings_jet;
+  ALTER TABLE public.pos_settings ENABLE TRIGGER trg_pos_settings_guard;
   INSERT INTO pos_test_results VALUES ('sales', true, v_code || ' : nov. 7500 (3 tickets), déc. 4200 - 3000 (3 tickets)');
 
   -- ------------------------------------------------ 2. Z journaliers par date

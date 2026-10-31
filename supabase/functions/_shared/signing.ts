@@ -35,11 +35,13 @@ async function ensureSystemId(db: SupabaseClient, register: Json): Promise<strin
     fiskaly_system_id: null,
   };
   const systemId = await fiskaly.commissionSystem(reg);
-  const { error } = await db
-    .from('pos_registers')
-    .update({ fiskaly_system_id: systemId })
-    .eq('id', register.id);
-  if (error) throw new Error(`pos_registers.fiskaly_system_id: ${error.message}`);
+  // Écriture tracée (0.4.0 lot 3) : RPC admin, JET register_change avec motif.
+  const { error } = await db.rpc('pos_admin_update_register', {
+    p_register_id: register.id,
+    p_patch: { fiskaly_system_id: systemId },
+    p_reason: 'Commissionnement Fiskaly automatique (System SIGN FR)',
+  });
+  if (error) throw new Error(`pos_admin_update_register(fiskaly_system_id): ${error.message}`);
   return systemId;
 }
 

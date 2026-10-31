@@ -502,3 +502,26 @@ opened_at, business_date, day_start}`, au plus un par session et par jour. Cron
   `session_stale`.
 - Tests : `scripts/sql-tests/pos/14_session_stale.sql`, `apps/pos/src/lib/sessionStale.test.ts`,
   `offlineQueue.test.ts` (SESSION_STALE).
+
+### 14.3 Paramétrage fiscal tracé (lot 3)
+
+- `authenticated` n'a plus `INSERT` / `UPDATE` sur `pos_settings` ni `pos_registers` (policies
+  d'écriture supprimées) ; `DELETE` interdit par trigger sur les deux tables.
+- RPC (`is_pos_admin()`, motif ≥ 10 caractères, sinon `VALIDATION`) :
+  - `pos_admin_set_setting(p_key, p_value, p_reason)` — clés `legal`, `ticket_footer`,
+    `offline_max_txns`, `offline_max_hours`, `clock_tolerance` (`software` : migration seulement) ;
+  - `pos_admin_update_register(p_register_id, p_patch, p_reason)` — colonnes `label`, `is_active`,
+    `fiskaly_env`, `fiskaly_system_id` (`code` → `REGISTER_CODE_IMMUTABLE`).
+- Triggers AFTER (tous chemins : RPC, service role, migration) : JET `settings_change` `{key, op,
+old, new, actor:{user_id, role, via, reason}}` sur **chaque caisse active** (le JET global n'est
+  ni archivé par caisse ni ancré dans les clôtures) ; JET `register_change` `{register_id, code, op,
+changed, old, new, actor}` sur la caisse. Le motif est transmis par `pos.change_reason`
+  (`set_config` local à la transaction) ; `via: 'direct'` signale une écriture hors RPC.
+- Garde-fous BEFORE : `REGISTER_CODE_IMMUTABLE` ; `REGISTER_LIVE_LOCKED` (live → test après une
+  transaction enregistrée depuis le passage en live, `pos_register_has_live_txn`) ;
+  `CLOCK_TOLERANCE_OUT_OF_RANGE` (`online_minutes` 1..10, `offline_hours` 1..72,
+  `future_minutes` 0..10).
+- `signing.ts` enregistre le `fiskaly_system_id` par `pos_admin_update_register` (motif
+  « Commissionnement Fiskaly automatique »). La PWA n'écrivait pas ces tables (lectures seules).
+- Tests : `scripts/sql-tests/pos/15_fiscal_settings.sql` (`settings_change` exercé en base locale
+  seulement : `PGOPTIONS='-c pos.test_local=on'`).
