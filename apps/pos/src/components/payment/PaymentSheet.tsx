@@ -28,6 +28,7 @@ import type { CheckoutOutcome } from '@/hooks/useCheckout';
 import { useOfflineQueue } from '@/hooks/useOfflineQueue';
 import { usePrinter } from '@/hooks/usePrinter';
 import { describeApiError, isApiError } from '@/lib/apiError';
+import { buildSettlementLines } from '@/lib/documentImport';
 import type { PosCheckoutResult } from '@/lib/edge';
 import { publishDisplay } from '@/lib/customerDisplay';
 import { cachedTicketSettings } from '@/lib/ticketSettings';
@@ -270,6 +271,8 @@ export function PaymentSheet({
     if (!canSubmit || !sessionId || !register || inFlight.current) return;
     inFlight.current = true;
     setError(null);
+    const settlementLines =
+      account && !refund ? buildSettlementLines(useCartStore.getState().lines, account.id) : [];
     const payload: CheckoutPayload = {
       client_txn_id: clientTxnId,
       register_id: register.id,
@@ -283,6 +286,8 @@ export function PaymentSheet({
       ...(account && !refund ? { customer_account_id: account.id } : {}),
       ...(quoteId && !refund ? { quote_id: quoteId } : {}),
       ...(orderId && !refund ? { order_id: orderId } : {}),
+      // Lignes de commandes / BL réglées : hors périmètre fiscal, retirées par pos-checkout.
+      ...(settlementLines.length > 0 && !refund ? { settlement_lines: settlementLines } : {}),
       // Personne de passage : hors périmètre fiscal, retirée par pos-checkout avant validation.
       ...(account && passageContact && !refund
         ? {
@@ -371,8 +376,10 @@ export function PaymentSheet({
           variant: 'success',
         });
       } else {
-        // Commande transférée : réglée côté serveur, la liste « à encaisser » doit se rafraîchir.
-        if (orderId) void queryClient.invalidateQueries({ queryKey: ['customers', 'orders'] });
+        // Commandes / BL réglés côté serveur : la liste « à encaisser » doit se rafraîchir.
+        if (orderId || settlementLines.length > 0) {
+          void queryClient.invalidateQueries({ queryKey: ['customers', 'documents'] });
+        }
         clearCart('sale_completed');
         detachCustomer();
       }

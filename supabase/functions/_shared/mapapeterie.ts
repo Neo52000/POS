@@ -96,6 +96,19 @@ export async function settleOrders(settlements: unknown[]): Promise<SettleOrderR
   return (data as SettleOrderResult[]) ?? [];
 }
 
+/**
+ * Pont commandes/BL : règle des lignes de commandes et de bons de livraison
+ * (`pos_settle_documents`, service role, idempotente par transaction_id ; refus définitifs
+ * QTY_EXCEEDED, ACCOUNT_MISMATCH, LINE_NOT_FOUND, VALIDATION). Payload tel que renvoyé par
+ * `pos_document_settlement_pending` (projet Pos).
+ */
+export async function settleDocuments(settlements: unknown[]): Promise<SettleOrderResult[]> {
+  if (settlements.length === 0) return [];
+  const { data, error } = await mapapClient().rpc('pos_settle_documents', { p_settlements: settlements });
+  if (error) throw new Error(`pos_settle_documents: ${error.message}`);
+  return (data as SettleOrderResult[]) ?? [];
+}
+
 export interface SetStockBoutiqueResult {
   product_id: string;
   applied: boolean;

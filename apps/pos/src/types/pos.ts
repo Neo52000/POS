@@ -259,6 +259,41 @@ export interface CustomerOrder {
   items: CustomerQuoteItem[];
 }
 
+/** Ligne restant à encaisser d'une commande ou d'un BL (`pos-customer-orders`, `documents`). */
+export interface OpenDocumentItem extends CustomerQuoteItem {
+  sales_order_line_id: string;
+  /** Ligne de BL ; `null` pour la partie non livrée d'une commande. */
+  delivery_note_line_id: string | null;
+}
+
+/** Commande ma-papeterie : partie non livrée et non réglée. */
+export interface OpenOrderDocument {
+  id: string;
+  order_number: string;
+  origin: string | null;
+  created_at: string;
+  /** Frais de port TTC (TVA 20 %), 0 si aucun. */
+  shipping_ttc: number | null;
+  open_ttc: number | null;
+  items: OpenDocumentItem[];
+}
+
+/** Bon de livraison : lignes livrées non réglées. */
+export interface OpenDeliveryNoteDocument {
+  id: string;
+  delivery_note_number: string;
+  order_id: string;
+  order_number: string;
+  created_at: string;
+  open_ttc: number | null;
+  items: OpenDocumentItem[];
+}
+
+export interface CustomerOpenDocuments {
+  orders: OpenOrderDocument[];
+  delivery_notes: OpenDeliveryNoteDocument[];
+}
+
 /** Ligne de `pos_resolve_cart_prices`. */
 export interface ResolvedPrice {
   product_id: string;

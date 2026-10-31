@@ -99,6 +99,21 @@ describe('validateCheckoutPayload', () => {
     expect(validateCheckoutPayload(p).ok).toBe(true);
   });
 
+  it('accepts a sale settling order and delivery-note lines', () => {
+    const p = mutate((x) => {
+      x['customer_account_id'] = '7c1f4c2e-9a7b-4d3e-8f21-0b5c6d7e8f90';
+      x['settlement_lines'] = [
+        { sales_order_line_id: '1b4e28ba-2fa1-41d2-883f-0016d3cca427', qty: 2 },
+        {
+          sales_order_line_id: '1b4e28ba-2fa1-41d2-883f-0016d3cca427',
+          delivery_note_line_id: '2c5f39cb-3fb2-42e3-994a-1127e4ddb538',
+          qty: 1.5,
+        },
+      ];
+    });
+    expect(validateCheckoutPayload(p).ok).toBe(true);
+  });
+
   it('rejects a non-object payload', () => {
     expect(validateCheckoutPayload(null)).toEqual({
       ok: false,
@@ -272,6 +287,40 @@ describe('validateCheckoutPayload', () => {
           p['passage_contact_id'] = '9b2e6c1a-3f4d-4e5b-8a6c-7d8e9f0a1b2c';
         }),
       'passage_contact_id',
+    ],
+    [
+      'settlement_lines without customer_account_id',
+      () =>
+        mutate((p) => {
+          delete p['customer_account_id'];
+          p['settlement_lines'] = [
+            { sales_order_line_id: '1b4e28ba-2fa1-41d2-883f-0016d3cca427', qty: 1 },
+          ];
+        }),
+      'settlement_lines',
+    ],
+    [
+      'settlement_lines with zero qty',
+      () =>
+        mutate((p) => {
+          p['customer_account_id'] = '7c1f4c2e-9a7b-4d3e-8f21-0b5c6d7e8f90';
+          p['settlement_lines'] = [
+            { sales_order_line_id: '1b4e28ba-2fa1-41d2-883f-0016d3cca427', qty: 0 },
+          ];
+        }),
+      'settlement_lines[0].qty',
+    ],
+    [
+      'duplicate settlement_lines',
+      () =>
+        mutate((p) => {
+          p['customer_account_id'] = '7c1f4c2e-9a7b-4d3e-8f21-0b5c6d7e8f90';
+          p['settlement_lines'] = [
+            { sales_order_line_id: '1b4e28ba-2fa1-41d2-883f-0016d3cca427', qty: 1 },
+            { sales_order_line_id: '1b4e28ba-2fa1-41d2-883f-0016d3cca427', qty: 1 },
+          ];
+        }),
+      'duplicate',
     ],
   ];
 

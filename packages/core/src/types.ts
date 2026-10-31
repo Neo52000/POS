@@ -42,12 +42,26 @@ export interface CheckoutPayload {
   passage_contact_id?: string;
   /** Nom de la personne de passage, imprimé sur le ticket (snapshot client, non haché). */
   passage_contact_name?: string;
+  /**
+   * Lignes de commandes / BL ma-papeterie réglées par ce ticket (`pos_settle_documents`). Hors
+   * périmètre fiscal comme `order_id` : retirées du payload avant `pos_finalize_sale`, outbox.
+   * Ventes uniquement ; exige `customer_account_id`.
+   */
+  settlement_lines?: SettlementLine[];
   invoice_requested: boolean;
   lines: CartLineInput[];
   payments: CheckoutPayment[];
   change_cents: number;
   totals: CheckoutTotals;
   app_version: string;
+}
+
+/** Ligne de commande (ou de BL) ma-papeterie réglée par un ticket, quantité ≤ reste ouvert. */
+export interface SettlementLine {
+  sales_order_line_id: string;
+  /** Ligne de bon de livraison réglée ; absente pour la partie non livrée d'une commande. */
+  delivery_note_line_id?: string | null;
+  qty: number;
 }
 
 /** SPEC §5 — réponse de `pos-checkout`. Les types de lignes DB sont fournis par le consommateur. */
@@ -254,6 +268,42 @@ function validatePayment(c: Collector, payment: unknown, path: string): void {
   }
 }
 
+const MAX_SETTLEMENT_LINES = 500;
+
+function validateSettlementLines(
+  c: Collector,
+  p: Record<string, unknown>,
+  root: string,
+  kind: unknown,
+): void {
+  const sl = p['settlement_lines'];
+  if (sl === undefined) return;
+  const path = `${root}.settlement_lines`;
+  if (!Array.isArray(sl) || sl.length === 0 || sl.length > MAX_SETTLEMENT_LINES) {
+    c.fail(path, `must be a non-empty array (max ${MAX_SETTLEMENT_LINES})`);
+    return;
+  }
+  if (kind !== 'sale') c.fail(path, 'is only allowed on a sale');
+  if (p['customer_account_id'] === undefined) c.fail(path, 'requires customer_account_id');
+  const seen = new Set<string>();
+  sl.forEach((line, i) => {
+    const lp = `${path}[${i}]`;
+    if (!isRecord(line)) {
+      c.fail(lp, 'must be an object');
+      return;
+    }
+    c.uuid(line, 'sales_order_line_id', lp, true);
+    if (line['delivery_note_line_id'] !== null) c.uuid(line, 'delivery_note_line_id', lp, false);
+    const qty = line['qty'];
+    if (typeof qty !== 'number' || !Number.isFinite(qty) || qty <= 0 || !hasDecimals(qty, 3)) {
+      c.fail(`${lp}.qty`, 'must be a number > 0 with at most 3 decimals');
+    }
+    const key = `${String(line['sales_order_line_id'])}/${String(line['delivery_note_line_id'] ?? '')}`;
+    if (seen.has(key)) c.fail(lp, 'duplicate sales_order_line_id / delivery_note_line_id');
+    seen.add(key);
+  });
+}
+
 /**
  * Validation structurelle d'un `CheckoutPayload` (SPEC §4), sans dépendance externe.
  * La cohérence des montants (`Σ paiements − rendu = total`) est vérifiée par `validatePayments()`
@@ -295,6 +345,7 @@ export function validateCheckoutPayload(payload: unknown): CheckoutValidation {
   if (p['passage_contact_id'] !== undefined && p['customer_account_id'] === undefined) {
     c.fail(`${root}.passage_contact_id`, 'requires customer_account_id (Client passage)');
   }
+  validateSettlementLines(c, p, root, kind);
   c.boolean(p, 'invoice_requested', root, true);
 
   const lines = p['lines'];

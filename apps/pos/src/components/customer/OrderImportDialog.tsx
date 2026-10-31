@@ -1,4 +1,5 @@
-import { AlertTriangle, Loader2 } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Loader2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -8,74 +9,69 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { useCustomerOrders } from '@/hooks/useCustomerOrders';
-import { documentItemUnitTtcCents, importDocumentIntoCart } from '@/lib/documentImport';
+import { useCustomerDocuments } from '@/hooks/useCustomerDocuments';
+import {
+  addOpenDocumentsToCart,
+  documentIdsInCart,
+  documentItemUnitTtcCents,
+  flattenOpenDocuments,
+  openDocumentNumber,
+  openDocumentTotalCents,
+  type OpenDocument,
+} from '@/lib/documentImport';
 import { formatEurCents } from '@/lib/format';
 import { errorMessage } from '@/lib/utils';
 import { useCartStore } from '@/stores/cartStore';
 import { useCustomerStore } from '@/stores/customerStore';
-import type { CustomerOrder } from '@/types/pos';
 
 export interface OrderImportDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  draft: 'brouillon',
-  confirmed: 'confirmée',
-  partially_delivered: 'livrée partiellement',
-  delivered: 'livrée',
-};
-
-/** Total TTC (centimes) que la commande produira dans le panier : lignes restant dues + port. */
-export function orderCartTotalCents(order: CustomerOrder): number {
-  let total = 0;
-  for (const it of order.items) {
-    if (!(it.quantity > 0)) continue;
-    const gross = documentItemUnitTtcCents(it) * it.quantity;
-    total += Math.round(gross * (1 - (it.discount_percent ?? 0) / 100));
-  }
-  return total + Math.round((order.shipping_ttc ?? 0) * 100);
-}
-
-/** Transfère une commande ma-papeterie non réglée dans le panier (remplace le panier courant). */
-export function importOrderIntoCart(order: CustomerOrder): void {
-  importDocumentIntoCart(order.items, {
-    tag: `Commande ${order.order_number}`,
-    reason: 'order_import',
-    quoteId: null,
-    orderId: order.id,
-    extraFreeLine:
-      order.shipping_ttc && order.shipping_ttc > 0
-        ? { label: 'Frais de port', ttc: order.shipping_ttc }
-        : null,
-  });
-}
-
+/**
+ * Commandes et bons de livraison à encaisser du client appelé : cases à cocher, ajout au panier
+ * courant (sans le vider). BL = lignes livrées non réglées ; commande = partie non livrée.
+ */
 export function OrderImportDialog({ open, onOpenChange }: OrderImportDialogProps) {
   const account = useCustomerStore((s) => s.account);
   const passageContact = useCustomerStore((s) => s.passageContact);
-  const cartCount = useCartStore((s) => s.lines.length);
-  const { data, isFetching, isError, error } = useCustomerOrders(
+  const cartLines = useCartStore((s) => s.lines);
+  const { data, isFetching, isError, error } = useCustomerDocuments(
     open && account ? account.id : null,
     passageContact?.id,
   );
+  const docs = useMemo(() => flattenOpenDocuments(data), [data]);
+  const inCart = useMemo(() => documentIdsInCart(cartLines), [cartLines]);
+  const [selected, setSelected] = useState<string[]>([]);
 
-  const pick = (order: CustomerOrder): void => {
-    importOrderIntoCart(order);
+  useEffect(() => {
+    if (open) setSelected([]);
+  }, [open]);
+
+  const toggle = (id: string): void =>
+    setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+
+  const picked = docs.filter((d) => selected.includes(d.doc.id) && !inCart.has(d.doc.id));
+  const pickedTotal = picked.reduce((s, d) => s + openDocumentTotalCents(d), 0);
+  const addable = docs.filter((d) => !inCart.has(d.doc.id));
+
+  const add = (): void => {
+    if (!account || picked.length === 0) return;
+    addOpenDocumentsToCart(account.id, picked);
     onOpenChange(false);
   };
+
+  const holder = passageContact ? passageContact.full_name : account?.display_name;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85vh] max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Commandes à encaisser · {account?.display_name}</DialogTitle>
+          <DialogTitle>Commandes et BL à encaisser · {holder}</DialogTitle>
           <DialogDescription>
-            Commandes non réglées (hors payées en ligne, annulées ou facturées). Le transfert
-            remplace le panier courant{cartCount > 0 ? ` (${cartCount} ligne(s))` : ''} par les
-            lignes restant dues.
+            BL : lignes livrées non réglées. Commande : partie non encore livrée. Les documents
+            cochés s’ajoutent au panier courant.
           </DialogDescription>
         </DialogHeader>
         <div className="min-h-[160px] flex-1 overflow-y-auto">
@@ -85,67 +81,108 @@ export function OrderImportDialog({ open, onOpenChange }: OrderImportDialogProps
             </div>
           )}
           {isError && <p className="py-4 text-center text-danger">{errorMessage(error)}</p>}
-          {data && data.length === 0 && (
-            <p className="py-6 text-center text-muted">Aucune commande à encaisser.</p>
+          {data && docs.length === 0 && (
+            <p className="py-6 text-center text-muted">Aucune commande ni aucun BL à encaisser.</p>
           )}
           <ul className="flex flex-col gap-2">
-            {(data ?? []).map((o) => {
-              const cartTotal = orderCartTotalCents(o);
-              const orderTotal = o.total_ttc != null ? Math.round(o.total_ttc * 100) : null;
-              const mismatch = orderTotal != null && Math.abs(orderTotal - cartTotal) > 5;
-              const sellable = o.items.some((it) => it.quantity > 0);
-              return (
-                <li key={o.id} className="rounded-xl border border-border bg-bg p-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="font-medium">
-                        {o.order_number}{' '}
-                        <Badge variant="secondary">{STATUS_LABELS[o.status] ?? o.status}</Badge>
-                        {o.origin === 'shopify' && (
-                          <Badge variant="outline" className="ml-1">
-                            web
-                          </Badge>
-                        )}
-                      </p>
-                      <p className="text-xs text-muted">
-                        {new Date(o.created_at).toLocaleDateString('fr-FR')} · {o.items.length}{' '}
-                        ligne(s) · {formatEurCents(cartTotal)} TTC
-                        {o.shipping_ttc
-                          ? ` (dont port ${formatEurCents(Math.round(o.shipping_ttc * 100))})`
-                          : ''}
-                      </p>
-                      {mismatch && (
-                        <p className="mt-1 flex items-center gap-1 text-xs text-danger">
-                          <AlertTriangle className="h-3.5 w-3.5" />
-                          Total commande {formatEurCents(orderTotal)} ≠ lignes — vérifier avant
-                          encaissement.
-                        </p>
-                      )}
-                    </div>
-                    <Button
-                      size="touch"
-                      onClick={() => pick(o)}
-                      disabled={!sellable}
-                      data-testid="import-order"
-                    >
-                      Transférer
-                    </Button>
-                  </div>
-                  <ul className="mt-2 text-xs text-muted">
-                    {o.items.slice(0, 4).map((it, i) => (
-                      <li key={i}>
-                        {it.quantity} × {it.label} — {formatEurCents(documentItemUnitTtcCents(it))}{' '}
-                        TTC
-                      </li>
-                    ))}
-                    {o.items.length > 4 && <li>…</li>}
-                  </ul>
-                </li>
-              );
-            })}
+            {docs.map((d) => (
+              <DocumentRow
+                key={d.doc.id}
+                d={d}
+                checked={selected.includes(d.doc.id)}
+                alreadyInCart={inCart.has(d.doc.id)}
+                onToggle={() => toggle(d.doc.id)}
+              />
+            ))}
           </ul>
         </div>
+        {addable.length > 0 && (
+          <div className="flex items-center justify-between gap-3 border-t border-border pt-3">
+            <Button
+              variant="ghost"
+              size="touch"
+              onClick={() =>
+                setSelected(selected.length === addable.length ? [] : addable.map((d) => d.doc.id))
+              }
+            >
+              {selected.length === addable.length ? 'Tout décocher' : 'Tout cocher'}
+            </Button>
+            <Button
+              size="touch"
+              onClick={add}
+              disabled={picked.length === 0}
+              data-testid="import-documents"
+            >
+              Ajouter au panier ({picked.length}) · {formatEurCents(pickedTotal)}
+            </Button>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+function DocumentRow({
+  d,
+  checked,
+  alreadyInCart,
+  onToggle,
+}: {
+  d: OpenDocument;
+  checked: boolean;
+  alreadyInCart: boolean;
+  onToggle: () => void;
+}) {
+  const number = openDocumentNumber(d);
+  const total = openDocumentTotalCents(d);
+  const items = d.doc.items;
+  return (
+    <li
+      className={`rounded-xl border border-border bg-bg p-3 ${alreadyInCart ? 'opacity-50' : ''}`}
+    >
+      <label className="flex cursor-pointer items-start gap-3">
+        <input
+          type="checkbox"
+          className="mt-1 h-6 w-6 accent-accent"
+          checked={checked || alreadyInCart}
+          disabled={alreadyInCart}
+          onChange={onToggle}
+          aria-label={`Sélectionner ${number}`}
+          data-testid={`document-${number}`}
+        />
+        <div className="min-w-0 flex-1">
+          <p className="font-medium">
+            <Badge variant={d.kind === 'delivery_note' ? 'success' : 'secondary'}>
+              {d.kind === 'delivery_note' ? 'BL' : 'Cde'}
+            </Badge>{' '}
+            {number}
+            {d.kind === 'delivery_note' && (
+              <span className="text-xs text-muted"> · commande {d.doc.order_number}</span>
+            )}
+            {d.kind === 'order' && d.doc.origin === 'shopify' && (
+              <Badge variant="outline" className="ml-1">
+                web
+              </Badge>
+            )}
+            {alreadyInCart && <span className="ml-2 text-xs text-muted">déjà dans le panier</span>}
+          </p>
+          <p className="text-xs text-muted">
+            {new Date(d.doc.created_at).toLocaleDateString('fr-FR')} · {items.length} ligne(s) ·{' '}
+            {formatEurCents(total)} TTC
+            {d.kind === 'order' && d.doc.shipping_ttc
+              ? ` (dont port ${formatEurCents(Math.round(d.doc.shipping_ttc * 100))})`
+              : ''}
+          </p>
+          <ul className="mt-1 text-xs text-muted">
+            {items.slice(0, 4).map((it) => (
+              <li key={`${it.sales_order_line_id}/${it.delivery_note_line_id ?? ''}`}>
+                {it.quantity} × {it.label} — {formatEurCents(documentItemUnitTtcCents(it))} TTC
+              </li>
+            ))}
+            {items.length > 4 && <li>…</li>}
+          </ul>
+        </div>
+      </label>
+    </li>
   );
 }

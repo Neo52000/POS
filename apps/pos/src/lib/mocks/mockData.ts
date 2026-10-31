@@ -1,5 +1,6 @@
 import type {
-  CustomerOrder,
+  CustomerOpenDocuments,
+  OpenDocumentItem,
   CustomerQuote,
   PassageContact,
   PosCustomer,
@@ -183,39 +184,98 @@ export const MOCK_QUOTES: Record<string, CustomerQuote[]> = {
   ],
 };
 
-export const MOCK_ORDERS: Record<string, CustomerOrder[]> = {
-  'c0000000-0000-4000-8000-000000000001': [
-    {
-      id: 'e0000000-0000-4000-8000-000000000001',
-      order_number: 'CO-2026-00529',
-      status: 'confirmed',
-      origin: 'shopify',
-      financial_status: 'pending',
-      created_at: '2026-09-28T09:12:00Z',
-      shipping_ttc: 8.99,
-      total_ttc: 35.99,
-      items: [
-        {
-          product_id: 'a0000000-0000-4000-8000-000000000004',
-          label: 'Cahier Clairefontaine 96p grands carreaux',
-          quantity: 10,
-          unit_price_ht: 1.8,
-          unit_price_ttc: null,
-          discount_percent: 0,
-          vat_rate: 20,
-        },
-        {
-          product_id: null,
-          label: 'Reliure spirale A4 (atelier)',
-          quantity: 2,
-          unit_price_ht: 2.25,
-          unit_price_ttc: null,
-          discount_percent: 0,
-          vat_rate: 20,
-        },
-      ],
-    },
-  ],
+const docItem = (
+  sales_order_line_id: string,
+  delivery_note_line_id: string | null,
+  product_id: string | null,
+  label: string,
+  quantity: number,
+  unit_price_ht: number,
+): OpenDocumentItem => ({
+  sales_order_line_id,
+  delivery_note_line_id,
+  product_id,
+  label,
+  quantity,
+  unit_price_ht,
+  unit_price_ttc: null,
+  discount_percent: 0,
+  vat_rate: 20,
+});
+
+/**
+ * Commandes et BL à encaisser par client (pos_customer_open_documents) — mock. Mairie : une
+ * commande web (port), une commande ERP livrée en partie (reste non livré + BL).
+ */
+export const MOCK_DOCUMENTS: Record<string, CustomerOpenDocuments> = {
+  'c0000000-0000-4000-8000-000000000001': {
+    orders: [
+      {
+        id: 'e0000000-0000-4000-8000-000000000001',
+        order_number: 'CO-2026-00529',
+        origin: 'shopify',
+        created_at: '2026-09-28T09:12:00Z',
+        shipping_ttc: 8.99,
+        open_ttc: 27,
+        items: [
+          docItem(
+            'f0000000-0000-4000-8000-000000000001',
+            null,
+            'a0000000-0000-4000-8000-000000000004',
+            'Cahier Clairefontaine 96p grands carreaux',
+            10,
+            1.8,
+          ),
+          docItem(
+            'f0000000-0000-4000-8000-000000000002',
+            null,
+            null,
+            'Reliure spirale A4 (atelier)',
+            2,
+            2.25,
+          ),
+        ],
+      },
+      {
+        id: 'e0000000-0000-4000-8000-000000000002',
+        order_number: 'CO-2026-00530',
+        origin: 'erp',
+        created_at: '2026-10-20T10:00:00Z',
+        shipping_ttc: 0,
+        open_ttc: 6,
+        items: [
+          docItem(
+            'f0000000-0000-4000-8000-000000000003',
+            null,
+            null,
+            'Ramette papier A4 80 g',
+            1,
+            5,
+          ),
+        ],
+      },
+    ],
+    delivery_notes: [
+      {
+        id: 'd0000000-0000-4000-8000-000000000001',
+        delivery_note_number: 'BL-2026-00012',
+        order_id: 'e0000000-0000-4000-8000-000000000002',
+        order_number: 'CO-2026-00530',
+        created_at: '2026-10-25T08:30:00Z',
+        open_ttc: 12,
+        items: [
+          docItem(
+            'f0000000-0000-4000-8000-000000000003',
+            'f1000000-0000-4000-8000-000000000001',
+            null,
+            'Ramette papier A4 80 g',
+            2,
+            5,
+          ),
+        ],
+      },
+    ],
+  },
 };
 
 /** Fiche « Client passage » ma-papeterie (customer_accounts.is_passage) — mock. */
@@ -231,31 +291,31 @@ export const MOCK_PASSAGE_CONTACTS: PassageContact[] = [
   },
 ];
 
-/** Commandes à encaisser par personne de passage (pos_passage_open_orders) — mock. */
-export const MOCK_PASSAGE_ORDERS: Record<string, CustomerOrder[]> = {
-  'b1000000-0000-4000-8000-000000000001': [
-    {
-      id: 'e0000000-0000-4000-8000-000000000091',
-      order_number: 'CO-2026-00701',
-      status: 'confirmed',
-      origin: 'erp',
-      financial_status: null,
-      created_at: '2026-10-30T15:20:00Z',
-      shipping_ttc: 0,
-      total_ttc: 21.6,
-      items: [
-        {
-          product_id: 'a0000000-0000-4000-8000-000000000004',
-          label: 'Cahier Clairefontaine 96p grands carreaux',
-          quantity: 6,
-          unit_price_ht: 3,
-          unit_price_ttc: null,
-          discount_percent: 0,
-          vat_rate: 20,
-        },
-      ],
-    },
-  ],
+/** Commandes et BL à encaisser par personne de passage (pos_passage_open_documents) — mock. */
+export const MOCK_PASSAGE_DOCUMENTS: Record<string, CustomerOpenDocuments> = {
+  'b1000000-0000-4000-8000-000000000001': {
+    orders: [
+      {
+        id: 'e0000000-0000-4000-8000-000000000091',
+        order_number: 'CO-2026-00701',
+        origin: 'erp',
+        created_at: '2026-10-30T15:20:00Z',
+        shipping_ttc: 0,
+        open_ttc: 21.6,
+        items: [
+          docItem(
+            'f0000000-0000-4000-8000-000000000091',
+            null,
+            'a0000000-0000-4000-8000-000000000004',
+            'Cahier Clairefontaine 96p grands carreaux',
+            6,
+            3,
+          ),
+        ],
+      },
+    ],
+    delivery_notes: [],
+  },
 };
 
 /** Règles tarifaires mock : Mairie → −10 % sur le BIC, prix net 2,00 € sur le cahier. */
