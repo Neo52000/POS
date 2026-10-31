@@ -525,3 +525,14 @@ changed, old, new, actor}` sur la caisse. Le motif est transmis par `pos.change_
   « Commissionnement Fiskaly automatique »). La PWA n'écrivait pas ces tables (lectures seules).
 - Tests : `scripts/sql-tests/pos/15_fiscal_settings.sql` (`settings_change` exercé en base locale
   seulement : `PGOPTIONS='-c pos.test_local=on'`).
+
+### 14.4 TRUNCATE et compteurs (lot 4)
+
+- `pos_forbid_truncate()` : trigger `BEFORE TRUNCATE FOR EACH STATEMENT` (`trg_<table>_no_truncate`,
+  « NF525: … is immutable ») sur `pos_transactions`, `pos_transaction_lines`, `pos_payments`,
+  `pos_events`, `pos_closings`, `pos_sessions`, `pos_archives`, `pos_counters`, `pos_stock_sync`,
+  `pos_order_settlements`, `pos_document_settlements`, `pos_transaction_passage_contacts`,
+  `pos_settings`, `pos_registers` (et `pos_offline_refs`, lot 5). `TRUNCATE … CASCADE` est couvert.
+- `REVOKE TRUNCATE` de `service_role`, `authenticated`, `anon` sur ces tables.
+- `pos_counters` : `DELETE` interdit ; `UPDATE` seulement `value = value + 1` (même caisse, même type).
+- Test : `scripts/sql-tests/pos/16_truncate_counters.sql`.
