@@ -65,6 +65,8 @@ export const ERROR_MESSAGES: Record<ApiErrorCode, string> = {
   FORBIDDEN_ROLE: "Ce compte n'a pas le rôle caisse (pos).",
   VALIDATION: 'Données de vente invalides.',
   SESSION_NOT_OPEN: "Aucune session de caisse ouverte : ouvrez la caisse avant d'encaisser.",
+  SESSION_STALE:
+    'Clôture Z de la veille obligatoire : la session a été ouverte un jour précédent. Clôturez-la avant toute vente.',
   SESSION_ALREADY_OPEN: 'Une session est déjà ouverte sur cette caisse.',
   TOTALS_MISMATCH: 'Écart de totaux entre la caisse et le serveur : recalculez le panier.',
   PAYMENTS_MISMATCH: 'La somme des paiements ne correspond pas au total.',

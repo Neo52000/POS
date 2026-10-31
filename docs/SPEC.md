@@ -142,6 +142,7 @@ Palette Data Noir : `bg #0a0a0f`, `surface #111118`, `border #1e1e2e`, `text #e2
 | `BUSINESS_AT_OUT_OF_RANGE` | 422  | `business_at` hors `pos_settings.clock_tolerance` (§11.2)                         |
 | `CHAIN_INCONSISTENT`       | 409  | ticket précédent introuvable au chaînage ; ZIP d'archive existant et différent    |
 | `REGISTER_NOT_FOUND`       | 404  | caisse inconnue                                                                   |
+| `SESSION_STALE`            | 409  | session ouverte avant le jour courant (Europe/Paris) : Z1 de la veille (0.4.0)    |
 | `PERIOD_NOT_ENDED`         | 409  | archive demandée pour une période non terminée (ignorée par `pos-export-archive`) |
 
 ### 11.2 Hors ligne (lot 4) — détail : `docs/HORS-LIGNE.md`
@@ -483,3 +484,21 @@ l'imprimante. Mise en service : `docs/IMPRIMANTE-STAR-MPOP.md`.
   simulée (`pos_signature_is_mock` : record `mock-…`, payload `mock: true` ou `mode: 'mock'`) →
   `FISKALY_MOCK_FOR_LIVE_REGISTER`, ticket inchangé.
 - Tests : `scripts/fiskaly/config.test.ts` (Vitest), `scripts/sql-tests/pos/13_fiskaly_live_guard.sql`.
+
+### 14.2 Clôture Z journalière garantie (lot 2)
+
+- `pos_finalize_sale` : session (d'origine ou de rattachement) ouverte avant
+  `pos_period_bounds('daily', now()).period_start` → `SESSION_STALE` (409), vente comme
+  remboursement, en ligne comme rejouée. Contrôle placé après l'idempotence.
+- `pos_flag_stale_sessions()` (service role) : JET `session_stale` `{session_id, session_number,
+opened_at, business_date, day_start}`, au plus un par session et par jour. Cron
+  `pos-session-stale` `5 1,2 * * *` UTC (= 03:05 Europe/Paris été comme hiver, second passage sans
+  effet).
+- PWA : `useSessionStale()` (date métier du poste réévaluée chaque minute, ou refus serveur
+  `SESSION_STALE` mémorisé par session) → écran bloquant « Clôture Z de la veille obligatoire »
+  (`StaleSessionBlock`) qui mène à `/closing`. Sur session périmée, la file hors ligne en attente et
+  un encaissement interrompu ne bloquent pas le Z (ils rejoignent la session suivante) ; les
+  éléments en échec bloquent toujours. Rejeu : `SESSION_STALE` → élément `pending`, arrêt
+  `session_stale`.
+- Tests : `scripts/sql-tests/pos/14_session_stale.sql`, `apps/pos/src/lib/sessionStale.test.ts`,
+  `offlineQueue.test.ts` (SESSION_STALE).

@@ -78,6 +78,8 @@ export const CHECKOUT_ERROR_CODES = [
   'FORBIDDEN_ROLE',
   'VALIDATION',
   'SESSION_NOT_OPEN',
+  /** Session ouverte avant le jour courant (Europe/Paris) : Z1 de la veille obligatoire (0.4.0). */
+  'SESSION_STALE',
   'TOTALS_MISMATCH',
   'PAYMENTS_MISMATCH',
   'REFUND_EXCEEDS_SOLD',

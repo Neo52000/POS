@@ -252,7 +252,8 @@ export async function queueOfflineSale(
 // Rejeu
 // ---------------------------------------------------------------------------
 
-export type ReplayStop = 'network' | 'session_not_open' | 'unauthorized' | 'busy' | null;
+export type ReplayStop =
+  'network' | 'session_not_open' | 'session_stale' | 'unauthorized' | 'busy' | null;
 
 export interface ReplayReport {
   attempted: number;
@@ -348,14 +349,21 @@ async function runReplay(): Promise<ReplayReport> {
             markOffline('replay');
             break;
           }
-          if (code === 'SESSION_NOT_OPEN' || code === 'UNAUTHORIZED') {
+          // Session fermée ou périmée (Z1 de la veille à faire) : la vente reste en file et sera
+          // rattachée à la prochaine session ouverte.
+          if (code === 'SESSION_NOT_OPEN' || code === 'SESSION_STALE' || code === 'UNAUTHORIZED') {
             await db.queue.update(seq, {
               status: 'pending',
               last_error: message,
               last_error_code: code,
               updated_at: now,
             });
-            report.stopped = code === 'SESSION_NOT_OPEN' ? 'session_not_open' : 'unauthorized';
+            report.stopped =
+              code === 'SESSION_NOT_OPEN'
+                ? 'session_not_open'
+                : code === 'SESSION_STALE'
+                  ? 'session_stale'
+                  : 'unauthorized';
             ui.setReplayBlock(report.stopped);
             break;
           }

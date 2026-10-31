@@ -245,6 +245,17 @@ describe('offlineQueue', () => {
     expect(useUiStore.getState().replayBlock).toBeNull();
   });
 
+  it('SESSION_STALE : la vente reste en attente et le rejeu exige le Z de la veille', async () => {
+    await queueN(2);
+    checkoutMock.mockRejectedValue(new ApiError('SESSION_STALE', 'SESSION_STALE', null, 409));
+    const report = await replayQueue();
+    expect(report).toMatchObject({ attempted: 1, failed: 0, stopped: 'session_stale' });
+    const items = await db.queue.orderBy('local_seq').toArray();
+    expect(items.map((i) => i.status)).toEqual(['pending', 'pending']);
+    expect(items[0]?.last_error_code).toBe('SESSION_STALE');
+    expect(useUiStore.getState().replayBlock).toBe('session_stale');
+  });
+
   it('événements JET hors ligne : mis en file puis rejoués en FIFO avec leur client_at', async () => {
     const rpcMock = vi.mocked(supabase.rpc);
     rpcMock.mockClear();

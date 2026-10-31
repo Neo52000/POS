@@ -29,6 +29,11 @@ BEGIN
   -- ---------------------------------------------------------------- setup
   INSERT INTO public.pos_registers (code, label) VALUES ('TEST-01', 'Caisse de test SQL') ON CONFLICT (code) DO NOTHING;
   SELECT id INTO v_reg FROM public.pos_registers WHERE code = 'TEST-01';
+  -- 0.4.0 : une session TEST-01 ouverte un jour précédent est périmée (SESSION_STALE) : Z puis réouverture.
+  PERFORM public.pos_close_session(s.id, 0, 'session périmée (test 05)', v_cashier)
+  FROM public.pos_sessions s
+  WHERE s.register_id = v_reg AND s.status = 'open'
+    AND s.opened_at < (SELECT b.period_start FROM public.pos_period_bounds('daily', now()) b);
   SELECT id INTO v_session FROM public.pos_sessions WHERE register_id = v_reg AND status = 'open';
   IF v_session IS NULL THEN
     SELECT id INTO v_session FROM public.pos_open_session(v_reg, 0, v_cashier);

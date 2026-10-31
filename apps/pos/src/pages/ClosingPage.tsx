@@ -24,6 +24,7 @@ import { updateCachedSession, useSession } from '@/hooks/useSession';
 import { useOfflineQueue } from '@/hooks/useOfflineQueue';
 import { useTodayTickets } from '@/hooks/useTodayTickets';
 import { describeApiError } from '@/lib/edge';
+import { useSessionStale } from '@/lib/sessionStale';
 import { formatDateTime, formatEurCents, formatVatRate } from '@/lib/format';
 import { replayQueue } from '@/lib/offlineQueue';
 import { closingReport } from '@/lib/reports';
@@ -278,12 +279,16 @@ function CloseSession({
   const counted = useMemo(() => cashCountTotal(counts), [counts]);
   const offline = useUiStore((s) => s.connectivity === 'offline');
   const { stats } = useOfflineQueue();
-  const queueBlocks = stats.pending > 0 || stats.failed > 0;
+  // 0.4.0 lot 2 : une session périmée (ouverte un jour précédent) ne peut plus rien recevoir
+  // (SESSION_STALE). Les ventes hors ligne en attente et un encaissement interrompu ne bloquent
+  // donc pas son Z : ils rejoindront la session suivante (rattachement). Les échecs bloquent.
+  const stale = useSessionStale();
+  const queueBlocks = (stale ? 0 : stats.pending) > 0 || stats.failed > 0;
   // Encaissement interrompu : de l'argent a pu être perçu (CB débitée, espèces au tiroir) sans
   // ticket. Le Z le figerait dans la mauvaise période et fausserait l'écart de caisse.
   const draft = useCheckoutDraftStore((s) => s.draft);
   const draftCaptured = draftCapturedCents(draft);
-  const draftBlocks = draft !== null;
+  const draftBlocks = draft !== null && !stale;
   // Tickets en attente : sans valeur fiscale, ils survivent au Z (simple avertissement).
   const parked = useParkedStore((s) => s.parked);
   const parkedTotal = parked.reduce((sum, p) => sum + p.total_ttc_cents, 0);
@@ -340,6 +345,20 @@ function CloseSession({
         </div>
       </div>
       <DayKpiStrip tickets={todaySales} />
+      {stale && (
+        <p
+          className="rounded-xl bg-danger/10 px-3 py-2 text-sm text-danger"
+          role="alert"
+          data-testid="closing-stale"
+        >
+          Clôture Z de la veille obligatoire : cette session a été ouverte un jour précédent. Aucune
+          vente n’est possible avant sa clôture.
+          {stats.pending > 0
+            ? ` ${stats.pending} vente(s) hors ligne en attente seront rattachées à la session suivante.`
+            : ''}
+          {draft ? ' L’encaissement interrompu sera repris dans la session suivante.' : ''}
+        </p>
+      )}
       {draftBlocks && (
         <p
           className="rounded-xl bg-danger/10 px-3 py-2 text-sm text-danger"

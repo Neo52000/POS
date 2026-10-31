@@ -80,13 +80,16 @@ ouverte** de la caisse (elle entre dans le Z suivant ; `business_date` d'origine
 déjà calculé n'est jamais modifié) et journalise `offline_reattached`
 (`original_session_id`, `session_id`, `provisional_ref`). Sans session ouverte :
 `SESSION_NOT_OPEN` (409) → la vente reste en file et le rejeu reprend après l'ouverture.
+Session cible ouverte un jour précédent (heure de Paris) : `SESSION_STALE` (409, 0.4.0) → la vente
+reste en file ; le Z1 de cette session est alors autorisé malgré la file (les ventes rejoindront la
+session suivante), puis le rejeu reprend à l'ouverture.
 
 ### Échecs
 
 | Réponse                                                                            | Traitement                                                    |
 | ---------------------------------------------------------------------------------- | ------------------------------------------------------------- |
 | Erreur réseau                                                                      | élément remis `pending`, retour hors ligne, rejeu interrompu  |
-| `SESSION_NOT_OPEN`, `UNAUTHORIZED`                                                 | élément remis `pending`, rejeu suspendu (bandeau d'action)    |
+| `SESSION_NOT_OPEN`, `SESSION_STALE`, `UNAUTHORIZED`                                | élément remis `pending`, rejeu suspendu (bandeau d'action)    |
 | Autre erreur métier (`BUSINESS_AT_OUT_OF_RANGE`, `TOTALS_MISMATCH`, `VALIDATION`…) | élément `failed`, JET `offline_replay_failed`, rejeu continue |
 
 **Un élément en attente ou en échec bloque la clôture (Z)** : l'écran de clôture refuse tant que

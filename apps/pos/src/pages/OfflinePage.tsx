@@ -192,6 +192,19 @@ export function OfflinePage() {
             </Link>
           </p>
         )}
+        {replayBlock === 'session_stale' && (
+          <p
+            className="flex items-center gap-2 rounded-xl bg-danger/10 px-3 py-2 text-sm text-danger"
+            data-testid="replay-blocked-stale"
+          >
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            Clôture Z de la veille obligatoire : la session ouverte date d’un jour précédent. Les
+            ventes restent en file et seront rattachées à la session suivante.
+            <Link to="/closing" className="ml-auto underline">
+              Clôturer la session
+            </Link>
+          </p>
+        )}
         {replayBlock === 'unauthorized' && (
           <p className="rounded-xl bg-danger/10 px-3 py-2 text-sm text-danger">
             Session utilisateur expirée : reconnectez-vous pour synchroniser la file.

@@ -397,6 +397,18 @@ export function PaymentSheet({
         });
         onOpenChange(false);
         navigate('/offline');
+      } else if (isApiError(e) && e.code === 'SESSION_STALE') {
+        // Z1 de la veille obligatoire : le brouillon est conservé, la vente sera reprise
+        // dans la nouvelle session (écran bloquant de la page de vente).
+        useUiStore.getState().setStaleSession(sessionId);
+        toast({
+          title: 'Clôture Z de la veille obligatoire',
+          description: message,
+          variant: 'danger',
+          durationMs: 10_000,
+        });
+        onOpenChange(false);
+        navigate('/closing');
       } else if (isApiError(e) && e.code === 'QUEUED_AFTER_CB') {
         toast({
           title: 'Vente à rejouer',
