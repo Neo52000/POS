@@ -123,7 +123,7 @@ resterait définitivement).
         supprimer le code** (retour arrière) ;
   - [ ] déconnecter l'application Shopify POS du matériel de la boutique.
 - [ ] Z du soir, comparaison du fond de caisse, contrôle des signatures.
-- [ ] Dashboard ma-papeterie alimenté (pont `pos-sales-sync`, caisse `live` uniquement) : côté
+- [ ] Dashboard ma-papeterie alimenté (pont `pos-sales-sync` : caisses `live`, et caisses d'exploitation non `is_test` depuis le 31/10/2026, migration `20261103080000`) : côté
       ma-papeterie `select business_date, count(*), sum(total_ttc) from pos_nf525_sales group by 1 order by 1 desc limit 3;`
       = Z du jour ; côté Pos `select status, count(*) from pos_sales_sync group by 1;` sans `failed`.
 
