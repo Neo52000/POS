@@ -1,4 +1,10 @@
-import type { PaymentMethod, ReportFigures, TransactionKind, VatBreakdownEntry } from '@pos/core';
+import type {
+  CashMovementKind,
+  PaymentMethod,
+  ReportFigures,
+  TransactionKind,
+  VatBreakdownEntry,
+} from '@pos/core';
 
 /** Palier de prix manuel (`products.pos_price_tiers`) : prix en euros. */
 export interface PriceTier {
@@ -458,4 +464,25 @@ export interface ShopifyPosOrder {
   payment_methods: string[];
   customer_name: string | null;
   lines: ShopifyPosLine[];
+}
+
+/** Mouvement d'espèces hors vente (`pos_cash_movements`, 0.5.0) : immuable, tracé au JET. */
+export interface PosCashMovement {
+  id: string;
+  register_id: string;
+  session_id: string;
+  kind: CashMovementKind;
+  /** Toujours > 0 ; le sens découle du type (cash_in = entrée). */
+  amount_cents: number;
+  reason: string;
+  reference: string | null;
+  client_movement_id: string;
+  created_by: string | null;
+  created_at: string;
+}
+
+/** `pos_record_cash_movement`. */
+export interface RecordCashMovementResult {
+  movement: PosCashMovement;
+  idempotent_replay: boolean;
 }

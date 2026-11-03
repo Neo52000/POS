@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import {
+  Banknote,
   FileText,
   GraduationCap,
   Loader2,
@@ -10,7 +11,14 @@ import {
   Unlock,
   WifiOff,
 } from 'lucide-react';
-import { normalizePaymentFigures, PAYMENT_METHOD_LABELS, isPaymentMethod } from '@pos/core';
+import {
+  cashMovementLabel,
+  cashMovementTotals,
+  normalizePaymentFigures,
+  PAYMENT_METHOD_LABELS,
+  isPaymentMethod,
+  signedMovementAmount,
+} from '@pos/core';
 import { parseEuroToCents } from '@pos/core';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,14 +26,16 @@ import { NumPad } from '@/components/ui/numpad';
 import { CashCountGrid, cashCountTotal } from '@/components/session/CashCountGrid';
 import type { CashCounts } from '@/components/session/CashCountGrid';
 import { DayKpiStrip } from '@/components/kpi/DayKpiStrip';
+import { CashMovementDialog } from '@/components/session/CashMovementDialog';
 import { ReportPreview } from '@/components/ticket/ReportPreview';
+import { useSessionCashMovements } from '@/hooks/useCashMovements';
 import { usePrinter } from '@/hooks/usePrinter';
 import { updateCachedSession, useSession } from '@/hooks/useSession';
 import { useOfflineQueue } from '@/hooks/useOfflineQueue';
 import { useTodayTickets } from '@/hooks/useTodayTickets';
 import { describeApiError } from '@/lib/edge';
 import { useSessionStale } from '@/lib/sessionStale';
-import { formatDateTime, formatEurCents, formatVatRate } from '@/lib/format';
+import { formatDateTime, formatEurCents, formatTime, formatVatRate } from '@/lib/format';
 import { replayQueue } from '@/lib/offlineQueue';
 import { closingReport } from '@/lib/reports';
 import { rpc } from '@/lib/supabase';
@@ -160,12 +170,18 @@ function ClosingResult({
 }) {
   const closed = result.session;
   const closing = result.closing;
+  const movements = useSessionCashMovements(closed.id);
+  // Z1 imprimé une fois les mouvements d'espèces lus (section « Mouvements d'espèces »).
   const report = useMemo(
     () =>
-      closing
-        ? closingReport(closing, { registerCode: register?.code ?? '', session: closed })
+      closing && !movements.isLoading
+        ? closingReport(closing, {
+            registerCode: register?.code ?? '',
+            session: closed,
+            movements: movements.data ?? [],
+          })
         : null,
-    [closing, closed, register],
+    [closing, closed, register, movements.isLoading, movements.data],
   );
   const printed = useRef(false);
   useEffect(() => {
@@ -257,6 +273,80 @@ function ClosingResult({
       </div>
       <div className="overflow-y-auto">{report && <ReportPreview report={report} />}</div>
     </div>
+  );
+}
+
+/** Mouvements d'espèces de la session (0.5.0) : liste, totaux, saisie. */
+function CashMovementsPanel({
+  session,
+  disabled,
+  disabledReason,
+}: {
+  session: PosSession;
+  disabled: boolean;
+  disabledReason: string | null;
+}) {
+  const [open, setOpen] = useState(false);
+  const movements = useSessionCashMovements(session.id);
+  const list = movements.data ?? [];
+  const totals = cashMovementTotals(list);
+  return (
+    <section
+      className="flex flex-col gap-3 rounded-2xl border border-border bg-bg p-4"
+      data-testid="cash-movements"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h3 className="text-lg font-semibold">Mouvements d’espèces</h3>
+          <p className="text-sm text-muted">
+            Remises en banque, retraits, apports : inclus dans les espèces attendues du Z.
+          </p>
+        </div>
+        <Button
+          variant="secondary"
+          size="touch"
+          onClick={() => setOpen(true)}
+          disabled={disabled}
+          title={disabledReason ?? undefined}
+          data-testid="cash-movement-button"
+        >
+          <Banknote className="h-5 w-5" /> Nouveau mouvement
+        </Button>
+      </div>
+      {movements.isError && (
+        <p className="text-sm text-danger">Mouvements illisibles : {String(movements.error)}</p>
+      )}
+      {list.length > 0 && (
+        <>
+          <ul className="divide-y divide-border rounded-xl border border-border bg-surface">
+            {list.map((m) => (
+              <li
+                key={m.id}
+                className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
+                data-testid="cash-movement-row"
+              >
+                <span className="min-w-0">
+                  <span className="font-medium">
+                    {formatTime(m.created_at)} · {cashMovementLabel(m.kind)}
+                  </span>
+                  <span className="text-muted">
+                    {' '}
+                    — {m.reason}
+                    {m.reference ? ` · réf. ${m.reference}` : ''}
+                  </span>
+                </span>
+                <span className="font-semibold tabular">{signedMovementAmount(m)}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="text-right text-sm text-muted" data-testid="cash-movements-total">
+            Apports {formatEurCents(totals.in_cents)} · Sorties {formatEurCents(-totals.out_cents)}{' '}
+            · Solde <span className="font-semibold">{formatEurCents(totals.net_cents)}</span>
+          </p>
+        </>
+      )}
+      <CashMovementDialog session={session} open={open} onOpenChange={setOpen} />
+    </section>
   );
 }
 
@@ -408,6 +498,17 @@ function CloseSession({
           </Link>
         </p>
       )}
+      <CashMovementsPanel
+        session={session}
+        disabled={offline || training}
+        disabledReason={
+          offline
+            ? 'Hors ligne : mouvement impossible sans le serveur'
+            : training
+              ? 'Mode formation : aucun mouvement enregistré'
+              : null
+        }
+      />
       <CashCountGrid counts={counts} onChange={setCounts} />
       <label className="flex flex-col gap-1.5 text-sm text-muted">
         Notes (optionnel)

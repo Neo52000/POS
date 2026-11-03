@@ -9,6 +9,8 @@
 import { PAYMENT_METHOD_LABELS, isPaymentMethod } from './cart.js';
 import type { VatBreakdownEntry } from './cart.js';
 import { formatEurCents } from './money.js';
+import { cashMovementRows, cashMovementTotals } from './cashMovement.js';
+import type { CashMovementFigure } from './cashMovement.js';
 import { SOFTWARE_NAME } from './ticket.js';
 import type { TicketHeader } from './ticket.js';
 
@@ -95,6 +97,8 @@ export interface ReportFigures {
     expected_cash_cents: number;
     counted_cash_cents?: number | null;
     variance_cents?: number | null;
+    /** Mouvements d'espèces hors vente (0.5.0), déjà inclus dans `expected_cash_cents`. */
+    movements?: CashMovementFigure[];
   };
   /** Grand total perpétuel (Z) ou projeté (X : dernier Z1 + période en cours). */
   grand_total_perpetual_cents?: number | null;
@@ -271,15 +275,22 @@ export function buildReport(figures: ReportFigures, ctx: ReportContext): ReportP
 
   if (figures.cash) {
     const c = figures.cash;
-    const rows: ReportRow[] = [
-      { label: 'Fond de caisse', value: money(c.opening_float_cents) },
-      { label: 'Espèces attendues', value: money(c.expected_cash_cents), bold: true },
-    ];
+    const rows: ReportRow[] = [{ label: 'Fond de caisse', value: money(c.opening_float_cents) }];
+    const movements = c.movements ?? [];
+    if (movements.length > 0) {
+      const t = cashMovementTotals(movements);
+      if (t.in_cents) rows.push({ label: 'Apports', value: money(t.in_cents) });
+      if (t.out_cents)
+        rows.push({ label: 'Sorties (banque, retraits)', value: money(-t.out_cents) });
+    }
+    rows.push({ label: 'Espèces attendues', value: money(c.expected_cash_cents), bold: true });
     if (c.counted_cash_cents != null)
       rows.push({ label: 'Espèces comptées', value: money(c.counted_cash_cents) });
     if (c.variance_cents != null)
       rows.push({ label: 'Écart', value: money(c.variance_cents), bold: true });
     sections.push({ title: 'Tiroir espèces', rows });
+    if (movements.length > 0)
+      sections.push({ title: "Mouvements d'espèces", rows: cashMovementRows(movements) });
   }
 
   if (figures.grand_total_perpetual_cents != null) {

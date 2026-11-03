@@ -15,7 +15,8 @@ select id, code, label, fiskaly_env, is_active from pos_registers;
 **Mécanisme**
 
 - Écritures uniquement par RPC `SECURITY DEFINER` (`pos_finalize_sale`, `pos_open_session`,
-  `pos_close_session`, `pos_compute_closing`, `pos_log_event`, `pos_register_archive`) ;
+  `pos_close_session`, `pos_compute_closing`, `pos_log_event`, `pos_register_archive`,
+  `pos_record_cash_movement`) ;
   `INSERT/UPDATE/DELETE` révoqués sur les tables pour `anon` et `authenticated`.
 - Triggers : `UPDATE`/`DELETE` interdits sur tickets, lignes, paiements, clôtures, JET, archives
   (seules les colonnes de signature Fiskaly d'un ticket peuvent être complétées une fois).
@@ -26,6 +27,11 @@ select id, code, label, fiskaly_env, is_active from pos_registers;
   négatif lié à l'original), jamais par modification.
 - Horodatage contrôlé par le serveur (`clock_tolerance`) : pas d'antidatage au-delà de 10 min en
   ligne, 72 h hors ligne (`docs/HORS-LIGNE.md`) ; plafonds non relevables (0.4.0).
+- Mouvements d'espèces hors vente (0.5.0 : remise en banque, retrait, apport) : registre
+  `pos_cash_movements` immuable, chaque mouvement tracé au JET (`cash_movement`) ; une erreur se
+  corrige par un mouvement inverse. Ils n'entrent que dans les espèces attendues (X, Z1), jamais
+  dans le chiffre d'affaires. Preuve :
+  `SELECT m.*, e.payload FROM pos_cash_movements m JOIN pos_events e ON e.id = m.event_id WHERE m.session_id = '<session>';`
 - `TRUNCATE` interdit par trigger sur toutes les tables fiscales (même `service_role`, privilège
   retiré) ; compteurs `pos_counters` modifiables uniquement par `+1`, jamais supprimés (0.4.0).
 - Paramétrage fiscal (`pos_settings`, `pos_registers`) : écriture uniquement par RPC admin avec

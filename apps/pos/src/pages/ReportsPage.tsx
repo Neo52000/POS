@@ -14,6 +14,7 @@ import type { ReportPayload } from '@pos/core';
 import { ReportPreview } from '@/components/ticket/ReportPreview';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useSessionCashMovements } from '@/hooks/useCashMovements';
 import { usePrinter } from '@/hooks/usePrinter';
 import { useSession } from '@/hooks/useSession';
 import { describeApiError, edge } from '@/lib/edge';
@@ -206,6 +207,9 @@ function ClosingsPanel({ type }: { type: PeriodType }) {
     },
   });
 
+  // Z1 0.5.0 : mouvements d'espèces de la session clôturée (section du rapport).
+  const movements = useSessionCashMovements(type === 'daily' ? selected?.session_id : null);
+
   const report = useMemo(
     () =>
       selected
@@ -213,9 +217,10 @@ function ClosingsPanel({ type }: { type: PeriodType }) {
             registerCode: register?.code ?? '',
             session: session.data ?? currentSession,
             duplicate: true,
+            movements: movements.data ?? [],
           })
         : null,
-    [selected, register, session.data, currentSession],
+    [selected, register, session.data, currentSession, movements.data],
   );
 
   const close = useMutation({

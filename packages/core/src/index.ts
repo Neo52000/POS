@@ -10,3 +10,4 @@ export * from './archive.js';
 export * from './report.js';
 export * from './offlineChain.js';
 export * from './closing.js';
+export * from './cashMovement.js';
