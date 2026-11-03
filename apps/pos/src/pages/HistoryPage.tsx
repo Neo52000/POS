@@ -1,5 +1,14 @@
 import { useMemo, useState } from 'react';
-import { Loader2, Printer, RotateCcw, Undo2, WifiOff } from 'lucide-react';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  Lock,
+  Printer,
+  RotateCcw,
+  Undo2,
+  WifiOff,
+} from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -14,10 +23,10 @@ import { RefundDialog } from '@/components/history/RefundDialog';
 import { ReceiptPreview } from '@/components/ticket/ReceiptPreview';
 import { usePrinter } from '@/hooks/usePrinter';
 import { DayKpiStrip } from '@/components/kpi/DayKpiStrip';
-import { paymentSummary, useTodayTickets } from '@/hooks/useTodayTickets';
+import { paymentSummary, useClosedDays, useDayTickets } from '@/hooks/useTodayTickets';
 import { useTransactionFull } from '@/hooks/useTransactionFull';
 import { rpc } from '@/lib/supabase';
-import { formatEurCents, formatTime } from '@/lib/format';
+import { businessDate, formatEurCents, formatLongDate, formatTime } from '@/lib/format';
 import { buildTicketPayload, ticketCode } from '@/lib/ticket';
 import { cn, errorMessage } from '@/lib/utils';
 import { useTrainingStore } from '@/stores/trainingStore';
@@ -40,10 +49,32 @@ const SIGNATURE_BADGE: Record<
   mock: { label: 'Signature test', variant: 'muted' },
 };
 
-/** Tickets du jour : liste + détail, réimpression DUPLICATA, remboursement. */
+/** `2026-09-23` → `mardi 23 septembre 2026` (date métier lue à midi UTC : jamais de décalage). */
+function dayLabel(date: string): string {
+  return formatLongDate(`${date}T12:00:00Z`);
+}
+
+/**
+ * Historique : tickets du jour ou d'un jour clôturé (Z journalier) — liste + détail,
+ * réimpression DUPLICATA, remboursement (le remboursement d'un ticket passé est un ticket du jour).
+ */
 export function HistoryPage() {
-  const tickets = useTodayTickets();
+  const today = businessDate();
+  const [day, setDay] = useState<string>(today);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const closedDays = useClosedDays();
+  const tickets = useDayTickets(day);
+  const isToday = day === today;
+  const days = closedDays.data ?? [];
+  const closedDay = days.find((d) => d.date === day) ?? null;
+  // Navigation ‹ › : jours plus anciens = index croissant dans `days` (trié du plus récent).
+  const idx = days.findIndex((d) => d.date === day);
+  const olderDay = isToday ? days[0]?.date : idx >= 0 ? days[idx + 1]?.date : undefined;
+  const newerDay = isToday ? undefined : idx > 0 ? days[idx - 1]?.date : today;
+  const goTo = (d: string): void => {
+    setDay(d);
+    setSelectedId(null);
+  };
   const [refundOf, setRefundOf] = useState<TransactionFull | null>(null);
   const full = useTransactionFull(selectedId);
   const { print } = usePrinter();
@@ -110,9 +141,57 @@ export function HistoryPage() {
             réel reste tracé au journal.
           </p>
         )}
-        <DayKpiStrip tickets={tickets.data} />
+        <div className="mb-3 flex items-center gap-2" data-testid="history-day-nav">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => olderDay && goTo(olderDay)}
+            disabled={!olderDay}
+            aria-label="Jour clôturé précédent"
+            data-testid="history-day-prev"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <select
+            className="h-9 min-w-0 flex-1 rounded-xl border border-border bg-surface px-3 text-sm font-medium"
+            value={day}
+            onChange={(e) => goTo(e.target.value)}
+            aria-label="Jour affiché"
+            data-testid="history-day-select"
+          >
+            <option value={today}>Aujourd’hui — {dayLabel(today)}</option>
+            {days.map((d) => (
+              <option key={d.date} value={d.date}>
+                {dayLabel(d.date)} · Z n°{d.closing_number} · {formatEurCents(d.total_ttc_cents)}
+              </option>
+            ))}
+          </select>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => newerDay && goTo(newerDay)}
+            disabled={!newerDay}
+            aria-label="Jour suivant"
+            data-testid="history-day-next"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+          {!isToday && (
+            <Button variant="ghost" size="sm" onClick={() => goTo(today)}>
+              Aujourd’hui
+            </Button>
+          )}
+        </div>
+        <DayKpiStrip tickets={tickets.data} past={!isToday} />
         <div className="mb-3 mt-4 flex items-center justify-between">
-          <h2 className="text-xl font-semibold">Tickets du jour</h2>
+          <h2 className="flex items-center gap-2 text-xl font-semibold">
+            {isToday ? 'Tickets du jour' : `Tickets du ${dayLabel(day)}`}
+            {closedDay && (
+              <Badge variant="muted" data-testid="history-day-closed">
+                <Lock className="mr-1 h-3 w-3" /> Clôturé · Z n°{closedDay.closing_number}
+              </Badge>
+            )}
+          </h2>
           <div className="flex items-center gap-3 text-sm text-muted">
             <span>
               {tickets.data?.length ?? 0} ticket(s) · {formatEurCents(totalDay)}
@@ -191,7 +270,7 @@ export function HistoryPage() {
               {tickets.data && tickets.data.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={7} className="py-10 text-center text-muted">
-                    Aucun ticket aujourd’hui.
+                    {isToday ? 'Aucun ticket aujourd’hui.' : 'Aucun ticket ce jour-là.'}
                   </TableCell>
                 </TableRow>
               )}
@@ -259,6 +338,8 @@ export function HistoryPage() {
         full={refundOf}
         onClose={() => setRefundOf(null)}
         onDone={(r) => {
+          // Le remboursement est un ticket du jour, même pour une vente d'un jour clôturé.
+          if (!isToday) setDay(today);
           void tickets.refetch();
           setSelectedId(r.transaction.id);
         }}

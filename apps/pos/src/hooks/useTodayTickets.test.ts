@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('@/lib/supabase', () => ({ rpc: vi.fn(), supabase: {} }));
 
 import { formatEurCents } from '@pos/core';
-import { groupPayments, paymentSummary, type TicketPayment } from './useTodayTickets';
+import { closedDays, groupPayments, paymentSummary, type TicketPayment } from './useTodayTickets';
 
 const p = (transaction_id: string, method: TicketPayment['method'], amount_cents: number) => ({
   transaction_id,
@@ -27,5 +27,40 @@ describe('règlements des tickets du jour', () => {
       `Chèque ${formatEurCents(1200)} · Virement ${formatEurCents(100)}`,
     );
     expect(paymentSummary([])).toBe('');
+  });
+});
+
+describe('jours clôturés', () => {
+  const z = (n: number, start: string, ttc: number, count = 1) => ({
+    closing_number: n,
+    period_start: start,
+    total_ttc_cents: ttc,
+    txn_count: count,
+  });
+
+  it('du plus récent au plus ancien, hors aujourd’hui, date métier Europe/Paris', () => {
+    const days = closedDays(
+      [
+        z(3, '2026-11-03T07:00:00Z', 900),
+        z(2, '2026-11-02T07:00:00Z', 500),
+        // 23h30 UTC le 31/10 = 00h30 Paris le 01/11
+        z(1, '2026-10-31T23:30:00Z', 100),
+      ],
+      '2026-11-03',
+    );
+    expect(days.map((d) => d.date)).toEqual(['2026-11-02', '2026-11-01']);
+  });
+
+  it('agrège plusieurs Z le même jour', () => {
+    const [d] = closedDays(
+      [z(5, '2026-11-02T07:00:00Z', 500, 2), z(6, '2026-11-02T14:00:00Z', 300, 1)],
+      '2026-11-03',
+    );
+    expect(d).toEqual({
+      date: '2026-11-02',
+      closing_number: 6,
+      total_ttc_cents: 800,
+      txn_count: 3,
+    });
   });
 });
