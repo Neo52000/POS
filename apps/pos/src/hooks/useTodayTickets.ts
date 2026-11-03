@@ -4,7 +4,7 @@ import { formatEurCents } from '@/lib/format';
 import { businessDate } from '@/lib/format';
 import { rpc, supabase } from '@/lib/supabase';
 import { useSessionStore } from '@/stores/sessionStore';
-import type { PosPayment, PosTransaction } from '@/types/pos';
+import type { PosClosing, PosPayment, PosTransaction } from '@/types/pos';
 
 export const TODAY_TICKETS_KEY = ['transactions', 'today'] as const;
 
@@ -40,8 +40,67 @@ export function paymentSummary(payments: readonly TicketPayment[]): string {
 
 /** Tickets du jour (fuseau Europe/Paris) de la caisse courante. */
 export function useTodayTickets() {
+  return useDayTickets(businessDate());
+}
+
+/** Jour clôturé : date métier + Z journalier correspondant. */
+export interface ClosedDay {
+  date: string;
+  closing_number: number;
+  total_ttc_cents: number;
+  txn_count: number;
+}
+
+type DailyClosingRow = Pick<
+  PosClosing,
+  'closing_number' | 'period_start' | 'total_ttc_cents' | 'txn_count'
+>;
+
+/**
+ * Jours clôturés (Z journaliers) du plus récent au plus ancien, hors `today`.
+ * Un jour à plusieurs Z (réouverture) est agrégé : dernier n° de Z, totaux cumulés.
+ */
+export function closedDays(rows: readonly DailyClosingRow[], today: string): ClosedDay[] {
+  const byDate = new Map<string, ClosedDay>();
+  for (const r of rows) {
+    const date = businessDate(r.period_start);
+    if (!date || date === today) continue;
+    const prev = byDate.get(date);
+    byDate.set(date, {
+      date,
+      closing_number: Math.max(prev?.closing_number ?? 0, Number(r.closing_number)),
+      total_ttc_cents: (prev?.total_ttc_cents ?? 0) + Number(r.total_ttc_cents),
+      txn_count: (prev?.txn_count ?? 0) + Number(r.txn_count),
+    });
+  }
+  return [...byDate.values()].sort((a, b) => b.date.localeCompare(a.date));
+}
+
+/** Jours clôturés de la caisse courante (90 derniers Z journaliers). */
+export function useClosedDays() {
   const registerId = useSessionStore((s) => s.register?.id ?? null);
-  const date = businessDate();
+  const today = businessDate();
+  return useQuery({
+    queryKey: ['closings', registerId, 'daily-days', today],
+    enabled: !!registerId,
+    staleTime: 60_000,
+    queryFn: async (): Promise<ClosedDay[]> => {
+      const { data, error } = await supabase
+        .from('pos_closings')
+        .select('closing_number, period_start, total_ttc_cents, txn_count')
+        .eq('register_id', registerId ?? '')
+        .eq('period_type', 'daily')
+        .order('closing_number', { ascending: false })
+        .limit(90);
+      if (error) throw new Error(error.message);
+      return closedDays((data ?? []) as DailyClosingRow[], today);
+    },
+  });
+}
+
+/** Tickets d'une date métier (`YYYY-MM-DD`, Europe/Paris) de la caisse courante. */
+export function useDayTickets(date: string) {
+  const registerId = useSessionStore((s) => s.register?.id ?? null);
   return useQuery({
     queryKey: [...TODAY_TICKETS_KEY, registerId, date],
     queryFn: async () => {

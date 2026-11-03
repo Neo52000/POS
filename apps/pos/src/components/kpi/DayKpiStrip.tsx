@@ -8,6 +8,8 @@ import type { PosTransaction } from '@/types/pos';
 
 export interface DayKpiStripProps {
   tickets: readonly PosTransaction[] | undefined;
+  /** Jour passé : pas de météo du jour, libellé « CA » au lieu de « CA du jour ». */
+  past?: boolean;
 }
 
 function Kpi({ label, value, testId }: { label: string; value: string; testId: string }) {
@@ -49,7 +51,7 @@ function WeatherToday({ today, tomorrow }: { today: ForecastDay; tomorrow?: Fore
  * Encart « KPI du jour » : météo de la boutique + CA net, tickets, panier moyen de la caisse.
  * L'analyse ventes × météo (historique, prévision de CA) est sur le dashboard admin du site.
  */
-export function DayKpiStrip({ tickets }: DayKpiStripProps) {
+export function DayKpiStrip({ tickets, past = false }: DayKpiStripProps) {
   const kpi = useMemo(() => computeDayKpi(tickets ?? []), [tickets]);
   const weather = useShopWeather();
   const [today, tomorrow] = weather.data?.days ?? [];
@@ -59,12 +61,18 @@ export function DayKpiStrip({ tickets }: DayKpiStripProps) {
       className="grid grid-cols-[minmax(0,1.3fr)_repeat(3,minmax(0,1fr))] items-center gap-4 rounded-2xl border border-border bg-surface px-4 py-3"
       data-testid="day-kpi"
     >
-      {today ? (
+      {past ? (
+        <p className="text-sm text-muted">Journée clôturée</p>
+      ) : today ? (
         <WeatherToday today={today} tomorrow={tomorrow} />
       ) : (
         <p className="text-sm text-muted">Météo indisponible</p>
       )}
-      <Kpi label="CA du jour" value={formatEurCents(kpi.net_ttc_cents)} testId="kpi-net" />
+      <Kpi
+        label={past ? 'CA net' : 'CA du jour'}
+        value={formatEurCents(kpi.net_ttc_cents)}
+        testId="kpi-net"
+      />
       <Kpi label="Tickets" value={String(kpi.sales_count)} testId="kpi-tickets" />
       <Kpi label="Panier moyen" value={formatEurCents(kpi.avg_basket_cents)} testId="kpi-basket" />
     </div>
