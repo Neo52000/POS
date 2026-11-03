@@ -29,3 +29,5 @@ verify_jwt = false
 verify_jwt = false
 [functions.pos-send-receipt]
 verify_jwt = false
+[functions.pos-shopify-history]
+verify_jwt = false

@@ -20,11 +20,14 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { RefundDialog } from '@/components/history/RefundDialog';
+import { ShopifyDayView } from '@/components/history/ShopifyDayView';
 import { ReceiptPreview } from '@/components/ticket/ReceiptPreview';
 import { usePrinter } from '@/hooks/usePrinter';
 import { DayKpiStrip } from '@/components/kpi/DayKpiStrip';
 import { paymentSummary, useClosedDays, useDayTickets } from '@/hooks/useTodayTickets';
+import { useShopifyPosDays } from '@/hooks/useShopifyPosHistory';
 import { useTransactionFull } from '@/hooks/useTransactionFull';
+import { entryKey, historyEntries, parseEntryKey } from '@/lib/historyDays';
 import { rpc } from '@/lib/supabase';
 import { businessDate, formatEurCents, formatLongDate, formatTime } from '@/lib/format';
 import { buildTicketPayload, ticketCode } from '@/lib/ticket';
@@ -57,24 +60,36 @@ function dayLabel(date: string): string {
 /**
  * Historique : tickets du jour ou d'un jour clôturé (Z journalier) — liste + détail,
  * réimpression DUPLICATA, remboursement (le remboursement d'un ticket passé est un ticket du jour).
+ * Jours de l'ancienne caisse Shopify POS : consultation seule, hors fiscal (`ShopifyDayView`).
  */
 export function HistoryPage() {
   const today = businessDate();
-  const [day, setDay] = useState<string>(today);
+  const todayKey = entryKey('nf525', today);
+  const [selectedKey, setSelectedKey] = useState<string>(todayKey);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const closedDays = useClosedDays();
+  const shopifyDays = useShopifyPosDays();
+  const entries = useMemo(
+    () => historyEntries(today, closedDays.data ?? [], shopifyDays.data ?? []),
+    [today, closedDays.data, shopifyDays.data],
+  );
+  const { source, date: selectedDate } = parseEntryKey(selectedKey);
+  // Jour NF525 affiché (aujourd'hui pendant la consultation d'un jour Shopify : aucune requête de plus).
+  const day = source === 'nf525' ? selectedDate : today;
   const tickets = useDayTickets(day);
-  const isToday = day === today;
-  const days = closedDays.data ?? [];
-  const closedDay = days.find((d) => d.date === day) ?? null;
-  // Navigation ‹ › : jours plus anciens = index croissant dans `days` (trié du plus récent).
-  const idx = days.findIndex((d) => d.date === day);
-  const olderDay = isToday ? days[0]?.date : idx >= 0 ? days[idx + 1]?.date : undefined;
-  const newerDay = isToday ? undefined : idx > 0 ? days[idx - 1]?.date : today;
-  const goTo = (d: string): void => {
-    setDay(d);
+  const isToday = selectedKey === todayKey;
+  const closedDay =
+    source === 'nf525' ? ((closedDays.data ?? []).find((d) => d.date === day) ?? null) : null;
+  // Navigation ‹ › : jours plus anciens = index croissant dans `entries` (trié du plus récent).
+  const idx = entries.findIndex((e) => e.key === selectedKey);
+  const olderKey = idx >= 0 ? entries[idx + 1]?.key : undefined;
+  const newerKey = idx > 0 ? entries[idx - 1]?.key : undefined;
+  const goTo = (key: string): void => {
+    setSelectedKey(key);
     setSelectedId(null);
   };
+  const nfEntries = entries.filter((e) => e.source === 'nf525' && e.key !== todayKey);
+  const shopifyEntries = entries.filter((e) => e.source === 'shopify');
   const [refundOf, setRefundOf] = useState<TransactionFull | null>(null);
   const full = useTransactionFull(selectedId);
   const { print } = usePrinter();
@@ -128,6 +143,69 @@ export function HistoryPage() {
 
   const totalDay = (tickets.data ?? []).reduce((s, t) => s + Number(t.total_ttc_cents), 0);
 
+  const nav = (
+    <div className="mb-3 flex items-center gap-2" data-testid="history-day-nav">
+      <Button
+        variant="secondary"
+        size="sm"
+        onClick={() => olderKey && goTo(olderKey)}
+        disabled={!olderKey}
+        aria-label="Jour précédent"
+        data-testid="history-day-prev"
+      >
+        <ChevronLeft className="h-4 w-4" />
+      </Button>
+      <select
+        className="h-9 min-w-0 flex-1 rounded-xl border border-border bg-surface px-3 text-sm font-medium"
+        value={selectedKey}
+        onChange={(e) => goTo(e.target.value)}
+        aria-label="Jour affiché"
+        data-testid="history-day-select"
+      >
+        <option value={todayKey}>Aujourd’hui — {dayLabel(today)}</option>
+        {nfEntries.length > 0 && (
+          <optgroup label="Caisse NF525 — jours clôturés">
+            {nfEntries.map((e) => (
+              <option key={e.key} value={e.key}>
+                {dayLabel(e.date)} · Z n°{e.closing_number} ·{' '}
+                {formatEurCents(e.total_ttc_cents ?? 0)}
+              </option>
+            ))}
+          </optgroup>
+        )}
+        {shopifyEntries.length > 0 && (
+          <optgroup label="Shopify POS — archive (hors fiscal)">
+            {shopifyEntries.map((e) => (
+              <option key={e.key} value={e.key}>
+                {dayLabel(e.date)} · Shopify · {e.orders} cde(s) ·{' '}
+                {formatEurCents(e.total_ttc_cents ?? 0)}
+              </option>
+            ))}
+          </optgroup>
+        )}
+      </select>
+      <Button
+        variant="secondary"
+        size="sm"
+        onClick={() => newerKey && goTo(newerKey)}
+        disabled={!newerKey}
+        aria-label="Jour suivant"
+        data-testid="history-day-next"
+      >
+        <ChevronRight className="h-4 w-4" />
+      </Button>
+      {!isToday && (
+        <Button variant="ghost" size="sm" onClick={() => goTo(todayKey)}>
+          Aujourd’hui
+        </Button>
+      )}
+    </div>
+  );
+
+  if (source === 'shopify') {
+    return <ShopifyDayView date={selectedDate} dayLabel={dayLabel(selectedDate)} nav={nav} />;
+  }
+
   return (
     <div className="grid h-full grid-cols-[1fr_440px]" data-testid="history-page">
       <section className="flex min-h-0 flex-col p-4">
@@ -141,47 +219,7 @@ export function HistoryPage() {
             réel reste tracé au journal.
           </p>
         )}
-        <div className="mb-3 flex items-center gap-2" data-testid="history-day-nav">
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => olderDay && goTo(olderDay)}
-            disabled={!olderDay}
-            aria-label="Jour clôturé précédent"
-            data-testid="history-day-prev"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <select
-            className="h-9 min-w-0 flex-1 rounded-xl border border-border bg-surface px-3 text-sm font-medium"
-            value={day}
-            onChange={(e) => goTo(e.target.value)}
-            aria-label="Jour affiché"
-            data-testid="history-day-select"
-          >
-            <option value={today}>Aujourd’hui — {dayLabel(today)}</option>
-            {days.map((d) => (
-              <option key={d.date} value={d.date}>
-                {dayLabel(d.date)} · Z n°{d.closing_number} · {formatEurCents(d.total_ttc_cents)}
-              </option>
-            ))}
-          </select>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => newerDay && goTo(newerDay)}
-            disabled={!newerDay}
-            aria-label="Jour suivant"
-            data-testid="history-day-next"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-          {!isToday && (
-            <Button variant="ghost" size="sm" onClick={() => goTo(today)}>
-              Aujourd’hui
-            </Button>
-          )}
-        </div>
+        {nav}
         <DayKpiStrip tickets={tickets.data} past={!isToday} />
         <div className="mb-3 mt-4 flex items-center justify-between">
           <h2 className="flex items-center gap-2 text-xl font-semibold">
@@ -339,7 +377,7 @@ export function HistoryPage() {
         onClose={() => setRefundOf(null)}
         onDone={(r) => {
           // Le remboursement est un ticket du jour, même pour une vente d'un jour clôturé.
-          if (!isToday) setDay(today);
+          if (!isToday) setSelectedKey(todayKey);
           void tickets.refetch();
           setSelectedId(r.transaction.id);
         }}

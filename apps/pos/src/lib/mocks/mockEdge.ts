@@ -14,6 +14,8 @@ import type {
   PosTransaction,
   PosTransactionLine,
   ResolvedPrice,
+  ShopifyPosDay,
+  ShopifyPosOrder,
   StockAdjustLineResult,
   TransactionFull,
 } from '@/types/pos';
@@ -113,6 +115,96 @@ function takeForcedFailure(): string | null {
   }
   w.__posMockFailNextCheckout = null;
   return code;
+}
+
+/**
+ * Historique Shopify POS simulé : deux jours fixes avant la bascule (31/10 et 30/10/2026).
+ * Commande remboursée listée mais hors CA, comme la RPC ma-papeterie.
+ */
+const MOCK_SHOPIFY_ORDERS: ShopifyPosOrder[] = [
+  {
+    id: 'shp-1394',
+    name: '#1394',
+    created_at: '2026-10-31T16:35:19Z',
+    financial_status: 'paid',
+    total_ttc_cents: 1430,
+    total_tax_cents: 238,
+    total_discount_cents: 0,
+    payment_methods: ['Carte Bancaire'],
+    customer_name: null,
+    lines: [
+      { title: 'Vente personnalisée', sku: null, qty: 1, price_cents: 1430, discount_cents: 0 },
+    ],
+  },
+  {
+    id: 'shp-1392',
+    name: '#1392',
+    created_at: '2026-10-31T15:48:08Z',
+    financial_status: 'paid',
+    total_ttc_cents: 529,
+    total_tax_cents: 88,
+    total_discount_cents: 0,
+    payment_methods: ['Espèces'],
+    customer_name: 'Marie Durand',
+    lines: [
+      { title: 'Cahier 96p', sku: 'CAH96', qty: 1, price_cents: 245, discount_cents: 0 },
+      { title: 'Stylo BIC Cristal', sku: 'BIC01', qty: 4, price_cents: 71, discount_cents: 0 },
+    ],
+  },
+  {
+    id: 'shp-1380',
+    name: '#1380',
+    created_at: '2026-10-30T09:12:00Z',
+    financial_status: 'refunded',
+    total_ttc_cents: 990,
+    total_tax_cents: 165,
+    total_discount_cents: 0,
+    payment_methods: ['Carte Bancaire'],
+    customer_name: null,
+    lines: [{ title: 'Agenda 2027', sku: 'AG27', qty: 1, price_cents: 990, discount_cents: 0 }],
+  },
+  {
+    id: 'shp-1379',
+    name: '#1379',
+    created_at: '2026-10-30T08:40:00Z',
+    financial_status: 'paid',
+    total_ttc_cents: 1200,
+    total_tax_cents: 200,
+    total_discount_cents: 0,
+    payment_methods: ['Carte Bancaire'],
+    customer_name: null,
+    lines: [{ title: 'Classeur A4', sku: 'CLA4', qty: 2, price_cents: 600, discount_cents: 0 }],
+  },
+];
+
+const parisDate = (iso: string): string =>
+  new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Paris',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(iso));
+
+function mockShopifyPosOrders(date: string): ShopifyPosOrder[] {
+  return structuredClone(
+    MOCK_SHOPIFY_ORDERS.filter((o) => parisDate(o.created_at) === date).sort((a, b) =>
+      b.created_at.localeCompare(a.created_at),
+    ),
+  );
+}
+
+function mockShopifyPosDays(): ShopifyPosDay[] {
+  const byDate = new Map<string, ShopifyPosDay>();
+  for (const o of MOCK_SHOPIFY_ORDERS) {
+    if (o.financial_status === 'refunded' || o.financial_status === 'voided') continue;
+    const date = parisDate(o.created_at);
+    const d = byDate.get(date) ?? { date, orders: 0, total_ttc_cents: 0, total_tax_cents: 0 };
+    d.orders += 1;
+    d.total_ttc_cents += o.total_ttc_cents;
+    d.total_tax_cents += o.total_tax_cents;
+    byDate.set(date, d);
+  }
+  return [...byDate.values()].sort((a, b) => b.date.localeCompare(a.date));
 }
 
 export function createMockEdge(): EdgeClient {
@@ -527,6 +619,14 @@ export function createMockEdge(): EdgeClient {
           (c.company_name ?? '').toLowerCase().includes(needle) ||
           (c.siret ?? '').replace(/\s/g, '').includes(needle.replace(/\s/g, '')),
       );
+    },
+    async shopifyPosDays() {
+      assertMockOnline();
+      return mockShopifyPosDays();
+    },
+    async shopifyPosDay(date) {
+      assertMockOnline();
+      return mockShopifyPosOrders(date);
     },
     async customerQuotes(accountId) {
       assertMockOnline();
