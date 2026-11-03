@@ -66,7 +66,7 @@ test('jour clôturé de la veille : sélection, tickets, badge Z, retour à aujo
 
   // ‹ : jour clôturé précédent.
   await page.getByTestId('history-day-prev').click();
-  await expect(page.getByTestId('history-day-select')).toHaveValue(yesterday);
+  await expect(page.getByTestId('history-day-select')).toHaveValue(`nf525:${yesterday}`);
   await expect(page.getByTestId('history-day-closed')).toContainText('Clôturé · Z n°1');
   await expect(page.getByTestId('history-row').filter({ hasText: code })).toBeVisible();
   await expect(page.getByTestId('kpi-tickets')).toHaveText('1');
@@ -80,4 +80,41 @@ test('jour clôturé de la veille : sélection, tickets, badge Z, retour à aujo
   await page.getByTestId('history-day-next').click();
   await expect(page.getByText('Aucun ticket aujourd’hui.')).toBeVisible();
   await expect(page.getByTestId('history-day-closed')).toHaveCount(0);
+});
+
+test('archive Shopify POS : jours avant bascule en consultation seule, hors fiscal', async ({
+  page,
+}) => {
+  await resetStorage(page);
+  await login(page);
+  await ensureSessionOpen(page);
+  await navLink(page, 'Historique').click();
+  await expect(page.getByTestId('history-page')).toBeVisible();
+
+  // ‹ depuis aujourd'hui (aucun Z) : premier jour Shopify POS de l'archive.
+  await page.getByTestId('history-day-prev').click();
+  await expect(page.getByTestId('history-day-select')).toHaveValue('shopify:2026-10-31');
+  await expect(page.getByTestId('shopify-notice')).toContainText('hors journal fiscal');
+  await expect(page.getByTestId('history-day-shopify')).toBeVisible();
+  await expect(page.getByTestId('shopify-row')).toHaveCount(2);
+  await expect(page.getByTestId('kpi-net')).toHaveText(/19,59/);
+  await expect(page.getByTestId('kpi-tickets')).toHaveText('2');
+
+  // Détail d'une commande : lignes, sans duplicata ni remboursement.
+  await page.getByTestId('shopify-row').filter({ hasText: '#1392' }).click();
+  await expect(page.getByTestId('shopify-order-detail')).toContainText('Stylo BIC Cristal');
+  await expect(page.getByTestId('reprint-button')).toHaveCount(0);
+  await expect(page.getByTestId('refund-button')).toHaveCount(0);
+
+  // Jour précédent : commande remboursée listée mais hors CA.
+  await page.getByTestId('history-day-prev').click();
+  await expect(page.getByTestId('history-day-select')).toHaveValue('shopify:2026-10-30');
+  await expect(page.getByTestId('shopify-row')).toHaveCount(2);
+  await expect(page.getByTestId('shopify-row').filter({ hasText: 'Remboursée' })).toHaveCount(1);
+  await expect(page.getByTestId('kpi-net')).toHaveText(/12,00/);
+
+  // Retour à aujourd'hui : historique NF525 normal.
+  await page.getByRole('button', { name: 'Aujourd’hui' }).click();
+  await expect(page.getByText('Aucun ticket aujourd’hui.')).toBeVisible();
+  await expect(page.getByTestId('shopify-notice')).toHaveCount(0);
 });

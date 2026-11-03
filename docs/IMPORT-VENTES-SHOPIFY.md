@@ -117,3 +117,28 @@ DELETE FROM shopify_orders WHERE raw_payload ->> 'imported_from' = 'shopify-csv-
 - **Après la bascule** : la caisse NF525 alimente le canal `pos` via `pos-sales-sync`. Cet
   import ne sert donc qu'à l'historique **antérieur** à la bascule ; le relancer plus tard n'y
   ajoutera que d'éventuelles commandes boutique manquées.
+
+## 7. Consultation en caisse (Historique)
+
+Les ventes de l'ancienne caisse Shopify POS sont consultables dans l'**Historique** de la caisse,
+groupe « Shopify POS — archive (hors fiscal) » du sélecteur de jour : CA net, commandes, panier
+moyen, liste des commandes et détail des lignes. **Consultation seule** : ni duplicata ni
+remboursement (ces ventes ne sont pas dans le journal fiscal de la caisse NF525).
+
+| Couche       | Élément                                                                             |
+| ------------ | ----------------------------------------------------------------------------------- |
+| ma-papeterie | `pos_shopify_pos_days()`, `pos_shopify_pos_day(date)` — service role, lecture seule |
+| Pos (Edge)   | `pos-shopify-history` : `{}` → `{days}`, `{date}` → `{orders}` (`requirePos`)       |
+| Caisse       | `useShopifyPosDays` / `useShopifyPosDay`, `ShopifyDayView` (Historique)             |
+
+Périmètre identique au canal `pos` de `v_admin_revenue_daily` : `raw_payload ->> 'source_name' =
+'pos'`, CA hors `voided` / `refunded` (commandes remboursées listées, barrées, hors CA) ; test et
+annulées exclues. Contrôle au 03/11/2026 : **74 jours, 322 commandes, 5 664,38 € TTC**
+(01/08 → 31/10/2026), égal au dashboard et à Shopify › Analyses (canal Point of Sale).
+
+Rien avant le 01/08/2026 : Shopify › Analyses ne compte aucune vente Point of Sale antérieure.
+La numérotation Shopify démarre à #1001 ; #1297 au 09/10 correspondait donc à ~300 commandes,
+toutes présentes — pas au trou de ~1 000 commandes supposé au §1.
+
+Ordre de déploiement indifférent : sans la RPC ou la fonction, la caisse affiche simplement
+l'historique sans les jours Shopify.

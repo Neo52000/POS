@@ -18,6 +18,8 @@ import type {
   PosTransaction,
   PosTransactionLine,
   ResolvedPrice,
+  ShopifyPosDay,
+  ShopifyPosOrder,
   StockAdjustInput,
   StockAdjustResult,
 } from '@/types/pos';
@@ -74,6 +76,10 @@ export interface EdgeClient {
   }): Promise<ClosePeriodResult>;
   /** Ticket dématérialisé (`pos-send-receipt`) : e-mail ou SMS via Brevo, contenu relu en base. */
   sendReceipt(input: SendReceiptInput): Promise<{ ok: true; ticket_code: string }>;
+  /** Jours de ventes de l'ancienne caisse Shopify POS (`pos-shopify-history`), hors fiscal. */
+  shopifyPosDays(): Promise<ShopifyPosDay[]>;
+  /** Commandes Shopify POS d'une date métier (`pos-shopify-history`, `{date}`), hors fiscal. */
+  shopifyPosDay(date: string): Promise<ShopifyPosOrder[]>;
 }
 
 const EDGE_TIMEOUT_MS = 30_000;
@@ -180,6 +186,19 @@ function createRealEdge(): EdgeClient {
     closePeriod: (input) => callEdge<ClosePeriodResult>('pos-closing', input, 60_000),
     sendReceipt: (input) =>
       callEdge<{ ok: true; ticket_code: string }>('pos-send-receipt', input, 20_000),
+    shopifyPosDays: async () => {
+      const r = await callEdge<{ days: ShopifyPosDay[] }>('pos-shopify-history', {});
+      return (r.days ?? []).map((d) => ({
+        ...d,
+        orders: Number(d.orders),
+        total_ttc_cents: Number(d.total_ttc_cents),
+        total_tax_cents: Number(d.total_tax_cents),
+      }));
+    },
+    shopifyPosDay: async (date) => {
+      const r = await callEdge<{ orders: ShopifyPosOrder[] }>('pos-shopify-history', { date });
+      return r.orders ?? [];
+    },
   };
 }
 

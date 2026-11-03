@@ -425,3 +425,37 @@ export interface StockAdjustLineResult {
 export interface StockAdjustResult {
   results: StockAdjustLineResult[];
 }
+
+/**
+ * Jour de ventes de l'ancienne caisse Shopify POS (`pos-shopify-history`) — HORS FISCAL,
+ * consultation seule. Même périmètre que le canal `pos` du dashboard /admin.
+ */
+export interface ShopifyPosDay {
+  date: string;
+  orders: number;
+  total_ttc_cents: number;
+  total_tax_cents: number;
+}
+
+export interface ShopifyPosLine {
+  title: string | null;
+  sku: string | null;
+  qty: number;
+  /** Prix unitaire TTC, en centimes. */
+  price_cents: number;
+  discount_cents: number;
+}
+
+/** Commande Shopify POS d'un jour (`pos-shopify-history`, `{date}`). */
+export interface ShopifyPosOrder {
+  id: string;
+  name: string;
+  created_at: string;
+  financial_status: string | null;
+  total_ttc_cents: number;
+  total_tax_cents: number;
+  total_discount_cents: number;
+  payment_methods: string[];
+  customer_name: string | null;
+  lines: ShopifyPosLine[];
+}
