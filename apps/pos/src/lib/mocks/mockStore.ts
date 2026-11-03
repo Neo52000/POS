@@ -1,5 +1,6 @@
 import type {
   PosArchive,
+  PosCashMovement,
   PosClosing,
   PosSession,
   StockAdjustLineResult,
@@ -22,6 +23,8 @@ export interface MockState {
   stock: Record<string, number>;
   /** Résultats par clé d'idempotence de `pos-stock-adjust`. */
   stockKeys: Record<string, StockAdjustLineResult>;
+  /** Mouvements d'espèces hors vente (0.5.0). */
+  cashMovements: PosCashMovement[];
 }
 
 const KEY = 'pos.mock.state.v1';
@@ -38,6 +41,7 @@ function initial(): MockState {
     closings: [],
     stock: {},
     stockKeys: {},
+    cashMovements: [],
   };
 }
 

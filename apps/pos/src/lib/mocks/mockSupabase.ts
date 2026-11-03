@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { cashMovementTotals, isCashMovementKind } from '@pos/core';
 import type { ReportFigures, VatBreakdownEntry } from '@pos/core';
-import type { PosClosing, PosSession, TransactionFull } from '@/types/pos';
+import type { PosCashMovement, PosClosing, PosSession, TransactionFull } from '@/types/pos';
 import { MOCK_REGISTER, MOCK_SETTINGS, MOCK_USER } from './mockData';
 import { isMockOffline } from './mockNetwork';
 import { mockSave, mockState } from './mockStore';
@@ -123,6 +124,12 @@ function aggregate(txns: TransactionFull[]): ReportFigures {
 }
 
 /** Grand total perpétuel du dernier Z1 de la caisse. */
+/** Solde des mouvements d'espèces d'une session (apports − sorties), comme le serveur. */
+function mockMovementsNet(sessionId: string): number {
+  return cashMovementTotals(mockState().cashMovements.filter((m) => m.session_id === sessionId))
+    .net_cents;
+}
+
 function lastDailyGrandTotal(): number {
   const dailies = mockState().closings.filter((c) => c.period_type === 'daily');
   return dailies.at(-1)?.grand_total_perpetual_cents ?? 0;
@@ -173,7 +180,8 @@ async function rpc(name: string, params: Record<string, unknown> = {}): Promise<
       }
       const txns = st.transactions.filter((t) => t.transaction.session_id === session.id);
       const breakdown = paymentsBreakdown(txns);
-      const expected = session.opening_float_cents + (breakdown['cash'] ?? 0);
+      const expected =
+        session.opening_float_cents + (breakdown['cash'] ?? 0) + mockMovementsNet(session.id);
       const counted = Number(params['p_counted_cash_cents'] ?? 0);
       const closed: PosSession = {
         ...session,
@@ -238,11 +246,55 @@ async function rpc(name: string, params: Record<string, unknown> = {}): Promise<
           ...f,
           cash: {
             opening_float_cents: session.opening_float_cents,
-            expected_cash_cents: session.opening_float_cents + cashIn - (f.change_cents ?? 0),
+            expected_cash_cents:
+              session.opening_float_cents +
+              cashIn -
+              (f.change_cents ?? 0) +
+              mockMovementsNet(session.id),
+            movements: st.cashMovements
+              .filter((m) => m.session_id === session.id)
+              .map(({ kind, amount_cents, reason, reference, created_at }) => ({
+                kind,
+                amount_cents,
+                reason,
+                reference,
+                created_at,
+              })),
           },
           grand_total_perpetual_cents: lastDailyGrandTotal() + f.total_ttc_cents,
         },
       });
+    }
+    case 'pos_record_cash_movement': {
+      const clientId = String(params['p_client_movement_id'] ?? '');
+      const existing = st.cashMovements.find((m) => m.client_movement_id === clientId);
+      if (existing) return ok({ movement: existing, idempotent_replay: true });
+      const session = st.session;
+      if (!session || session.status !== 'open' || session.id !== params['p_session_id']) {
+        return fail('SESSION_NOT_OPEN');
+      }
+      const kind = String(params['p_kind']);
+      const amount = Number(params['p_amount_cents']);
+      const reason = String(params['p_reason'] ?? '').trim();
+      if (!isCashMovementKind(kind) || !(amount > 0) || !reason || !clientId) {
+        return fail('VALIDATION');
+      }
+      const movement: PosCashMovement = {
+        id: crypto.randomUUID(),
+        register_id: session.register_id,
+        session_id: session.id,
+        kind,
+        amount_cents: amount,
+        reason,
+        reference: params['p_reference'] ? String(params['p_reference']).trim() || null : null,
+        client_movement_id: clientId,
+        created_by: st.user?.id ?? null,
+        created_at: new Date().toISOString(),
+      };
+      st.cashMovements.push(movement);
+      st.events.push({ type: 'cash_movement', payload: movement, at: movement.created_at });
+      mockSave();
+      return ok({ movement, idempotent_replay: false });
     }
     case 'pos_log_event': {
       st.events.push({
@@ -298,6 +350,8 @@ function from(table: string) {
       rows = [...mockState().archives]
         .sort((a, b) => b.period_start.localeCompare(a.period_start))
         .map((a) => ({ ...a }) as unknown as Record<string, unknown>);
+    else if (table === 'pos_cash_movements')
+      rows = mockState().cashMovements.map((m) => ({ ...m }) as unknown as Record<string, unknown>);
     else return fail(`table mock inconnue : ${table}`);
     for (const [k, v] of filters) rows = rows.filter((r) => r[k] === v);
     for (const [k, vs] of inFilters) rows = rows.filter((r) => vs.includes(r[k]));

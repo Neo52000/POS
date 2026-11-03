@@ -1,5 +1,6 @@
 import {
   CLOSING_REPORT_KIND,
+  buildCashMovementVoucher,
   buildReport,
   normalizePaymentFigures,
   summarizeTickets,
@@ -9,7 +10,7 @@ import { env } from '@/lib/env';
 import { headerFrom } from '@/lib/ticket';
 import { cachedTicketSettings } from '@/lib/ticketSettings';
 import { useSessionStore } from '@/stores/sessionStore';
-import type { PosClosing, PosSession, XReportResult } from '@/types/pos';
+import type { PosCashMovement, PosClosing, PosSession, XReportResult } from '@/types/pos';
 
 /** Version imprimée : celle de `pos_settings.software` (serveur), sinon celle de la PWA. */
 function appVersion(): string {
@@ -23,6 +24,30 @@ function testRegister(): boolean {
 
 function operatorName(email: string | null | undefined): string | null {
   return email ? (email.split('@')[0] ?? null) : null;
+}
+
+const movementFigure = (m: PosCashMovement) => ({
+  kind: m.kind,
+  amount_cents: Number(m.amount_cents),
+  reason: m.reason,
+  reference: m.reference,
+  created_at: m.created_at,
+});
+
+/** Bon de mouvement d'espèces (0.5.0), à joindre au bordereau de remise en banque. */
+export function cashMovementVoucher(
+  movement: PosCashMovement,
+  session: Pick<PosSession, 'session_number'> | null,
+  operatorEmail?: string | null,
+): ReportPayload {
+  return buildCashMovementVoucher(movementFigure(movement), {
+    register_code: useSessionStore.getState().register?.code ?? '',
+    header: headerFrom(cachedTicketSettings()),
+    session_number: session?.session_number ?? null,
+    operator: operatorName(operatorEmail),
+    app_version: appVersion(),
+    test_register: testRegister(),
+  });
 }
 
 /** Lecture X serveur (`pos_x_report`) → rapport imprimable. */
@@ -48,7 +73,13 @@ export function xReport(x: XReportResult, operatorEmail?: string | null): Report
 /** Clôture enregistrée (`pos_closings`) → rapport Z1 / Z2 / Z3 (duplicata si réimpression). */
 export function closingReport(
   closing: PosClosing,
-  opts: { registerCode: string; session?: PosSession | null; duplicate?: boolean },
+  opts: {
+    registerCode: string;
+    session?: PosSession | null;
+    duplicate?: boolean;
+    /** Mouvements d'espèces de la session (0.5.0), déjà inclus dans `expected_cash_cents`. */
+    movements?: readonly PosCashMovement[];
+  },
 ): ReportPayload {
   const session = opts.session && opts.session.id === closing.session_id ? opts.session : null;
   const figures: ReportFigures = {
@@ -78,6 +109,9 @@ export function closingReport(
             expected_cash_cents: session.expected_cash_cents,
             counted_cash_cents: session.counted_cash_cents,
             variance_cents: session.variance_cents,
+            ...(opts.movements && opts.movements.length > 0
+              ? { movements: opts.movements.map(movementFigure) }
+              : {}),
           },
         }
       : {}),

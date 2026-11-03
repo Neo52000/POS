@@ -610,3 +610,18 @@ training_code: 'FORM-nnnn', kind, business_at, lines, total_ttc_cents, payments}
   caisses avec `is_test = true`.
 - Tests : `scripts/sql-tests/pos/19_reprint_training.sql`, `apps/pos/src/lib/training.test.ts`,
   `packages/core/src/ticket.test.ts`, `report.test.ts`, `services/tpe-bridge/test/renderer.test.ts`.
+
+## 15. Mouvements d'espèces hors vente (v0.5.0)
+
+Remise en banque (`bank_deposit`), retrait / prélèvement (`withdrawal`) : **sorties** ; apport
+d'espèces (`cash_in`) : **entrée**. Ni ticket, ni chiffre d'affaires, ni TVA, ni grand total
+perpétuel : seules les espèces attendues du tiroir changent.
+
+| Élément           | Règle                                                                                                                                                                                                                                     |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Table             | `pos_cash_movements` : `kind`, `amount_cents` (> 0, ≤ 1 000 000 €), `reason` (1–200 car.), `reference` (≤ 60), `client_movement_id` unique, `event_id` (JET) ; UPDATE / DELETE / TRUNCATE interdits, lecture RLS `is_pos()`               |
+| Écriture          | `pos_record_cash_movement(session, kind, amount_cents, reason, reference, client_movement_id)` : session ouverte (périmée acceptée : ce n'est pas une vente), idempotente, JET `cash_movement` ; erreurs `VALIDATION`, `SESSION_NOT_OPEN` |
+| Espèces attendues | fond + Σ espèces encaissées − Σ rendu + Σ apports − Σ sorties, identique en X (`pos_x_report` → `figures.cash.movements`, `movements_in_cents`, `movements_out_cents`) et au Z1 (`pos_close_session`, totaux dans le JET `session_close`) |
+| Rapports X / Z1   | « Tiroir espèces » : lignes Apports / Sorties avant « Espèces attendues » ; section « Mouvements d'espèces » (heure, type, montant signé, motif, réf., totaux). Le Z1 relit `pos_cash_movements` de la session                            |
+| PWA               | écran **Caisse**, bloc « Mouvements d'espèces » : bouton « Nouveau mouvement » (type, montant, motif proposé, n° de bordereau), liste et solde de la session ; indisponible hors ligne et en mode formation                               |
+| Bon imprimé       | `buildCashMovementVoucher` (`@pos/core`) : « MOUVEMENT D'ESPÈCES », document non fiscal, ligne de signature ; envoyé au pont au format `ReportPayload` (`kind` `X`, accepté par le pont 0.2.1 sans mise à jour) ; le tiroir s'ouvre       |
