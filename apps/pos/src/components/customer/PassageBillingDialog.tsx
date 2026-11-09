@@ -33,7 +33,13 @@ const EMPTY = {
 };
 type Form = typeof EMPTY;
 
-const FIELDS: Array<{ key: keyof Form; label: string; max: number; span?: boolean; type?: string }> = [
+const FIELDS: Array<{
+  key: keyof Form;
+  label: string;
+  max: number;
+  span?: boolean;
+  type?: string;
+}> = [
   { key: 'name', label: 'Nom ou raison sociale *', max: 160, span: true },
   { key: 'address', label: 'Adresse *', max: 300, span: true },
   { key: 'postal_code', label: 'Code postal *', max: 16 },
@@ -143,7 +149,12 @@ export function PassageBillingDialog({
           ))}
           {error && <p className="text-sm text-danger sm:col-span-2">{error}</p>}
           <DialogFooter className="sm:col-span-2">
-            <Button type="button" variant="outline" size="touch" onClick={() => onOpenChange(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              size="touch"
+              onClick={() => onOpenChange(false)}
+            >
               Annuler
             </Button>
             <Button
