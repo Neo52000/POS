@@ -261,6 +261,20 @@ export interface PassageContact {
   open_orders_count?: number;
 }
 
+/**
+ * En-tête de facture d'une personne de passage (`pos-passage-contacts`, billing_get/billing_set).
+ * Hors périmètre fiscal : le ticket NF525 reste inchangé, l'ERP facture à partir de ces champs.
+ */
+export interface PassageBilling {
+  name?: string;
+  address?: string;
+  postal_code?: string;
+  city?: string;
+  siret?: string;
+  vat_number?: string;
+  email?: string;
+}
+
 /** Commande non réglée (`pos-customer-orders`) transférable dans le panier. */
 export interface CustomerOrder {
   id: string;

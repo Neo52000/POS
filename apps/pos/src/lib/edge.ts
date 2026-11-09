@@ -12,6 +12,7 @@ import type {
   CustomerOpenDocuments,
   CustomerQuote,
   ExportArchiveResult,
+  PassageBilling,
   PassageContact,
   PosCustomer,
   PosPayment,
@@ -56,6 +57,10 @@ export interface EdgeClient {
   passageSearch(q: string, limit?: number): Promise<PassageContact[]>;
   /** Crée (ou retrouve par téléphone) une personne de passage (`pos-passage-contacts`). */
   passageCreate(fullName: string, phone: string | null): Promise<PassageContact>;
+  /** En-tête de facture d'une personne de passage (`pos-passage-contacts`, `billing_get`). */
+  passageBillingGet(contactId: string): Promise<PassageBilling>;
+  /** Enregistre l'en-tête de facture (`billing_set`) ; renvoie la version validée. */
+  passageBillingSet(contactId: string, billing: PassageBilling): Promise<PassageBilling>;
   /** Tarifs pro (`pos-resolve-prices`) : `{account_id, lines}` → `{prices}`. */
   resolvePrices(accountId: string, lines: PriceLineInput[]): Promise<ResolvedPrice[]>;
   /** Archive NF525 (`pos-export-archive`, admin) : défaut = mois précédent, toutes caisses. */
@@ -172,6 +177,21 @@ function createRealEdge(): EdgeClient {
         phone,
       });
       return r.contact;
+    },
+    passageBillingGet: async (contact_id) => {
+      const r = await callEdge<{ billing: PassageBilling }>('pos-passage-contacts', {
+        action: 'billing_get',
+        contact_id,
+      });
+      return r.billing ?? {};
+    },
+    passageBillingSet: async (contact_id, billing) => {
+      const r = await callEdge<{ billing: PassageBilling }>('pos-passage-contacts', {
+        action: 'billing_set',
+        contact_id,
+        billing,
+      });
+      return r.billing ?? {};
     },
     resolvePrices: async (account_id, lines) => {
       if (lines.length === 0) return [];
