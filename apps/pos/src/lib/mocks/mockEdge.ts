@@ -8,6 +8,7 @@ import type {
   ClosePeriodResult,
   ExportArchiveResult,
   OpenDocumentItem,
+  PassageBilling,
   PosClosing,
   PosArchive,
   PosPayment,
@@ -206,6 +207,9 @@ function mockShopifyPosDays(): ShopifyPosDay[] {
   }
   return [...byDate.values()].sort((a, b) => b.date.localeCompare(a.date));
 }
+
+/** En-têtes de facture des personnes de passage (mode démo), par id de contact. */
+const MOCK_PASSAGE_BILLING = new Map<string, PassageBilling>();
 
 export function createMockEdge(): EdgeClient {
   return {
@@ -669,6 +673,20 @@ export function createMockEdge(): EdgeClient {
       };
       MOCK_PASSAGE_CONTACTS.push(contact);
       return contact;
+    },
+    async passageBillingGet(contactId) {
+      assertMockOnline();
+      return structuredClone(MOCK_PASSAGE_BILLING.get(contactId) ?? {});
+    },
+    async passageBillingSet(contactId, billing) {
+      assertMockOnline();
+      const clean: PassageBilling = {};
+      for (const [k, v] of Object.entries(billing)) {
+        const t = typeof v === 'string' ? v.trim() : '';
+        if (t) clean[k as keyof PassageBilling] = t;
+      }
+      MOCK_PASSAGE_BILLING.set(contactId, clean);
+      return structuredClone(clean);
     },
     async resolvePrices(accountId, lines) {
       assertMockOnline();

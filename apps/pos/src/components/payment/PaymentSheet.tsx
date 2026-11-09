@@ -22,12 +22,17 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
+import {
+  PassageBillingDialog,
+  isBillingComplete,
+} from '@/components/customer/PassageBillingDialog';
 import { ReceiptPreview } from '@/components/ticket/ReceiptPreview';
 import { useCheckout } from '@/hooks/useCheckout';
 import type { CheckoutOutcome } from '@/hooks/useCheckout';
 import { useOfflineQueue } from '@/hooks/useOfflineQueue';
 import { usePrinter } from '@/hooks/usePrinter';
 import { describeApiError, isApiError } from '@/lib/apiError';
+import { edge } from '@/lib/edge';
 import { buildSettlementLines } from '@/lib/documentImport';
 import type { PosCheckoutResult } from '@/lib/edge';
 import { publishDisplay } from '@/lib/customerDisplay';
@@ -84,6 +89,7 @@ export function PaymentSheet({
   const [change, setChange] = useState(0);
   const [mode, setMode] = useState<PaymentMethod | null>(null);
   const [invoiceRequested, setInvoiceRequested] = useState(false);
+  const [billingOpen, setBillingOpen] = useState(false);
   const [clientTxnId, setClientTxnId] = useState(() => uuidv4());
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<CheckoutOutcome | null>(null);
@@ -676,11 +682,47 @@ export function PaymentSheet({
                     type="checkbox"
                     className="h-6 w-6 accent-accent"
                     checked={invoiceRequested}
-                    onChange={(e) => setInvoiceRequested(e.target.checked)}
+                    onChange={(e) => {
+                      setInvoiceRequested(e.target.checked);
+                      // Personne de passage : l'en-tête doit être complet pour facturer.
+                      if (e.target.checked && passageContact && !offline) {
+                        void edge
+                          .passageBillingGet(passageContact.id)
+                          .then((b) => {
+                            if (!isBillingComplete(b)) setBillingOpen(true);
+                          })
+                          .catch(() => setBillingOpen(true));
+                      }
+                    }}
                     data-testid="invoice-requested"
                   />
-                  Facture pro ({account.display_name})
+                  {passageContact
+                    ? `Facture (${passageContact.full_name})`
+                    : `Facture pro (${account.display_name})`}
+                  {passageContact && invoiceRequested && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="touch"
+                      className="ml-auto"
+                      disabled={offline}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setBillingOpen(true);
+                      }}
+                      data-testid="invoice-billing-edit"
+                    >
+                      En-tête de facture
+                    </Button>
+                  )}
                 </label>
+              )}
+              {passageContact && (
+                <PassageBillingDialog
+                  open={billingOpen}
+                  onOpenChange={setBillingOpen}
+                  contact={passageContact}
+                />
               )}
               {!validation.ok && payments.length > 0 && (
                 <p className="px-4 py-2 text-sm text-warning" data-testid="validation-message">

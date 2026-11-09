@@ -1,6 +1,18 @@
-import { Building2, FileText, Loader2, PackageOpen, Phone, User, UserPlus, X } from 'lucide-react';
+import { useState } from 'react';
+import {
+  Building2,
+  FileText,
+  Loader2,
+  PackageOpen,
+  Phone,
+  Receipt,
+  User,
+  UserPlus,
+  X,
+} from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { PassageBillingDialog } from '@/components/customer/PassageBillingDialog';
 import { useCustomerDocuments } from '@/hooks/useCustomerDocuments';
 import { openDocumentsCount } from '@/lib/documentImport';
 import { useCustomerStore } from '@/stores/customerStore';
@@ -20,6 +32,7 @@ export function CustomerBadge({ onSearch, onQuotes, onOrders }: CustomerBadgePro
   const error = useCustomerStore((s) => s.error);
   const detach = useCustomerStore((s) => s.detach);
   const offline = useUiStore((s) => s.connectivity === 'offline');
+  const [billingOpen, setBillingOpen] = useState(false);
   const documents = useCustomerDocuments(
     account && !offline ? account.id : null,
     passageContact?.id,
@@ -88,6 +101,25 @@ export function CustomerBadge({ onSearch, onQuotes, onOrders }: CustomerBadgePro
           <X className="h-5 w-5" />
         </Button>
       </div>
+      {passageContact && (
+        <Button
+          variant="outline"
+          size="touch"
+          className="justify-start"
+          onClick={() => setBillingOpen(true)}
+          disabled={offline}
+          data-testid="billing-button"
+        >
+          <Receipt className="h-5 w-5" /> En-tête de facture
+        </Button>
+      )}
+      {passageContact && (
+        <PassageBillingDialog
+          open={billingOpen}
+          onOpenChange={setBillingOpen}
+          contact={passageContact}
+        />
+      )}
       {account.open_quotes_count > 0 && (
         <Button
           variant="outline"

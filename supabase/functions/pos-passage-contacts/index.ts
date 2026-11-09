@@ -19,6 +19,20 @@ const Schema = z.discriminatedUnion('action', [
     full_name: z.string().trim().min(1).max(160),
     phone: z.string().trim().max(40).nullable().optional(),
   }),
+  z.object({ action: z.literal('billing_get'), contact_id: z.string().uuid() }),
+  z.object({
+    action: z.literal('billing_set'),
+    contact_id: z.string().uuid(),
+    billing: z.object({
+      name: z.string().trim().max(160).nullish(),
+      address: z.string().trim().max(300).nullish(),
+      postal_code: z.string().trim().max(16).nullish(),
+      city: z.string().trim().max(100).nullish(),
+      siret: z.string().trim().max(20).nullish(),
+      vat_number: z.string().trim().max(20).nullish(),
+      email: z.string().trim().max(160).nullish(),
+    }),
+  }),
 ]);
 
 Deno.serve(async (req) => {
@@ -37,6 +51,24 @@ Deno.serve(async (req) => {
       });
       if (error) throw new ApiError('DB_ERROR', `pos_passage_lookup: ${error.message}`);
       return json(200, { contacts: data ?? [] });
+    }
+
+    if (input.action === 'billing_get' || input.action === 'billing_set') {
+      const rpc = input.action === 'billing_get' ? 'pos_passage_billing_get' : 'pos_passage_billing_set';
+      const args =
+        input.action === 'billing_get'
+          ? { p_contact_id: input.contact_id }
+          : { p_contact_id: input.contact_id, p_billing: input.billing };
+      const { data, error } = await mapapClient().rpc(rpc, args);
+      if (error) {
+        const code = /VALIDATION/.test(error.message)
+          ? 'VALIDATION'
+          : /NOT_FOUND/.test(error.message)
+            ? 'NOT_FOUND'
+            : 'DB_ERROR';
+        throw new ApiError(code, `${rpc}: ${error.message}`);
+      }
+      return json(200, { billing: data ?? {} });
     }
 
     const { data, error } = await mapapClient().rpc('pos_passage_upsert', {
