@@ -13,7 +13,7 @@ import {
   WifiOff,
 } from 'lucide-react';
 import { PAYMENT_METHOD_LABELS, validatePayments } from '@pos/core';
-import type { CartTotals, CheckoutPayload, PaymentMethod } from '@pos/core';
+import type { CartTotals, CheckoutPayload, PaymentMethod, TicketPayload } from '@pos/core';
 import { Button } from '@/components/ui/button';
 import {
   Sheet,
@@ -33,6 +33,7 @@ import { useOfflineQueue } from '@/hooks/useOfflineQueue';
 import { usePrinter } from '@/hooks/usePrinter';
 import { describeApiError, isApiError } from '@/lib/apiError';
 import { edge } from '@/lib/edge';
+import { buildInvoiceHtml, invoicePartyFor, printHtml } from '@/lib/invoiceA4';
 import { buildSettlementLines } from '@/lib/documentImport';
 import type { PosCheckoutResult } from '@/lib/edge';
 import { publishDisplay } from '@/lib/customerDisplay';
@@ -99,9 +100,35 @@ export function PaymentSheet({
   const [receiptContact, setReceiptContact] = useState<{
     email: string | null;
     phone: string | null;
-  }>({ email: null, phone: null });
+    /** Personne de passage (en-tête de facture à relire au moment d'imprimer). */
+    passage: { id: string; name: string } | null;
+  }>({ email: null, phone: null, passage: null });
   /** Garde synchrone : `checkout.isPending` n'est vrai qu'au rendu suivant (double tap). */
   const inFlight = useRef(false);
+
+  /**
+   * Facture A4 bâtie sur le ticket. Personne de passage : l'en-tête enregistré est relu au moment
+   * d'imprimer (hors ligne ou en échec : facture au nom seul, avec avertissement).
+   */
+  const printInvoice = async (ticket: TicketPayload): Promise<void> => {
+    let billing = null;
+    if (receiptContact.passage && !offline) {
+      try {
+        billing = await edge.passageBillingGet(receiptContact.passage.id);
+      } catch {
+        billing = null;
+      }
+    }
+    if (receiptContact.passage && !isBillingComplete(billing)) {
+      useUiStore.getState().toast({
+        title: 'En-tête de facture incomplet',
+        description: 'La facture est imprimée sans adresse : complétez l’en-tête du client.',
+        variant: 'warning',
+      });
+    }
+    const party = invoicePartyFor(ticket, billing, receiptContact.passage?.name ?? null);
+    printHtml(buildInvoiceHtml(ticket, party));
+  };
 
   const navigate = useNavigate();
   const checkout = useCheckout();
@@ -354,6 +381,10 @@ export function PaymentSheet({
     setReceiptContact({
       email: !refund ? (account?.email ?? null) : null,
       phone: !refund ? (passageContact?.phone ?? account?.phone ?? null) : null,
+      passage:
+        !refund && passageContact
+          ? { id: passageContact.id, name: passageContact.full_name }
+          : null,
     });
     try {
       const outcome = await checkout.mutateAsync({ payload, context });
@@ -515,6 +546,7 @@ export function PaymentSheet({
                 defaultEmail={receiptContact.email}
                 defaultPhone={receiptContact.phone}
                 onPrint={() => void print(result.ticket)}
+                onPrintInvoice={() => void printInvoice(result.ticket)}
                 onDone={() => setReceiptDone(true)}
               />
             )}

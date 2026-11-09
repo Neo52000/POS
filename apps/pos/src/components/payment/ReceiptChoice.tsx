@@ -1,5 +1,14 @@
 import { useState } from 'react';
-import { ArrowLeft, Ban, Check, Loader2, Mail, MessageSquare, Printer } from 'lucide-react';
+import {
+  ArrowLeft,
+  Ban,
+  Check,
+  FileText,
+  Loader2,
+  Mail,
+  MessageSquare,
+  Printer,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { describeApiError, isApiError } from '@/lib/apiError';
@@ -8,7 +17,7 @@ import type { ReceiptChannel } from '@/lib/edge';
 import { logEvent } from '@/lib/events';
 import { cn } from '@/lib/utils';
 
-export type ReceiptDelivery = 'paper' | ReceiptChannel | 'none';
+export type ReceiptDelivery = 'paper' | 'invoice_a4' | 'paper_invoice_a4' | ReceiptChannel | 'none';
 
 export interface ReceiptChoiceProps {
   /** Vente enregistrée côté serveur : null (formation, hors ligne) → e-mail / SMS indisponibles. */
@@ -19,6 +28,8 @@ export interface ReceiptChoiceProps {
   defaultEmail?: string | null;
   defaultPhone?: string | null;
   onPrint: () => void;
+  /** Impression de la facture A4 : absent = pas de choix facture (remboursement…). */
+  onPrintInvoice?: () => void;
   /** Choix terminé (ticket imprimé, envoyé ou refusé). */
   onDone: (delivery: ReceiptDelivery) => void;
 }
@@ -33,6 +44,8 @@ export function isValidMobile(raw: string): boolean {
 
 const LABELS: Record<ReceiptDelivery, string> = {
   paper: 'Ticket imprimé',
+  invoice_a4: 'Facture A4 imprimée',
+  paper_invoice_a4: 'Ticket et facture A4 imprimés',
   email: 'Ticket envoyé par e-mail',
   sms: 'Ticket envoyé par SMS',
   none: 'Pas de ticket',
@@ -49,6 +62,7 @@ export function ReceiptChoice({
   defaultEmail = null,
   defaultPhone = null,
   onPrint,
+  onPrintInvoice,
   onDone,
 }: ReceiptChoiceProps) {
   const [step, setStep] = useState<'choose' | ReceiptChannel>('choose');
@@ -181,6 +195,29 @@ export function ReceiptChoice({
         finish('paper');
       },
     },
+    ...(onPrintInvoice
+      ? [
+          {
+            key: 'invoice_a4' as const,
+            label: 'Facture A4',
+            icon: FileText,
+            onClick: () => {
+              onPrintInvoice();
+              finish('invoice_a4');
+            },
+          },
+          {
+            key: 'paper_invoice_a4' as const,
+            label: 'Ticket + facture A4',
+            icon: Printer,
+            onClick: () => {
+              onPrint();
+              onPrintInvoice();
+              finish('paper_invoice_a4');
+            },
+          },
+        ]
+      : []),
     {
       key: 'email',
       label: 'E-mail',
@@ -201,7 +238,7 @@ export function ReceiptChoice({
   return (
     <div className="flex w-full max-w-2xl flex-col items-center gap-2" data-testid="receipt-choice">
       <p className="text-base text-muted">Ticket client ?</p>
-      <div className="grid w-full grid-cols-4 gap-2">
+      <div className={cn('grid w-full gap-2', onPrintInvoice ? 'grid-cols-3' : 'grid-cols-4')}>
         {options.map(({ key, label, icon: Icon, disabled, onClick }) => (
           <Button
             key={key}

@@ -104,3 +104,35 @@ describe('ReceiptChoice', () => {
     expect(isValidMobile('12345')).toBe(false);
   });
 });
+
+describe('ReceiptChoice — facture A4', () => {
+  beforeEach(() => vi.mocked(logEvent).mockClear());
+
+  it('sans onPrintInvoice : aucun choix facture', () => {
+    setup();
+    expect(screen.queryByTestId('receipt-invoice_a4')).toBeNull();
+    expect(screen.queryByTestId('receipt-paper_invoice_a4')).toBeNull();
+  });
+
+  it('« Facture A4 » n’imprime que la facture', () => {
+    const onPrintInvoice = vi.fn();
+    const { onPrint, onDone } = setup({ onPrintInvoice });
+    fireEvent.click(screen.getByTestId('receipt-invoice_a4'));
+    expect(onPrintInvoice).toHaveBeenCalledTimes(1);
+    expect(onPrint).not.toHaveBeenCalled();
+    expect(onDone).toHaveBeenCalledWith('invoice_a4');
+  });
+
+  it('« Ticket + facture A4 » imprime les deux', () => {
+    const onPrintInvoice = vi.fn();
+    const { onPrint, onDone } = setup({ onPrintInvoice });
+    fireEvent.click(screen.getByTestId('receipt-paper_invoice_a4'));
+    expect(onPrint).toHaveBeenCalledTimes(1);
+    expect(onPrintInvoice).toHaveBeenCalledTimes(1);
+    expect(onDone).toHaveBeenCalledWith('paper_invoice_a4');
+    expect(logEvent).toHaveBeenCalledWith(
+      'receipt_delivery',
+      expect.objectContaining({ channel: 'paper_invoice_a4' }),
+    );
+  });
+});
