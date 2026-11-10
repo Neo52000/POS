@@ -7,6 +7,7 @@ export const SERVICE_GROUPS = [
   'Plastification',
   'Reliure',
   'Photos',
+  'Tampons',
   'Grand format',
   'Autres services',
 ] as const;
@@ -20,6 +21,7 @@ export function serviceGroupOf(name: string): ServiceGroup {
   if (/plastif/.test(n)) return 'Plastification';
   if (/num[ée]ris/.test(n)) return 'Numérisation';
   if (/^photo(?!cop)/.test(n)) return 'Photos';
+  if (/^tampon/.test(n)) return 'Tampons';
   if (/b[âa]che|affiche|^plan\b|flyers?|grand format/.test(n)) return 'Grand format';
   if (/photocop|copies?\b|impression/.test(n)) return 'Copies & impression';
   return 'Autres services';
