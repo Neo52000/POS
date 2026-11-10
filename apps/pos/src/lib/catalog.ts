@@ -4,6 +4,7 @@ import { isNetworkFailure } from '@/lib/apiError';
 import { catalogRpc } from '@/lib/catalogClient';
 import { isOffline } from '@/lib/connectivity';
 import { productByEanLocal, searchLocal } from '@/lib/offlineCatalog';
+import { readServiceCache, writeServiceCache } from '@/lib/serviceCache';
 import type { PosProduct } from '@/types/pos';
 
 export { catalog } from '@/lib/catalogClient';
@@ -77,6 +78,23 @@ export async function productByEan(ean: string): Promise<PosProduct | null> {
     return sanitizeProducts(Array.isArray(rows) ? rows.slice(0, 1) : [rows])[0] ?? null;
   } catch (e) {
     if (isNetworkFailure(e)) return productByEanLocal(ean);
+    throw e;
+  }
+}
+
+/**
+ * Prestations de service (copies, reliure, photos…) pour l'accès direct de la caisse. En ligne :
+ * RPC `pos_service_products` (mémorisée) ; hors ligne ou échec réseau : dernière liste mémorisée.
+ */
+export async function serviceProducts(): Promise<PosProduct[]> {
+  if (isOffline()) return readServiceCache() ?? [];
+  try {
+    const rows = await catalogRpc<unknown[] | null>('pos_service_products', {});
+    const products = sanitizeProducts(rows ?? []);
+    writeServiceCache(products);
+    return products;
+  } catch (e) {
+    if (isNetworkFailure(e)) return readServiceCache() ?? [];
     throw e;
   }
 }
