@@ -45,6 +45,12 @@ export function createMockCatalog(): SupabaseClient {
         );
         return { data: rows.slice(0, limit), error: null };
       }
+      case 'pos_service_products': {
+        const rows = mockProducts().filter((p) =>
+          /photocop|impression|reliure|plastif|photo|num[ée]ris/i.test(p.name),
+        );
+        return { data: rows, error: null };
+      }
       case 'pos_product_by_ean': {
         const ean = String(params['p_ean'] ?? '');
         return { data: mockProducts().filter((p) => p.ean === ean), error: null };

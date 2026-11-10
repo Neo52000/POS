@@ -16,6 +16,8 @@ import { GlobalDiscountDialog } from '@/components/sale/GlobalDiscountDialog';
 import { ParkedSheet } from '@/components/sale/ParkedSheet';
 import { PriceTierPicker } from '@/components/sale/PriceTierPicker';
 import { ProductGrid } from '@/components/sale/ProductGrid';
+import { ServiceShortcuts } from '@/components/sale/ServiceShortcuts';
+import { useServiceProducts } from '@/hooks/useServiceProducts';
 import { useBarcodeScanner } from '@/hooks/useBarcodeScanner';
 import { lookupProductByEan } from '@/hooks/useProductByEan';
 import { PRODUCT_SEARCH_LIMIT, useProductSearch } from '@/hooks/useProductSearch';
@@ -74,6 +76,7 @@ export function SalePage() {
   const attach = useCustomerStore((s) => s.attach);
   const pricingBusy = useCustomerStore((s) => s.resolving || s.pendingLines > 0);
   const parkedCount = useParkedStore((s) => s.parked.length);
+  const services = useServiceProducts();
   const favorites = useSettingsStore((s) => s.favorites);
   const toggleFavorite = useSettingsStore((s) => s.toggleFavorite);
   const draft = useCheckoutDraftStore((s) => s.draft);
@@ -463,6 +466,7 @@ export function SalePage() {
             </Button>
           </div>
         )}
+        <ServiceShortcuts products={services.data} onPick={pickFromSearch} />
         <ProductGrid
           products={search.data}
           loading={search.isFetching}
