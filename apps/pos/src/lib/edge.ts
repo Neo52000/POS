@@ -39,6 +39,8 @@ export interface SendReceiptInput {
   channel: ReceiptChannel;
   /** Adresse e-mail ou numéro de mobile (normalisé côté serveur). */
   to: string;
+  /** E-mail seulement : `invoice` envoie la facture A4 (HTML) au lieu du ticket texte. */
+  document?: 'ticket' | 'invoice';
 }
 
 export interface EdgeClient {

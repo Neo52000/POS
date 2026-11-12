@@ -103,6 +103,8 @@ export function PaymentSheet({
     /** Personne de passage (en-tête de facture à relire au moment d'imprimer). */
     passage: { id: string; name: string } | null;
   }>({ email: null, phone: null, passage: null });
+  /** E-mail de l'en-tête de facture (personne de passage), proposé pour l'envoi de la facture. */
+  const [invoiceEmail, setInvoiceEmail] = useState<string | null>(null);
   /** Garde synchrone : `checkout.isPending` n'est vrai qu'au rendu suivant (double tap). */
   const inFlight = useRef(false);
 
@@ -136,6 +138,24 @@ export function PaymentSheet({
   // Mode formation : rien ne part au serveur, la connectivité est sans effet.
   const offline = useUiStore((s) => s.connectivity === 'offline') && !training;
   const { limitState } = useOfflineQueue();
+
+  // Facture par e-mail : adresse de l'en-tête de facture de la personne de passage, si connue.
+  const passageIdForMail = receiptContact.passage?.id ?? null;
+  const recorded = result !== null;
+  useEffect(() => {
+    setInvoiceEmail(null);
+    if (!recorded || !passageIdForMail || offline) return;
+    let cancelled = false;
+    edge
+      .passageBillingGet(passageIdForMail)
+      .then((b) => {
+        if (!cancelled) setInvoiceEmail(b.email ?? null);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [recorded, passageIdForMail, offline]);
   const user = useSessionStore((s) => s.user);
   const quotes = useCustomerStore((s) => s.quotes);
   const { print, openDrawer } = usePrinter();
@@ -545,6 +565,7 @@ export function PaymentSheet({
                 }
                 defaultEmail={receiptContact.email}
                 defaultPhone={receiptContact.phone}
+                defaultInvoiceEmail={invoiceEmail}
                 onPrint={() => void print(result.ticket)}
                 onPrintInvoice={() => void printInvoice(result.ticket)}
                 onDone={() => setReceiptDone(true)}

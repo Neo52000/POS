@@ -136,3 +136,47 @@ describe('ReceiptChoice — facture A4', () => {
     );
   });
 });
+
+describe('ReceiptChoice — facture par e-mail', () => {
+  beforeEach(() => {
+    vi.mocked(edge.sendReceipt).mockReset();
+    vi.mocked(logEvent).mockClear();
+  });
+
+  it('sans onPrintInvoice : pas de choix « Facture par e-mail »', () => {
+    setup();
+    expect(screen.queryByTestId('receipt-email_invoice')).toBeNull();
+  });
+
+  it('envoie la facture (document: invoice) à l’adresse proposée', async () => {
+    vi.mocked(edge.sendReceipt).mockResolvedValue({ ok: true, ticket_code: 'T-2026-000042' });
+    const { onDone } = setup({
+      onPrintInvoice: vi.fn(),
+      defaultEmail: 'client@x.fr',
+      defaultInvoiceEmail: 'compta@acme.fr',
+    });
+    fireEvent.click(screen.getByTestId('receipt-email_invoice'));
+    expect(screen.getByTestId('receipt-to')).toHaveValue('compta@acme.fr');
+    fireEvent.click(screen.getByTestId('receipt-send'));
+    await waitFor(() => expect(onDone).toHaveBeenCalledWith('email_invoice'));
+    expect(edge.sendReceipt).toHaveBeenCalledWith({
+      transaction_id: TXN,
+      channel: 'email',
+      to: 'compta@acme.fr',
+      document: 'invoice',
+    });
+  });
+
+  it('l’e-mail du ticket reste sans document facture', async () => {
+    vi.mocked(edge.sendReceipt).mockResolvedValue({ ok: true, ticket_code: 'T-2026-000042' });
+    setup({ onPrintInvoice: vi.fn(), defaultEmail: 'client@x.fr' });
+    fireEvent.click(screen.getByTestId('receipt-email'));
+    fireEvent.click(screen.getByTestId('receipt-send'));
+    await waitFor(() => expect(edge.sendReceipt).toHaveBeenCalled());
+    expect(edge.sendReceipt).toHaveBeenCalledWith({
+      transaction_id: TXN,
+      channel: 'email',
+      to: 'client@x.fr',
+    });
+  });
+});

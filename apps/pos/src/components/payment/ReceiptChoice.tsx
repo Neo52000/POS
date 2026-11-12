@@ -17,7 +17,8 @@ import type { ReceiptChannel } from '@/lib/edge';
 import { logEvent } from '@/lib/events';
 import { cn } from '@/lib/utils';
 
-export type ReceiptDelivery = 'paper' | 'invoice_a4' | 'paper_invoice_a4' | ReceiptChannel | 'none';
+export type ReceiptDelivery =
+  'paper' | 'invoice_a4' | 'paper_invoice_a4' | 'email_invoice' | ReceiptChannel | 'none';
 
 export interface ReceiptChoiceProps {
   /** Vente enregistrée côté serveur : null (formation, hors ligne) → e-mail / SMS indisponibles. */
@@ -26,6 +27,8 @@ export interface ReceiptChoiceProps {
   /** Pourquoi l'envoi dématérialisé est indisponible (affiché sous les boutons). */
   digitalUnavailableReason?: string | null;
   defaultEmail?: string | null;
+  /** E-mail proposé pour la facture (en-tête de facture d'une personne de passage). */
+  defaultInvoiceEmail?: string | null;
   defaultPhone?: string | null;
   onPrint: () => void;
   /** Impression de la facture A4 : absent = pas de choix facture (remboursement…). */
@@ -46,6 +49,7 @@ const LABELS: Record<ReceiptDelivery, string> = {
   paper: 'Ticket imprimé',
   invoice_a4: 'Facture A4 imprimée',
   paper_invoice_a4: 'Ticket et facture A4 imprimés',
+  email_invoice: 'Facture envoyée par e-mail',
   email: 'Ticket envoyé par e-mail',
   sms: 'Ticket envoyé par SMS',
   none: 'Pas de ticket',
@@ -60,6 +64,7 @@ export function ReceiptChoice({
   ticketCode,
   digitalUnavailableReason = null,
   defaultEmail = null,
+  defaultInvoiceEmail = null,
   defaultPhone = null,
   onPrint,
   onPrintInvoice,
@@ -67,6 +72,8 @@ export function ReceiptChoice({
 }: ReceiptChoiceProps) {
   const [step, setStep] = useState<'choose' | ReceiptChannel>('choose');
   const [email, setEmail] = useState(defaultEmail ?? '');
+  /** Document envoyé par e-mail : le ticket (texte) ou la facture A4 (HTML). */
+  const [emailDoc, setEmailDoc] = useState<'ticket' | 'invoice'>('ticket');
   const [phone, setPhone] = useState(defaultPhone ?? '');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -90,8 +97,14 @@ export function ReceiptChoice({
     setSending(true);
     setError(null);
     try {
-      await edge.sendReceipt({ transaction_id: transactionId, channel, to });
-      finish(channel);
+      const invoice = channel === 'email' && emailDoc === 'invoice';
+      await edge.sendReceipt({
+        transaction_id: transactionId,
+        channel,
+        to,
+        ...(invoice ? { document: 'invoice' as const } : {}),
+      });
+      finish(invoice ? 'email_invoice' : channel);
     } catch (e) {
       setError(
         isApiError(e) && e.code === 'DELIVERY_FAILED' && e.message !== e.code
@@ -128,7 +141,11 @@ export function ReceiptChoice({
         }}
       >
         <label className="text-base font-medium" htmlFor="receipt-to">
-          {isEmail ? 'Adresse e-mail du client' : 'Mobile du client'}
+          {isEmail
+            ? emailDoc === 'invoice'
+              ? 'Adresse e-mail pour la facture'
+              : 'Adresse e-mail du client'
+            : 'Mobile du client'}
         </label>
         <Input
           id="receipt-to"
@@ -218,12 +235,31 @@ export function ReceiptChoice({
           },
         ]
       : []),
+    ...(onPrintInvoice
+      ? [
+          {
+            key: 'email_invoice' as const,
+            label: 'Facture par e-mail',
+            icon: Mail,
+            disabled: !digitalOk,
+            onClick: () => {
+              setEmailDoc('invoice');
+              setEmail(defaultInvoiceEmail ?? defaultEmail ?? '');
+              setStep('email');
+            },
+          },
+        ]
+      : []),
     {
       key: 'email',
       label: 'E-mail',
       icon: Mail,
       disabled: !digitalOk,
-      onClick: () => setStep('email'),
+      onClick: () => {
+        setEmailDoc('ticket');
+        setEmail(defaultEmail ?? '');
+        setStep('email');
+      },
     },
     {
       key: 'sms',
