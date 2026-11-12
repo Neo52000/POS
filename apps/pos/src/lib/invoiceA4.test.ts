@@ -78,4 +78,13 @@ describe('buildInvoiceHtml', () => {
       'AVOIR n°',
     );
   });
+
+  it('duplicata : porte la mention DUPLICATA n°X', () => {
+    const html = buildInvoiceHtml(
+      { ...ticket, duplicate: true, duplicate_number: 2 } as TicketPayload,
+      null,
+    );
+    expect(html).toContain('DUPLICATA n°2');
+    expect(buildInvoiceHtml(ticket, null)).not.toContain('DUPLICATA');
+  });
 });

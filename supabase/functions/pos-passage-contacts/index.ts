@@ -20,6 +20,8 @@ const Schema = z.discriminatedUnion('action', [
     phone: z.string().trim().max(40).nullable().optional(),
   }),
   z.object({ action: z.literal('billing_get'), contact_id: z.string().uuid() }),
+  // Duplicata A4 d'un ticket passé : contact de passage rattaché à la vente + son en-tête de facture.
+  z.object({ action: z.literal('billing_for_transaction'), transaction_id: z.string().uuid() }),
   z.object({
     action: z.literal('billing_set'),
     contact_id: z.string().uuid(),
@@ -39,7 +41,7 @@ Deno.serve(async (req) => {
   const pre = handleOptions(req);
   if (pre) return pre;
   try {
-    await requirePos(req);
+    const auth = await requirePos(req);
     const parsed = Schema.safeParse(await readJson(req));
     if (!parsed.success) throw new ApiError('VALIDATION', 'Payload invalide', parsed.error.flatten());
     const input = parsed.data;
@@ -51,6 +53,22 @@ Deno.serve(async (req) => {
       });
       if (error) throw new ApiError('DB_ERROR', `pos_passage_lookup: ${error.message}`);
       return json(200, { contacts: data ?? [] });
+    }
+
+    if (input.action === 'billing_for_transaction') {
+      // Lien vente → contact : table deny-all (service role) du projet Pos.
+      const { data: link, error: linkErr } = await auth.db
+        .from('pos_transaction_passage_contacts')
+        .select('passage_contact_id')
+        .eq('transaction_id', input.transaction_id)
+        .maybeSingle();
+      if (linkErr) throw new ApiError('DB_ERROR', `pos_transaction_passage_contacts: ${linkErr.message}`);
+      if (!link) return json(200, { contact_id: null, billing: {} });
+      const { data, error } = await mapapClient().rpc('pos_passage_billing_get', {
+        p_contact_id: link.passage_contact_id,
+      });
+      if (error) throw new ApiError('DB_ERROR', `pos_passage_billing_get: ${error.message}`);
+      return json(200, { contact_id: link.passage_contact_id, billing: data ?? {} });
     }
 
     if (input.action === 'billing_get' || input.action === 'billing_set') {

@@ -678,6 +678,10 @@ export function createMockEdge(): EdgeClient {
       assertMockOnline();
       return structuredClone(MOCK_PASSAGE_BILLING.get(contactId) ?? {});
     },
+    async passageBillingForTransaction() {
+      assertMockOnline();
+      return { contact_id: null, billing: {} };
+    },
     async passageBillingSet(contactId, billing) {
       assertMockOnline();
       const clean: PassageBilling = {};

@@ -59,6 +59,13 @@ export interface EdgeClient {
   passageCreate(fullName: string, phone: string | null): Promise<PassageContact>;
   /** En-tête de facture d'une personne de passage (`pos-passage-contacts`, `billing_get`). */
   passageBillingGet(contactId: string): Promise<PassageBilling>;
+  /**
+   * Contact de passage rattaché à une vente passée et son en-tête de facture
+   * (`billing_for_transaction`) : `contact_id` null si la vente n'est pas rattachée.
+   */
+  passageBillingForTransaction(
+    transactionId: string,
+  ): Promise<{ contact_id: string | null; billing: PassageBilling }>;
   /** Enregistre l'en-tête de facture (`billing_set`) ; renvoie la version validée. */
   passageBillingSet(contactId: string, billing: PassageBilling): Promise<PassageBilling>;
   /** Tarifs pro (`pos-resolve-prices`) : `{account_id, lines}` → `{prices}`. */
@@ -184,6 +191,13 @@ function createRealEdge(): EdgeClient {
         contact_id,
       });
       return r.billing ?? {};
+    },
+    passageBillingForTransaction: async (transaction_id) => {
+      const r = await callEdge<{ contact_id: string | null; billing: PassageBilling }>(
+        'pos-passage-contacts',
+        { action: 'billing_for_transaction', transaction_id },
+      );
+      return { contact_id: r.contact_id ?? null, billing: r.billing ?? {} };
     },
     passageBillingSet: async (contact_id, billing) => {
       const r = await callEdge<{ billing: PassageBilling }>('pos-passage-contacts', {
