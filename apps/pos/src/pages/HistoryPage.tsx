@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react';
+import type { TicketPayload } from '@pos/core';
 import {
   ChevronLeft,
   ChevronRight,
+  FileText,
   Loader2,
   Lock,
   Printer,
@@ -19,6 +21,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { isBillingComplete } from '@/components/customer/PassageBillingDialog';
 import { RefundDialog } from '@/components/history/RefundDialog';
 import { ShopifyDayView } from '@/components/history/ShopifyDayView';
 import { ReceiptPreview } from '@/components/ticket/ReceiptPreview';
@@ -28,13 +31,17 @@ import { paymentSummary, useClosedDays, useDayTickets } from '@/hooks/useTodayTi
 import { useShopifyPosDays } from '@/hooks/useShopifyPosHistory';
 import { useTransactionFull } from '@/hooks/useTransactionFull';
 import { entryKey, historyEntries, parseEntryKey } from '@/lib/historyDays';
+import { edge } from '@/lib/edge';
+import { buildInvoiceHtml, invoicePartyFor, printHtml } from '@/lib/invoiceA4';
 import { rpc } from '@/lib/supabase';
 import { businessDate, formatEurCents, formatLongDate, formatTime } from '@/lib/format';
 import { buildTicketPayload, ticketCode } from '@/lib/ticket';
 import { cn, errorMessage } from '@/lib/utils';
 import { useTrainingStore } from '@/stores/trainingStore';
 import { useUiStore } from '@/stores/uiStore';
-import type { PosTransaction, TransactionFull } from '@/types/pos';
+import type { PassageBilling, PosTransaction, TransactionFull } from '@/types/pos';
+
+type ReprintMode = 'ticket' | 'a4' | 'both';
 
 function codeOf(t: PosTransaction): string {
   return t.ticket_number != null
@@ -105,10 +112,37 @@ export function HistoryPage() {
   const [reprinting, setReprinting] = useState(false);
 
   /**
+   * Duplicata A4 : même document que la facture A4 de l'encaissement, marqué « DUPLICATA n°X ».
+   * Personne de passage : l'en-tête enregistré est relu côté serveur (lien vente → contact).
+   */
+  const printDuplicateA4 = async (dup: TicketPayload, transactionId: string): Promise<void> => {
+    let billing: PassageBilling | null = null;
+    let linked = false;
+    try {
+      const r = await edge.passageBillingForTransaction(transactionId);
+      linked = r.contact_id !== null;
+      billing = r.billing;
+    } catch {
+      billing = null;
+    }
+    const passageName = dup.customer?.display_name.startsWith('Passage — ')
+      ? dup.customer.display_name.slice('Passage — '.length).trim() || null
+      : null;
+    if ((linked || passageName) && !isBillingComplete(billing)) {
+      toast({
+        title: 'En-tête de facture incomplet',
+        description: 'Le duplicata est imprimé sans adresse : complétez l’en-tête du client.',
+        variant: 'warning',
+      });
+    }
+    printHtml(buildInvoiceHtml(dup, invoicePartyFor(dup, billing, passageName)));
+  };
+
+  /**
    * Duplicata (0.4.0) : `pos_reprint` journalise d'abord la réimpression (JET synchrone) et
    * renvoie son rang ; « DUPLICATA n°X » n'est imprimé qu'après ce succès. Refusé hors ligne.
    */
-  const reprint = async (): Promise<void> => {
+  const reprint = async (mode: ReprintMode = 'ticket'): Promise<void> => {
     if (!full.data || reprinting) return;
     if (offline) {
       toast({
@@ -128,10 +162,12 @@ export function HistoryPage() {
         duplicate: true,
         duplicateNumber: r.duplicate_number,
       });
-      const outcome = await print(dup);
-      if (outcome === 'printed')
+      let outcome: 'printed' | 'fallback' | null = null;
+      if (mode !== 'a4') outcome = await print(dup);
+      if (mode !== 'ticket') await printDuplicateA4(dup, full.data.transaction.id);
+      if (mode === 'a4' || outcome === 'printed')
         toast({
-          title: `Duplicata n°${r.duplicate_number} de ${dup.ticket_code} imprimé`,
+          title: `Duplicata n°${r.duplicate_number} de ${dup.ticket_code} ${mode === 'a4' ? 'envoyé en A4' : 'imprimé'}`,
           variant: 'success',
         });
     } catch (e) {
@@ -330,21 +366,43 @@ export function HistoryPage() {
         {full.isError && <p className="text-danger">{errorMessage(full.error)}</p>}
         {ticket && full.data && (
           <>
-            <div className="mb-3 flex gap-2">
+            <div className="mb-3 flex flex-wrap gap-2">
               <Button
                 variant="secondary"
                 size="touch"
-                className="flex-1"
-                onClick={() => void reprint()}
+                className="min-w-[30%] flex-1"
+                onClick={() => void reprint('ticket')}
                 disabled={offline || reprinting}
-                title={offline ? 'Duplicata impossible hors ligne' : undefined}
+                title={offline ? 'Duplicata impossible hors ligne' : 'Duplicata du ticket'}
                 data-testid="reprint-button"
               >
-                <Printer className="h-5 w-5" /> Duplicata
+                <Printer className="h-5 w-5" /> Ticket
+              </Button>
+              <Button
+                variant="secondary"
+                size="touch"
+                className="min-w-[30%] flex-1"
+                onClick={() => void reprint('a4')}
+                disabled={offline || reprinting}
+                title={offline ? 'Duplicata impossible hors ligne' : 'Duplicata A4 (facture)'}
+                data-testid="reprint-a4-button"
+              >
+                <FileText className="h-5 w-5" /> A4
+              </Button>
+              <Button
+                variant="secondary"
+                size="touch"
+                className="min-w-[30%] flex-1"
+                onClick={() => void reprint('both')}
+                disabled={offline || reprinting}
+                title={offline ? 'Duplicata impossible hors ligne' : 'Duplicata ticket et A4'}
+                data-testid="reprint-both-button"
+              >
+                <Printer className="h-5 w-5" /> Ticket + A4
               </Button>
               {full.data.transaction.kind === 'sale' && (
                 <span
-                  className="flex flex-1"
+                  className="flex basis-full"
                   title={offline ? 'Remboursement impossible hors ligne' : undefined}
                 >
                   <Button

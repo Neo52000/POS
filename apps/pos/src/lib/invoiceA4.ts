@@ -1,4 +1,4 @@
-import { paymentMethodLabel } from '@pos/core';
+import { duplicateLabel, paymentMethodLabel } from '@pos/core';
 import type { TicketPayload } from '@pos/core';
 import { formatDateTime, formatEurCents, formatQty, formatVatRate } from '@/lib/format';
 import type { PassageBilling } from '@/types/pos';
@@ -127,7 +127,7 @@ export function buildInvoiceHtml(ticket: TicketPayload, party: InvoiceParty | nu
     <div><strong style="font-size:14pt">${esc(h.company_name)}</strong><br>${sellerLines.map(esc).join('<br>')}</div>
     <div class="box">${buyer}</div>
   </div>
-  <h1>${title} n° ${esc(number)}</h1>
+  <h1>${title} n° ${esc(number)}${duplicateLabel(ticket) ? ` — ${esc(duplicateLabel(ticket) ?? '')}` : ''}</h1>
   <div>Date : ${esc(formatDateTime(ticket.business_at))}${refund && ticket.refund_of_ticket_code ? ` · Avoir sur ticket ${esc(ticket.refund_of_ticket_code)}` : ''}</div>
   <table>
     <thead><tr><th>Désignation</th><th class="n">Qté</th><th class="n">P.U. HT</th><th class="n">TVA</th><th class="n">Total TTC</th></tr></thead>
