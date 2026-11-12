@@ -5,6 +5,7 @@ import {
   ChevronRight,
   FileText,
   Loader2,
+  Mail,
   Lock,
   Printer,
   RotateCcw,
@@ -23,6 +24,7 @@ import {
 } from '@/components/ui/table';
 import { isBillingComplete } from '@/components/customer/PassageBillingDialog';
 import { RefundDialog } from '@/components/history/RefundDialog';
+import { SendInvoiceEmailDialog } from '@/components/ticket/SendInvoiceEmailDialog';
 import { ShopifyDayView } from '@/components/history/ShopifyDayView';
 import { ReceiptPreview } from '@/components/ticket/ReceiptPreview';
 import { usePrinter } from '@/hooks/usePrinter';
@@ -110,6 +112,20 @@ export function HistoryPage() {
   );
 
   const [reprinting, setReprinting] = useState(false);
+  const [mailOpen, setMailOpen] = useState(false);
+  const [mailDefault, setMailDefault] = useState<string | null>(null);
+
+  /** Facture par e-mail : propose l'adresse de l'en-tête de facture (personne de passage). */
+  const openMail = async (transactionId: string): Promise<void> => {
+    setMailDefault(null);
+    setMailOpen(true);
+    try {
+      const r = await edge.passageBillingForTransaction(transactionId);
+      setMailDefault(r.billing.email ?? null);
+    } catch {
+      setMailDefault(null);
+    }
+  };
 
   /**
    * Duplicata A4 : même document que la facture A4 de l'encaissement, marqué « DUPLICATA n°X ».
@@ -400,6 +416,17 @@ export function HistoryPage() {
               >
                 <Printer className="h-5 w-5" /> Ticket + A4
               </Button>
+              <Button
+                variant="secondary"
+                size="touch"
+                className="min-w-[30%] flex-1"
+                onClick={() => void openMail(full.data.transaction.id)}
+                disabled={offline}
+                title={offline ? 'Envoi impossible hors ligne' : 'Envoyer la facture par e-mail'}
+                data-testid="reprint-mail-button"
+              >
+                <Mail className="h-5 w-5" /> E-mail
+              </Button>
               {full.data.transaction.kind === 'sale' && (
                 <span
                   className="flex basis-full"
@@ -429,6 +456,17 @@ export function HistoryPage() {
           </>
         )}
       </aside>
+
+      {full.data && (
+        <SendInvoiceEmailDialog
+          open={mailOpen}
+          onOpenChange={setMailOpen}
+          transactionId={full.data.transaction.id}
+          ticketCode={codeOf(full.data.transaction)}
+          defaultEmail={mailDefault}
+          onSent={() => toast({ title: 'Facture envoyée par e-mail', variant: 'success' })}
+        />
+      )}
 
       <RefundDialog
         full={refundOf}
