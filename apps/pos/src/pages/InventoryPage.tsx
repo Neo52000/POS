@@ -1,6 +1,16 @@
 import { useCallback, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { ClipboardList, Loader2, Search, Send, Trash2, WifiOff, X } from 'lucide-react';
+import {
+  ClipboardList,
+  Download,
+  FileText,
+  Loader2,
+  Search,
+  Send,
+  Trash2,
+  WifiOff,
+  X,
+} from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,11 +21,23 @@ import { useIsAdmin } from '@/hooks/useIsAdmin';
 import { useLiveQuery } from '@/hooks/useLiveQuery';
 import { useProductSearch } from '@/hooks/useProductSearch';
 import { productByEan } from '@/lib/catalog';
+import { edge } from '@/lib/edge';
+import { printHtml } from '@/lib/invoiceA4';
+import {
+  buildInventoryCsv,
+  buildInventoryHtml,
+  buildValuationReport,
+  downloadText,
+  inventoryFileName,
+} from '@/lib/inventoryReport';
+import type { InventoryCompany, ValuationReport } from '@/lib/inventoryReport';
+import { cachedTicketSettings } from '@/lib/ticketSettings';
 import { formatLongDate } from '@/lib/format';
 import {
   listInventoryLines,
   removeInventoryLine,
   sendInventory,
+  syncInventory,
   upsertInventoryLine,
 } from '@/lib/inventory';
 import type { ConfirmedInventoryLine } from '@/lib/inventory';
@@ -24,6 +46,11 @@ import { useSessionStore } from '@/stores/sessionStore';
 import { useTrainingStore } from '@/stores/trainingStore';
 import { useUiStore } from '@/stores/uiStore';
 import type { PosProduct } from '@/types/pos';
+
+/** Date du jour (Europe/Paris) au format AAAA-MM-JJ, valeur par défaut du sélecteur de date. */
+function todayParis(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' }).format(new Date());
+}
 
 function signed(n: number): string {
   return n > 0 ? `+${n}` : String(n);
@@ -47,6 +74,40 @@ export function InventoryPage() {
   const [reason, setReason] = useState(() => `Inventaire du ${formatLongDate(new Date())}`);
   const [sending, setSending] = useState(false);
   const [confirmed, setConfirmed] = useState<ConfirmedInventoryLine[]>([]);
+
+  const [asOf, setAsOf] = useState(() => todayParis());
+  const [reporting, setReporting] = useState<'csv' | 'a4' | null>(null);
+  const [lastReport, setLastReport] = useState<ValuationReport | null>(null);
+
+  /** Pousse le lot vers le serveur (il lit le lot partagé), puis calcule l'inventaire valorisé. */
+  const makeReport = async (kind: 'csv' | 'a4'): Promise<void> => {
+    if (reporting) return;
+    setReporting(kind);
+    try {
+      await syncInventory();
+      const report = buildValuationReport(await edge.inventoryValuation(asOf));
+      setLastReport(report);
+      if (kind === 'csv') {
+        downloadText(buildInventoryCsv(report), inventoryFileName(asOf, 'csv'), 'text/csv');
+      } else {
+        const legal = (cachedTicketSettings()?.legal ?? {}) as Record<string, unknown>;
+        const company: InventoryCompany = {
+          company_name: String(legal.company_name ?? 'Reine & Fils SAS'),
+          address_lines: Array.isArray(legal.address_lines) ? legal.address_lines.map(String) : [],
+          ...(legal.siret ? { siret: String(legal.siret) } : {}),
+        };
+        printHtml(buildInventoryHtml(report, company));
+      }
+    } catch (e) {
+      toast({
+        title: 'Inventaire valorisé impossible',
+        description: errorMessage(e),
+        variant: 'danger',
+      });
+    } finally {
+      setReporting(null);
+    }
+  };
 
   const select = useCallback(
     (p: PosProduct) => {
@@ -183,6 +244,78 @@ export function InventoryPage() {
             ))}
           </ul>
         )}
+
+        <div
+          className="flex flex-col gap-3 rounded-3xl border border-border bg-surface p-5"
+          data-testid="inventory-report"
+        >
+          <p className="text-lg font-semibold">Inventaire pour le comptable</p>
+          <p className="text-sm text-muted">
+            Valorisé au prix d’achat HT : quantités comptées du lot en cours, stock enregistré pour
+            les autres références. La date est celle du document (l’historique du stock n’est pas
+            reconstitué).
+          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="text-sm" htmlFor="inventory-asof">
+              Inventaire au
+            </label>
+            <Input
+              id="inventory-asof"
+              type="date"
+              value={asOf}
+              max={todayParis()}
+              onChange={(e) => setAsOf(e.target.value)}
+              className="w-auto"
+              data-testid="inventory-asof"
+            />
+            <Button
+              variant="secondary"
+              disabled={!asOf || offline || reporting !== null}
+              onClick={() => void makeReport('csv')}
+              data-testid="inventory-report-csv"
+            >
+              {reporting === 'csv' ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="mr-2 h-4 w-4" />
+              )}
+              Export Excel (CSV)
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={!asOf || offline || reporting !== null}
+              onClick={() => void makeReport('a4')}
+              data-testid="inventory-report-a4"
+            >
+              {reporting === 'a4' ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <FileText className="mr-2 h-4 w-4" />
+              )}
+              Imprimer A4
+            </Button>
+          </div>
+          {lastReport && (
+            <p className="text-sm" data-testid="inventory-report-summary">
+              <strong>{lastReport.totals.references}</strong> références ·{' '}
+              <strong>{lastReport.totals.units}</strong> unités · valeur{' '}
+              <strong>
+                {(lastReport.totals.value_cents / 100).toLocaleString('fr-FR', {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}{' '}
+                € HT
+              </strong>
+              {lastReport.totals.negative + lastReport.totals.without_cost > 0 && (
+                <span className="text-warning">
+                  {' '}
+                  · {lastReport.totals.negative} stock(s) négatif(s),{' '}
+                  {lastReport.totals.without_cost} sans prix d’achat (non valorisés)
+                </span>
+              )}
+            </p>
+          )}
+        </div>
 
         {current ? (
           <div

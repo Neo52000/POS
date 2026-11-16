@@ -624,6 +624,34 @@ export function createMockEdge(): EdgeClient {
           (c.siret ?? '').replace(/\s/g, '').includes(needle.replace(/\s/g, '')),
       );
     },
+    async inventoryValuation(asOf) {
+      assertMockOnline();
+      return {
+        as_of: asOf,
+        generated_at: new Date().toISOString(),
+        counted: [],
+        products: [
+          {
+            product_id: 'mock-inv-1',
+            ean: '3000000000011',
+            name: 'Cahier A4 96 pages',
+            brand: 'Oxford',
+            category: 'Papier',
+            stock_boutique: 12,
+            cost_price: '2.5000',
+          },
+          {
+            product_id: 'mock-inv-2',
+            ean: '3000000000028',
+            name: 'Stylo bille bleu',
+            brand: null,
+            category: 'Écriture',
+            stock_boutique: 40,
+            cost_price: 0.25,
+          },
+        ],
+      };
+    },
     async shopifyPosDays() {
       assertMockOnline();
       return mockShopifyPosDays();

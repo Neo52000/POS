@@ -7,6 +7,7 @@ import { reportNetworkFailure } from '@/lib/connectivity';
 
 export { ApiError, describeApiError, isApiError, isNetworkError } from '@/lib/apiError';
 export type { ApiErrorCode } from '@/lib/apiError';
+import type { ValuationRaw } from '@/lib/inventoryReport';
 import type {
   ClosePeriodResult,
   CustomerOpenDocuments,
@@ -90,6 +91,11 @@ export interface EdgeClient {
   }): Promise<ClosePeriodResult>;
   /** Ticket dématérialisé (`pos-send-receipt`) : e-mail ou SMS via Brevo, contenu relu en base. */
   sendReceipt(input: SendReceiptInput): Promise<{ ok: true; ticket_code: string }>;
+  /**
+   * Données de l'inventaire valorisé au prix d'achat HT (`pos-inventory-valuation`, admin) : lot
+   * compté (partagé) + stock boutique + prix d'achat ; `asOf` = date du document (AAAA-MM-JJ).
+   */
+  inventoryValuation(asOf: string): Promise<ValuationRaw>;
   /** Jours de ventes de l'ancienne caisse Shopify POS (`pos-shopify-history`), hors fiscal. */
   shopifyPosDays(): Promise<ShopifyPosDay[]>;
   /** Commandes Shopify POS d'une date métier (`pos-shopify-history`, `{date}`), hors fiscal. */
@@ -222,6 +228,8 @@ function createRealEdge(): EdgeClient {
     closePeriod: (input) => callEdge<ClosePeriodResult>('pos-closing', input, 60_000),
     sendReceipt: (input) =>
       callEdge<{ ok: true; ticket_code: string }>('pos-send-receipt', input, 20_000),
+    inventoryValuation: (as_of) =>
+      callEdge<ValuationRaw>('pos-inventory-valuation', { as_of }, 60_000),
     shopifyPosDays: async () => {
       const r = await callEdge<{ days: ShopifyPosDay[] }>('pos-shopify-history', {});
       return (r.days ?? []).map((d) => ({
