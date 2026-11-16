@@ -6,13 +6,18 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { NumPad } from '@/components/ui/numpad';
 import { useBarcodeScanner } from '@/hooks/useBarcodeScanner';
+import { useInventorySync } from '@/hooks/useInventorySync';
 import { useIsAdmin } from '@/hooks/useIsAdmin';
 import { useLiveQuery } from '@/hooks/useLiveQuery';
 import { useProductSearch } from '@/hooks/useProductSearch';
 import { productByEan } from '@/lib/catalog';
-import { db } from '@/lib/db';
 import { formatLongDate } from '@/lib/format';
-import { removeInventoryLine, sendInventory, upsertInventoryLine } from '@/lib/inventory';
+import {
+  listInventoryLines,
+  removeInventoryLine,
+  sendInventory,
+  upsertInventoryLine,
+} from '@/lib/inventory';
 import type { ConfirmedInventoryLine } from '@/lib/inventory';
 import { cn, errorMessage } from '@/lib/utils';
 import { useSessionStore } from '@/stores/sessionStore';
@@ -33,7 +38,8 @@ export function InventoryPage() {
   const training = useTrainingStore((s) => s.active);
   const toast = useUiStore((s) => s.toast);
   const registerId = useSessionStore((s) => s.register?.id ?? null);
-  const lines = useLiveQuery(() => db.inventory.orderBy('added_at').toArray(), [], []);
+  const lines = useLiveQuery(() => listInventoryLines(), [], []);
+  const { state: syncState, syncNow } = useInventorySync(isAdmin);
   const [query, setQuery] = useState('');
   const search = useProductSearch(query);
   const [current, setCurrent] = useState<PosProduct | null>(null);
@@ -84,6 +90,7 @@ export function InventoryPage() {
       });
       setCurrent(null);
       setCounted('');
+      void syncNow();
     } catch (e) {
       toast({ title: 'Ligne non ajoutée', description: errorMessage(e), variant: 'danger' });
     }
@@ -95,6 +102,7 @@ export function InventoryPage() {
       const r = await sendInventory(reason.trim(), { registerId });
       setConfirmed((prev) => [...r.confirmed, ...prev]);
       if (r.confirmed.length) void qc.invalidateQueries({ queryKey: ['products'] });
+      void syncNow();
       toast({
         title: `${r.confirmed.length} ligne(s) confirmée(s)`,
         description: r.errors
@@ -252,6 +260,28 @@ export function InventoryPage() {
           <p className="text-sm uppercase tracking-wide text-muted">
             Lot en cours ({lines.length})
           </p>
+          <span
+            className={cn(
+              'text-xs',
+              syncState === 'error'
+                ? 'text-danger'
+                : syncState === 'offline'
+                  ? 'text-warning'
+                  : 'text-muted',
+            )}
+            title="Le lot est partagé entre tous les postes administrateurs"
+            data-testid="inventory-sync-state"
+          >
+            {syncState === 'syncing'
+              ? 'Synchronisation…'
+              : syncState === 'ok'
+                ? 'Partagé · synchronisé'
+                : syncState === 'offline'
+                  ? 'Hors ligne · synchro en attente'
+                  : syncState === 'error'
+                    ? 'Synchro en erreur · réessai auto'
+                    : ''}
+          </span>
         </div>
         <ul className="min-h-0 flex-1 overflow-y-auto px-4" data-testid="inventory-lines">
           {lines.length === 0 && <li className="py-6 text-center text-muted">Lot vide</li>}
@@ -284,7 +314,9 @@ export function InventoryPage() {
                   variant="ghost"
                   size="icon-touch"
                   aria-label="Retirer la ligne"
-                  onClick={() => void removeInventoryLine(l.idempotency_key)}
+                  onClick={() => {
+                    void removeInventoryLine(l.idempotency_key).then(() => syncNow());
+                  }}
                   disabled={sending}
                 >
                   <Trash2 className="h-5 w-5 text-danger" />

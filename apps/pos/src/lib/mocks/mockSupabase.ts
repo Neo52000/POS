@@ -135,6 +135,12 @@ function lastDailyGrandTotal(): number {
   return dailies.at(-1)?.grand_total_perpetual_cents ?? 0;
 }
 
+/** Lot d'inventaire partagé du mock (mémoire du module : le poste de test garde son Dexie). */
+const MOCK_INVENTORY_LINES = new Map<
+  string,
+  Record<string, unknown> & { updated_at: string; server_updated_at: number }
+>();
+
 async function rpc(name: string, params: Record<string, unknown> = {}): Promise<Result<unknown>> {
   if (isMockOffline()) return { data: null, error: NETWORK_ERROR };
   const st = mockState();
@@ -143,6 +149,28 @@ async function rpc(name: string, params: Record<string, unknown> = {}): Promise<
       return ok(true);
     case 'is_pos_admin':
       return ok(true);
+    case 'pos_inventory_sync': {
+      const incoming = (params['p_lines'] as Array<Record<string, unknown>> | undefined) ?? [];
+      for (const l of incoming) {
+        const id = String(l['product_id']);
+        const cur = MOCK_INVENTORY_LINES.get(id);
+        if (!cur || Date.parse(String(l['updated_at'])) > Date.parse(cur.updated_at)) {
+          MOCK_INVENTORY_LINES.set(id, {
+            ...l,
+            updated_at: String(l['updated_at']),
+            server_updated_at: Date.now(),
+          });
+        }
+      }
+      const since = params['p_since'] ? Date.parse(String(params['p_since'])) : null;
+      const lines = [...MOCK_INVENTORY_LINES.values()]
+        .filter((l) => since === null || l.server_updated_at > since)
+        .map((l) => {
+          const { server_updated_at: _s, ...rest } = l;
+          return rest;
+        });
+      return ok({ server_time: new Date().toISOString(), lines });
+    }
     case 'pos_client_settings':
       return ok({
         offline_max_txns: 50,
