@@ -93,6 +93,12 @@ export interface InventoryLine {
   added_at: string;
   status: InventoryLineStatus;
   error?: string | null;
+  /** Dernière modification (horloge du poste) : dernière écriture gagnante à la synchro. */
+  updated_at?: string;
+  /** Modifiée sur ce poste, pas encore envoyée au serveur. */
+  dirty?: boolean;
+  /** Retirée ou confirmée : conservée jusqu'à la synchro pour propager la suppression. */
+  deleted?: boolean;
 }
 
 export class PosDb extends Dexie {
