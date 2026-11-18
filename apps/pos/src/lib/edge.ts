@@ -13,6 +13,7 @@ import type {
   CustomerOpenDocuments,
   CustomerQuote,
   ExportArchiveResult,
+  OpenDocumentsOwner,
   PassageBilling,
   PassageContact,
   PosCustomer,
@@ -56,6 +57,11 @@ export interface EdgeClient {
     accountId: string,
     passageContactId?: string | null,
   ): Promise<CustomerOpenDocuments>;
+  /**
+   * Clients et personnes de passage ayant des commandes / BL à encaisser, par n° de commande ou
+   * de BL, nom ou téléphone ; `q` vide = tous (`pos-customer-orders`, `search`).
+   */
+  openDocumentsSearch(q: string, limit?: number): Promise<OpenDocumentsOwner[]>;
   /** Personnes de passage par nom ou téléphone (`pos-passage-contacts`, action `search`). */
   passageSearch(q: string, limit?: number): Promise<PassageContact[]>;
   /** Crée (ou retrouve par téléphone) une personne de passage (`pos-passage-contacts`). */
@@ -176,6 +182,13 @@ function createRealEdge(): EdgeClient {
         throw new Error('Fonctions caisse à mettre à jour (commandes et BL indisponibles)');
       }
       return r.documents;
+    },
+    openDocumentsSearch: async (q, limit = 20) => {
+      const r = await callEdge<{ owners: OpenDocumentsOwner[] }>('pos-customer-orders', {
+        search: q,
+        limit,
+      });
+      return r.owners ?? [];
     },
     passageSearch: async (q, limit = 10) => {
       const r = await callEdge<{ contacts: PassageContact[] }>('pos-passage-contacts', {

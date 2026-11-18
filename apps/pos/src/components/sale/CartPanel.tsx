@@ -133,6 +133,7 @@ export interface CartPanelProps {
   onCustomer: () => void;
   onQuotes: () => void;
   onOrders: () => void;
+  onOrderLookup: () => void;
   onPark: () => void;
   onShowParked: () => void;
   parkedCount: number;
@@ -149,6 +150,7 @@ export function CartPanel({
   onCustomer,
   onQuotes,
   onOrders,
+  onOrderLookup,
   onPark,
   onShowParked,
   parkedCount,
@@ -197,7 +199,12 @@ export function CartPanel({
       className="flex h-full min-h-0 flex-col border-l border-border bg-surface"
       data-testid="cart-panel"
     >
-      <CustomerBadge onSearch={onCustomer} onQuotes={onQuotes} onOrders={onOrders} />
+      <CustomerBadge
+        onSearch={onCustomer}
+        onQuotes={onQuotes}
+        onOrders={onOrders}
+        onOrderLookup={onOrderLookup}
+      />
       <Separator />
       <div className="flex items-center gap-1 px-3 py-1 text-xs uppercase tracking-wide text-muted">
         <span className="flex-1">

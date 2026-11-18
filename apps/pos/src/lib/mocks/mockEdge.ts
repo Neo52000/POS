@@ -6,8 +6,10 @@ import { buildTicketPayload } from '@/lib/ticket';
 import { businessDate } from '@/lib/format';
 import type {
   ClosePeriodResult,
+  CustomerOpenDocuments,
   ExportArchiveResult,
   OpenDocumentItem,
+  OpenDocumentsOwner,
   PassageBilling,
   PosClosing,
   PosArchive,
@@ -670,6 +672,81 @@ export function createMockEdge(): EdgeClient {
         ? MOCK_PASSAGE_DOCUMENTS[passageContactId]
         : MOCK_DOCUMENTS[accountId];
       return structuredClone(docs ?? { orders: [], delivery_notes: [] });
+    },
+    async openDocumentsSearch(q, limit = 20) {
+      assertMockOnline();
+      const needle = q.trim().toLowerCase();
+      const digits = q.replace(/\D/g, '');
+      const owners: OpenDocumentsOwner[] = [];
+      const build = (
+        base: Pick<
+          OpenDocumentsOwner,
+          'owner_kind' | 'account_id' | 'passage_contact_id' | 'display_name' | 'phone' | 'customer'
+        >,
+        docs: CustomerOpenDocuments,
+        nameMatches: boolean,
+      ): void => {
+        const numbers = [
+          ...docs.orders.map((o) => o.order_number),
+          ...docs.delivery_notes.map((d) => d.delivery_note_number),
+        ];
+        const hit = !needle || nameMatches || numbers.some((n) => n.toLowerCase().includes(needle));
+        if (!hit || docs.orders.length + docs.delivery_notes.length === 0) return;
+        const all = [...docs.orders, ...docs.delivery_notes];
+        owners.push({
+          ...base,
+          orders_count: docs.orders.length,
+          delivery_notes_count: docs.delivery_notes.length,
+          open_ttc: all.reduce((s, d) => s + (d.open_ttc ?? 0), 0),
+          order_numbers: [
+            ...new Set([
+              ...docs.orders.map((o) => o.order_number),
+              ...docs.delivery_notes.map((d) => d.order_number),
+            ]),
+          ],
+          last_document_at:
+            all
+              .map((d) => d.created_at)
+              .sort()
+              .at(-1) ?? '',
+        });
+      };
+      for (const c of MOCK_CUSTOMERS) {
+        const docs = MOCK_DOCUMENTS[c.id];
+        if (!docs) continue;
+        build(
+          {
+            owner_kind: 'account',
+            account_id: c.id,
+            passage_contact_id: null,
+            display_name: c.display_name,
+            phone: c.phone,
+            customer: c,
+          },
+          docs,
+          c.display_name.toLowerCase().includes(needle) ||
+            (c.company_name ?? '').toLowerCase().includes(needle),
+        );
+      }
+      for (const p of MOCK_PASSAGE_CONTACTS) {
+        const docs = MOCK_PASSAGE_DOCUMENTS[p.id];
+        if (!docs) continue;
+        build(
+          {
+            owner_kind: 'passage',
+            account_id: p.passage_account_id,
+            passage_contact_id: p.id,
+            display_name: p.full_name,
+            phone: p.phone,
+            customer: null,
+          },
+          docs,
+          p.full_name.toLowerCase().includes(needle) ||
+            (digits.length >= 4 && (p.phone ?? '').replace(/\D/g, '').includes(digits)),
+        );
+      }
+      owners.sort((a, b) => b.last_document_at.localeCompare(a.last_document_at));
+      return owners.slice(0, limit);
     },
     async passageSearch(q) {
       assertMockOnline();

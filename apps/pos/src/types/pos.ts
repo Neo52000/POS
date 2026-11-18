@@ -329,6 +329,26 @@ export interface CustomerOpenDocuments {
   prepared_group?: PreparedDocumentGroup | null;
 }
 
+/**
+ * Client pro ou personne de passage ayant des commandes / BL à encaisser
+ * (`pos-customer-orders`, `search`) : entrée de la reprise directe en caisse.
+ */
+export interface OpenDocumentsOwner {
+  owner_kind: 'account' | 'passage';
+  account_id: string;
+  passage_contact_id: string | null;
+  display_name: string;
+  phone: string | null;
+  /** Fiche complète du compte pro (null pour une personne de passage). */
+  customer: PosCustomer | null;
+  orders_count: number;
+  delivery_notes_count: number;
+  /** Reste à encaisser TTC, en euros. */
+  open_ttc: number;
+  order_numbers: string[];
+  last_document_at: string;
+}
+
 /** Lot de commandes / BL préparé au back-office (`pos_order_groups`, ma-papeterie). */
 export interface PreparedDocumentGroup {
   id: string;
