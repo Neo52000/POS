@@ -6,6 +6,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Input } from '@/components/ui/input';
 import { CustomerSearchDialog } from '@/components/customer/CustomerSearchDialog';
 import { OrderImportDialog } from '@/components/customer/OrderImportDialog';
+import { OrderLookupDialog } from '@/components/customer/OrderLookupDialog';
 import { QuoteImportDialog } from '@/components/customer/QuoteImportDialog';
 import { PaymentSheet } from '@/components/payment/PaymentSheet';
 import { StaleSessionBlock } from '@/components/session/StaleSessionBlock';
@@ -53,6 +54,7 @@ export function SalePage() {
   const [customerDialog, setCustomerDialog] = useState(false);
   const [quoteDialog, setQuoteDialog] = useState(false);
   const [orderDialog, setOrderDialog] = useState(false);
+  const [lookupDialog, setLookupDialog] = useState(false);
   const [parkedOpen, setParkedOpen] = useState(false);
   const [cartModal, setCartModal] = useState(false);
   const [globalDialog, setGlobalDialog] = useState(false);
@@ -98,6 +100,7 @@ export function SalePage() {
     customerDialog ||
     quoteDialog ||
     orderDialog ||
+    lookupDialog ||
     paying ||
     parkedOpen ||
     cartModal ||
@@ -484,6 +487,7 @@ export function SalePage() {
         onCustomer={() => setCustomerDialog(true)}
         onQuotes={() => setQuoteDialog(true)}
         onOrders={() => setOrderDialog(true)}
+        onOrderLookup={() => setLookupDialog(true)}
         onPark={park}
         onShowParked={() => setParkedOpen(true)}
         parkedCount={parkedCount}
@@ -548,6 +552,27 @@ export function SalePage() {
         }}
       />
       <QuoteImportDialog open={quoteDialog} onOpenChange={setQuoteDialog} />
+      <OrderLookupDialog
+        open={lookupDialog}
+        onOpenChange={setLookupDialog}
+        onPick={(o) => {
+          setLookupDialog(false);
+          // Le client est attaché (tarifs, ticket) puis ses commandes / BL s'ouvrent.
+          if (o.owner_kind === 'passage' && o.passage_contact_id) {
+            void useCustomerStore.getState().attachPassage({
+              id: o.passage_contact_id,
+              full_name: o.display_name,
+              phone: o.phone,
+              passage_account_id: o.account_id,
+            });
+          } else if (o.customer) {
+            void attach(o.customer);
+          } else {
+            return;
+          }
+          setOrderDialog(true);
+        }}
+      />
       <OrderImportDialog open={orderDialog} onOpenChange={setOrderDialog} />
       <ParkedSheet open={parkedOpen} onOpenChange={setParkedOpen} currentLines={lines.length} />
       <ConfirmDialog

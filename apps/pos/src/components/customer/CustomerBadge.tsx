@@ -22,10 +22,12 @@ export interface CustomerBadgeProps {
   onSearch: () => void;
   onQuotes: () => void;
   onOrders: () => void;
+  /** Reprise directe d'une commande (sans client choisi au préalable). */
+  onOrderLookup: () => void;
 }
 
 /** Client pro attaché (ou bouton « Client pro »). */
-export function CustomerBadge({ onSearch, onQuotes, onOrders }: CustomerBadgeProps) {
+export function CustomerBadge({ onSearch, onQuotes, onOrders, onOrderLookup }: CustomerBadgeProps) {
   const account = useCustomerStore((s) => s.account);
   const passageContact = useCustomerStore((s) => s.passageContact);
   const resolving = useCustomerStore((s) => s.resolving);
@@ -41,7 +43,7 @@ export function CustomerBadge({ onSearch, onQuotes, onOrders }: CustomerBadgePro
 
   if (!account) {
     return (
-      <div className="p-3">
+      <div className="flex flex-col gap-2 p-3">
         <Button
           variant="secondary"
           size="touch"
@@ -53,6 +55,17 @@ export function CustomerBadge({ onSearch, onQuotes, onOrders }: CustomerBadgePro
         >
           <UserPlus className="h-5 w-5 text-accent" /> Client
           {offline && <span className="ml-auto text-xs text-muted">(hors ligne)</span>}
+        </Button>
+        <Button
+          variant="outline"
+          size="touch"
+          className="w-full justify-start"
+          onClick={onOrderLookup}
+          disabled={offline}
+          title={offline ? 'Reprise de commande indisponible hors ligne' : undefined}
+          data-testid="order-lookup-button"
+        >
+          <PackageOpen className="h-5 w-5 text-accent" /> Récupérer des commandes
         </Button>
       </div>
     );

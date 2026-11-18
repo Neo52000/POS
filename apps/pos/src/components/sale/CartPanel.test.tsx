@@ -33,6 +33,7 @@ function renderPanel(overrides: Partial<Parameters<typeof CartPanel>[0]> = {}) {
     onCustomer: vi.fn(),
     onQuotes: vi.fn(),
     onOrders: vi.fn(),
+    onOrderLookup: vi.fn(),
     onPark: vi.fn(),
     onShowParked: vi.fn(),
     parkedCount: 0,

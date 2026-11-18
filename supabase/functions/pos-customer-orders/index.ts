@@ -4,6 +4,8 @@
 // documents: true → commandes ET bons de livraison à encaisser, ligne par ligne
 // (pos_customer_open_documents / pos_passage_open_documents) : {documents: {orders, delivery_notes,
 // prepared_group}} — prepared_group = lot préparé au back-office (null si aucun).
+// search: string (vide = tous) → clients / personnes de passage ayant des commandes ou BL à
+// encaisser (pos_open_documents_search) : {owners: [...]} — reprise directe en caisse.
 // Sans documents : ancien format {orders} (caisses d'une version antérieure).
 import { z } from 'npm:zod@3';
 import { requirePos } from '../_shared/auth.ts';
@@ -11,6 +13,7 @@ import { ApiError, errorResponse, handleOptions, json, readJson } from '../_shar
 import { mapapClient } from '../_shared/mapapeterie.ts';
 
 const Schema = z.union([
+  z.object({ search: z.string().trim().max(80), limit: z.number().int().min(1).max(50).default(20) }),
   z.object({ account_id: z.string().uuid(), documents: z.boolean().optional() }),
   z.object({ passage_contact_id: z.string().uuid(), documents: z.boolean().optional() }),
 ]);
@@ -22,6 +25,16 @@ Deno.serve(async (req) => {
     await requirePos(req);
     const parsed = Schema.safeParse(await readJson(req));
     if (!parsed.success) throw new ApiError('VALIDATION', 'Payload invalide', parsed.error.flatten());
+    if ('search' in parsed.data) {
+      const q = parsed.data.search;
+      if (q.length === 1) throw new ApiError('VALIDATION', '2 caractères minimum');
+      const { data, error } = await mapapClient().rpc('pos_open_documents_search', {
+        p_query: q === '' ? null : q,
+        p_limit: parsed.data.limit,
+      });
+      if (error) throw new ApiError('DB_ERROR', `open documents search: ${error.message}`);
+      return json(200, { owners: data ?? [] });
+    }
     if (parsed.data.documents) {
       const docsRpc = 'passage_contact_id' in parsed.data
         ? mapapClient().rpc('pos_passage_open_documents', { p_contact_id: parsed.data.passage_contact_id })
