@@ -169,7 +169,7 @@ BEGIN
 END $$;
 
 
--- 7. durcissement vue et privilèges RPC (migration 20261119180000)
+-- 7. durcissement vue et privilèges RPC (migration 20261119212003)
 DO $$
 DECLARE
   v_options text[];
