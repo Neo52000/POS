@@ -168,4 +168,58 @@ BEGIN
   INSERT INTO pos_test_results VALUES ('adjust_stock', true, '+1 / -1 tracés, delta 0 refusé, stock final ' || v_stock0);
 END $$;
 
+
+-- 7. durcissement vue et privilèges RPC (migration 20261119212003)
+DO $$
+DECLARE
+  v_options text[];
+  v_fn text;
+  v_service_only text[] := ARRAY[
+    'public.pos_apply_stock_movements(jsonb)',
+    'public.pos_bridge_error(text,jsonb)',
+    'public.pos_bridge_is_service_role()',
+    'public.pos_bridge_require_service_role()',
+    'public.pos_customer_get(uuid)',
+    'public.pos_customer_lookup(text,integer)',
+    'public.pos_customer_open_orders(uuid)',
+    'public.pos_customer_open_quotes(uuid)',
+    'public.pos_resolve_cart_prices(uuid,jsonb)',
+    'public.pos_set_stock_boutique(uuid,integer,text,text)',
+    'public.pos_settle_orders(jsonb)'
+  ];
+BEGIN
+  SELECT reloptions INTO v_options FROM pg_class WHERE oid='public.pos_catalog'::regclass;
+  IF NOT coalesce(v_options @> ARRAY['security_invoker=true'], false) THEN
+    RAISE EXCEPTION 'pos_catalog SECURITY INVOKER absent';
+  END IF;
+  IF NOT has_table_privilege('anon','public.pos_catalog','SELECT')
+     OR NOT has_table_privilege('authenticated','public.pos_catalog','SELECT') THEN
+    RAISE EXCEPTION 'lecture pos_catalog doit rester disponible';
+  END IF;
+  IF has_table_privilege('anon','public.pos_catalog','INSERT')
+     OR has_table_privilege('anon','public.pos_catalog','UPDATE')
+     OR has_table_privilege('anon','public.pos_catalog','DELETE')
+     OR has_table_privilege('authenticated','public.pos_catalog','INSERT')
+     OR has_table_privilege('authenticated','public.pos_catalog','UPDATE')
+     OR has_table_privilege('authenticated','public.pos_catalog','DELETE') THEN
+    RAISE EXCEPTION 'pos_catalog doit être en lecture seule';
+  END IF;
+  IF NOT has_function_privilege('anon','public.pos_catalog_page(uuid,int,timestamptz)','EXECUTE')
+     OR NOT has_function_privilege('anon','public.pos_search_products(text,int)','EXECUTE')
+     OR NOT has_function_privilege('anon','public.pos_product_by_ean(text)','EXECUTE') THEN
+    RAISE EXCEPTION 'les RPC catalogue anon doivent rester accessibles';
+  END IF;
+  FOREACH v_fn IN ARRAY v_service_only LOOP
+    IF NOT has_function_privilege('service_role',v_fn,'EXECUTE')
+       OR has_function_privilege('anon',v_fn,'EXECUTE')
+       OR has_function_privilege('authenticated',v_fn,'EXECUTE') THEN
+      RAISE EXCEPTION 'droits incorrects pour %',v_fn;
+    END IF;
+  END LOOP;
+  IF NOT has_function_privilege('authenticated','public.pos_adjust_stock_boutique(uuid,int,text)','EXECUTE') THEN
+    RAISE EXCEPTION 'le droit admin de correction de stock doit rester disponible';
+  END IF;
+  INSERT INTO pos_test_results VALUES ('catalog_security',true,'vue invoker, catalogue public en lecture seule, RPC métier service_role');
+END $$;
+
 SELECT * FROM pos_test_results;
