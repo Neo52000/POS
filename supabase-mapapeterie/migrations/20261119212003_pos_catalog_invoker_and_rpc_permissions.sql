@@ -1,5 +1,5 @@
 -- POS catalogue security hardening (2026-11-19).
--- Mirror of ma-papeterie-v1/supabase/migrations/20261119180000_pos_catalog_invoker_and_rpc_permissions.sql.
+-- Mirror of ma-papeterie-v1/supabase/migrations/20261119212003_pos_catalog_invoker_and_rpc_permissions.sql.
 -- The PWA intentionally reads catalogue RPCs with the public anon key.
 -- Keep those read-only endpoints available; harden the underlying view and
 -- remove unnecessary direct write / service-only RPC grants.
