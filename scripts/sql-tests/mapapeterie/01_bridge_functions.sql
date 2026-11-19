@@ -170,7 +170,7 @@ END $$;
 
 
 -- 7. durcissement vue et privilèges RPC (migration 20261119180000)
-DO $
+DO $$
 DECLARE
   v_options text[];
   v_fn text;
@@ -220,6 +220,6 @@ BEGIN
     RAISE EXCEPTION 'le droit admin de correction de stock doit rester disponible';
   END IF;
   INSERT INTO pos_test_results VALUES ('catalog_security',true,'vue invoker, catalogue public en lecture seule, RPC métier service_role');
-END $;
+END $$;
 
 SELECT * FROM pos_test_results;
