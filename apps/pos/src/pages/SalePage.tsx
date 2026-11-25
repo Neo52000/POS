@@ -337,8 +337,8 @@ export function SalePage() {
     !!search.data && !search.isPlaceholderData && search.debouncedQuery === term.trim();
 
   return (
-    <div className="grid h-full grid-cols-[1fr_420px]" data-testid="sale-page">
-      <section className="flex min-h-0 flex-col gap-3 p-4">
+    <div className="grid h-full grid-cols-[minmax(0,1fr)_420px]" data-testid="sale-page">
+      <section className="flex min-h-0 min-w-0 flex-col gap-3 p-4">
         {draft && !paying && (
           <div
             className="flex flex-wrap items-center gap-3 rounded-xl border border-warning/50 bg-warning/10 px-4 py-3"

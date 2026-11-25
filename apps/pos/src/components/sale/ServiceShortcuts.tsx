@@ -26,11 +26,11 @@ export function ServiceShortcuts({ products, onPick }: ServiceShortcutsProps) {
       className="flex shrink-0 flex-col gap-2 rounded-2xl border border-border bg-surface p-2"
       data-testid="service-shortcuts"
     >
-      <div className="flex items-center gap-2">
-        <span className="flex shrink-0 items-center gap-1.5 px-1 text-xs uppercase tracking-wide text-muted">
+      <div className="flex items-start gap-2">
+        <span className="flex h-11 shrink-0 items-center gap-1.5 px-1 text-xs uppercase tracking-wide text-muted">
           <ConciergeBell className="h-4 w-4" /> Services
         </span>
-        <div className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto" role="tablist">
+        <div className="flex min-w-0 flex-1 flex-wrap gap-1.5" role="tablist">
           {groups.map(({ group }) => (
             <button
               key={group}
@@ -51,13 +51,16 @@ export function ServiceShortcuts({ products, onPick }: ServiceShortcutsProps) {
           ))}
         </div>
       </div>
-      <div className="flex gap-2 overflow-x-auto pb-1" data-testid="service-tiles">
+      <div
+        className="grid max-h-[40vh] grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2 overflow-y-auto"
+        data-testid="service-tiles"
+      >
         {current.products.map((p) => (
           <button
             key={p.id}
             type="button"
             onClick={() => onPick(p)}
-            className="flex min-h-[68px] w-[150px] shrink-0 flex-col justify-between rounded-xl border border-border bg-bg p-2 text-left hover:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent active:scale-[0.98]"
+            className="flex min-h-[68px] min-w-0 flex-col justify-between rounded-xl border border-border bg-bg p-2 text-left hover:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent active:scale-[0.98]"
             data-testid="service-tile"
           >
             <span className="line-clamp-2 text-sm font-medium leading-tight">{p.name}</span>
